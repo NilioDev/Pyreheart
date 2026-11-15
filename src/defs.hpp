@@ -41,12 +41,20 @@ template <class V> using PMap = std::unordered_map<P, V, PHash>;
 struct Rng {
   std::mt19937_64 g;
   explicit Rng(uint64_t seed = 1) : g(seed) {}
-  int range(int lo, int hi) { if (hi <= lo) return lo; return std::uniform_int_distribution<int>(lo, hi)(g); }  // lo..hi
+  // the same numbers from the same seed on every system: the standard distributions differ between compilers
+  int range(int lo, int hi) {  // lo..hi
+    if (hi <= lo) return lo;
+    uint64_t span = uint64_t(int64_t(hi) - lo) + 1, limit = UINT64_MAX - UINT64_MAX % span, v;
+    do v = g(); while (v >= limit);
+    return int(lo + int64_t(v % span));
+  }
   int below(int n) { return n <= 1 ? 0 : range(0, n - 1); }
-  double real() { return std::uniform_real_distribution<double>(0.0, 1.0)(g); }
+  double real() { return double(g() >> 11) * 0x1.0p-53; }
   bool coin() { return real() < .5; }
   template <class T> const T& pick(const std::vector<T>& v) { return v[below(int(v.size()))]; }
-  template <class T> void shuffle(std::vector<T>& v) { std::shuffle(v.begin(), v.end(), g); }
+  template <class T> void shuffle(std::vector<T>& v) {
+    for (int i = int(v.size()) - 1; i > 0; --i) std::swap(v[i], v[range(0, i)]);
+  }
 };
 
 inline int cheb(int ax, int ay, int bx, int by) { return std::max(std::abs(ax - bx), std::abs(ay - by)); }

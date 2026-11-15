@@ -211,6 +211,7 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   bool have = false;
   for (int i = 0; i < 30; ++i) {
     auto p = k5::make(W, H, rnd, ACTS[act].mood, 13);
+    if (p.up == p.down || !p.floor.count(p.down)) continue;  // a level too small to have two ends
     int rooms = 0;
     for (auto& r : p.rooms) if (r.kind != "hall") ++rooms;
     if (p.floor.size() >= 750 && rooms >= 6) { plan = std::move(p); have = true; break; }

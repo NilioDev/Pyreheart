@@ -3,12 +3,13 @@
 #include "k5.hpp"
 
 int main(int argc, char** argv) {
-  int bad = 0, total = 0, rooms = 0, doubles = 0;
+  int bad = 0, total = 0, rooms = 0, doubles = 0, small = 0;
   for (int seed = 0; seed < 30; ++seed) {
     Rng rnd(seed);
     auto p = k5::make(76, 42, rnd, "", 13);
     auto reach = k5::walk(p.floor, p.up);
-    if (reach.size() != p.floor.size() || p.up == p.down || !p.floor.count(p.down) || p.floor.size() < 300) {
+    if (p.floor.size() < 300) { ++small; continue; }  // the game throws it away and makes another
+    if (reach.size() != p.floor.size() || p.up == p.down || !p.floor.count(p.down)) {
       std::printf("seed %d: bad level (%zu of %zu reachable)\n", seed, reach.size(), p.floor.size());
       ++bad;
     }
@@ -16,7 +17,8 @@ int main(int argc, char** argv) {
     doubles += p.doubles;
     for (auto& r : p.rooms) if (r.kind != "hall") ++rooms;
   }
-  std::printf("avg floor %d, rooms %.1f, double walls %d over 30 levels\n", total / 30, rooms / 30.0, doubles);
+  std::printf("avg floor %d, rooms %.1f, double walls %d, too small %d, over 30 levels\n", total / 30, rooms / 30.0, doubles, small);
+  if (small > 5) ++bad;
   if (argc > 1) {
     Rng rnd(std::atoi(argv[1]));
     auto p = k5::make(76, 42, rnd, "", 13);

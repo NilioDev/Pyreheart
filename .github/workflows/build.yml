@@ -14,6 +14,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Keep line ends as they are (libtcod applies patches)
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - name: SDL needs these on Linux
         if: runner.os == 'Linux'
@@ -48,10 +50,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
       - name: NDK and the runner's own CMake
         run: |
-          sdkmanager --install "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
           sudo apt-get install -y ninja-build
           CM=$(dirname "$(dirname "$(command -v cmake)")")
           [ -x "$CM/bin/ninja" ] || sudo ln -sf "$(command -v ninja)" "$CM/bin/ninja"
