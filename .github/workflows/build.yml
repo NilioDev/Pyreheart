@@ -74,3 +74,23 @@ jobs:
         with:
           name: pyreheart-android
           path: dist
+
+  # the newest phone and watch apps as plain downloads, so a phone can fetch them without unzipping
+  latest:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pyreheart-android
+          path: dist
+      - name: Update the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create latest dist/*.apk -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Latest build" --notes "Built from ${GITHUB_SHA::7}. pyreheart-wear.apk is for the watch, pyreheart-phone.apk for a phone."
