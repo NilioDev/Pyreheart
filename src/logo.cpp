@@ -99,7 +99,9 @@ int Client::draw_logo(int y0) {
       int rows = TALL + tails * 2;
       for (int r = 0; r < rows; ++r)
         for (int c = 0; c < gw; ++c) {
-          int sr = r < TALL ? r * 7 / TALL : 7 + (r - TALL) / 2;
+          // top, middle and foot bars two rows thick, so the letters stand heavy
+          static const int ROWS[TALL] = {0, 0, 1, 2, 2, 3, 3, 4, 5, 6, 6};
+          int sr = r < TALL ? ROWS[r] : 7 + (r - TALL) / 2;
           int sc = gw == 8 || c < 4 ? c : c + 1;
           if (g[sr][sc] == '#') {
             int x = x0 + int(i) * (gw + gap) + c, yy = y + r;
