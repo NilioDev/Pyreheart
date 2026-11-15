@@ -29,18 +29,21 @@ const std::vector<std::string>& glyph(char c) {
   }
 }
 
-// the mine, each row centred: = beam, | post, B timber, r R rock, f fire, . cobbles lit by the fire
+// the mine, seen from the front: rock (M) round a timber frame (= lintel, | posts), two smaller frames further in
+// (i, j) to show the depth, the fire far inside (g), darkness (k), and rails (/ \\, t sleepers) running out of it
 const std::vector<std::string> MINE = {
-    "rRRRRRRRRRRRr",
-    "rrR=================Rrr",
-    "rRRBB|BB=========BB|BBRRr",
-    "rRRRBB|B   fffff   B|BBRRRr",
-    "rRRRrBB|B  fffffff  B|BBrRRRr",
-    "rRRrRRBB|B fffffffff B|BBRRrRRr",
-    "rRRRRrRBB|B fffffffff B|BBRrRRRRr",
-    "rRrRRRRRBB|B fffffffff B|BBRRRRRrRr",
-    "rr  ..  BB|B...........B|BB  ..  rr",
-    ".   .   ...........   .   .",
+    "              MMMMMMMMMMMMMMMMM              ",
+    "         MMMMMMMMMMMMMMMMMMMMMMMMMMM         ",
+    "     MMMMMMMM===================MMMMMMMM     ",
+    "   MMMMMMMMMMMM|kkkkkkkkkkkkk|MMMMMMMMMMMM   ",
+    "  MMMMMMMMMMMMM|kkiiiiiiiiikk|MMMMMMMMMMMMM  ",
+    " MMMMMMMMMMMMMM|kkikjjjjjkikk|MMMMMMMMMMMMMM ",
+    " MMMMMMMMMMMMMM|kkikjgggjkikk|MMMMMMMMMMMMMM ",
+    " MMMMMMMMMMMMMM|kkikjgggjkikk|MMMMMMMMMMMMMM ",
+    "MMMMMMMMMMMMMMM|kkikjgggjkikk|MMMMMMMMMMMMMMM",
+    "MMMMMMMMMMMMMMM|kkik/ttt\\kikk|MMMMMMMMMMMMMMM",
+    "MMMMMMMMMMMMMMM|kk/ttttttt\\kk|MMMMMMMMMMMMMMM",
+    " .  .  .  .     /ttttttttttt\\     .  .  .  . ",
 };
 constexpr int TALL = 11;  // the letters are drawn 11 rows high from 7: square cells would make them squat
 
@@ -146,28 +149,32 @@ int Client::draw_logo(int y0) {
       int x = mine_x + c, yy = mine_y + r;
       if (x < 0 || x >= cw || yy >= ch) continue;
       char k = MINE[r][c0];
-      double light = 1 - std::abs(c - mine_w / 2.0) / (mine_w / 2.0);  // the fire lights what is near it
-      double flick = .85 + .15 * std::sin(t * 7 + c);
+      // light from the fire at the back of the tunnel (cell 22, row 7), fading with distance
+      double dist = std::hypot((c - mine_w / 2) * .7, r - 7.0);
+      double flick = .85 + .15 * std::sin(t * 7 + c * .7) * std::sin(t * 3.1);
+      double light = std::clamp(1 - dist / 9.0, 0.0, 1.0) * flick;
       switch (k) {
-        case '=': put(x, yy, 0x2550, lerp(0x5A3C22, 0xC07030, light * .6 * flick), 0x140A04); break;
-        case '|': put(x, yy, 0x2551, lerp(0x5A3C22, 0xD08038, light * .8 * flick), 0x0A0502); break;
-        case 'B': put(x, yy, 0x2588, lerp(0x3A2614, 0x8A5426, light * .7 * flick)); break;
-        case 'r': case 'R': {
-          int base = lerp(k == 'r' ? 0x2A2622 : 0x403A34, 0x58504A, noise(x, yy, 5) * .5);
-          put(x, yy, 0x2588, lerp(base, 0x803810, light * light * .5 * flick));
+        case 'M': {  // rock of the mountain: dark, rougher further from the light
+          int base = lerp(0x24201C, 0x4C4640, noise(x, yy, 5));
+          if (noise(x, yy, 6) < .12) base = lerp(base, 0x000000, .5);
+          put(x, yy, 0x2588, lerp(base, 0x7A3410, light * light * .6));
           break;
         }
-        case 'f': {
-          // hotter low down and in the middle, licking upward
-          double depth = double(r - 3) / 4.0, mid = 1 - std::abs(c - (mine_w - 1) / 2.0) / 5.5;
-          double h = .25 + .45 * depth + .35 * mid + .35 * (noise(c, r, tick) - .5) + .1 * std::sin(t * 9 + c * 1.7 + r);
-          int col = fire_col(h);
+        case '=': put(x, yy, 0x2588, lerp(r == 2 && noise(c, 0, 3) < .5 ? 0x6E4628 : 0x5E3C22, 0xB06A30, light * .5)); break;
+        case '|': put(x, yy, 0x2588, lerp(0x553620, 0xC07838, light * .7)); break;
+        case 'i': put(x, yy, 0x2588, lerp(0x2E1E10, 0xB06428, light * .8)); break;
+        case 'j': put(x, yy, 0x2588, lerp(0x1A1008, 0xA05020, light * .9)); break;
+        case 'k': put(x, yy, ' ', 0, fire_col(light * .38)); break;
+        case 'g': {  // the fire, far in: licking upward, hottest at the foot
+          double h = .45 + .2 * (r - 6) + .3 * (noise(c, r, tick) - .5) + .1 * std::sin(t * 9 + c * 1.7 + r);
           int glyphs[] = {' ', 0x2591, 0x2592, 0x2593};
           int g = glyphs[hash3(c, r, tick / 2) % 4];
-          put(x, yy, g == ' ' ? ' ' : g, fire_col(h + .25), col);
+          put(x, yy, g, fire_col(h + .25), fire_col(h));
           break;
         }
-        case '.': put(x, yy, noise(c, r, 7) < .5 ? 0x00B7 : 0x2219, lerp(0x3A2A20, 0xE07020, light * flick)); break;
+        case '/': case '\\': put(x, yy, k, lerp(0x707078, 0xFFB060, light), fire_col(light * .3)); break;
+        case 't': put(x, yy, 0x2500, lerp(0x3A2414, 0xA05828, light), fire_col(light * .3)); break;
+        case '.': put(x, yy, noise(c, r, 7) < .5 ? 0x00B7 : 0x2219, 0x4A4038); break;
         default: break;
       }
     }
@@ -197,10 +204,11 @@ int Client::draw_logo(int y0) {
     double life = 3 + 3 * noise(i, 0, 9), speed = 2.5 + 3 * noise(i, 1, 9);
     double age = std::fmod(t + life * noise(i, 2, 9), life);
     bool from_fire = i % 3 == 0;
-    double sx = from_fire ? cw / 2.0 - 4 + 8 * noise(i, 3, 9) : (noise(i, 4, 9) < .5 ? cw * .25 : cw * .72) + (noise(i, 3, 9) - .5) * cw * .3;
-    double sy = from_fire ? mine_y + 3 : line_y - 2;
+    double sx = from_fire ? cw / 2.0 - 1.5 + 3 * noise(i, 3, 9) : (noise(i, 4, 9) < .5 ? cw * .25 : cw * .72) + (noise(i, 3, 9) - .5) * cw * .3;
+    double sy = from_fire ? mine_y + 5 : line_y - 2;
     int x = int(sx + std::sin(age * 1.7 + i) * 1.5), yy = int(sy - age * speed);
     if (x < 0 || x >= cw || yy < 0 || yy >= ch || letter[yy * cw + x]) continue;
+    if (from_fire && yy < mine_y + 4) continue;  // the tunnel roof stops them
     double fade = 1 - age / life;
     put(x, yy, fade > .6 ? 0x2219 : fade > .3 ? 0x00B7 : '.', fire_col(.4 + .5 * fade));
   }

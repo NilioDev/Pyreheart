@@ -545,8 +545,8 @@ void Client::frame() {
 
 int Client::menu_top() const {
   if (layout_ == Layout::Watch) return 6;
-  if (layout_ == Layout::Tall) return 46;
-  return 29;
+  if (layout_ == Layout::Tall) return 47;
+  return 30;
 }
 
 void Client::draw_title() {
