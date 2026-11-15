@@ -40,7 +40,7 @@ target_include_directories(pyrecore PUBLIC src)
 target_link_libraries(pyrecore PUBLIC libtcod::libtcod nlohmann_json::nlohmann_json)
 
 # the game itself
-set(GAME_SOURCES src/main.cpp src/client.cpp src/fx.cpp src/net.cpp)
+set(GAME_SOURCES src/main.cpp src/client.cpp src/logo.cpp src/fx.cpp src/net.cpp)
 if(ANDROID)
     add_library(pyreheart SHARED ${GAME_SOURCES})
     set_target_properties(pyreheart PROPERTIES OUTPUT_NAME main)

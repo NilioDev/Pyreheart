@@ -393,7 +393,7 @@ void Client::click(int x, int y, bool down) {
   if (screen_ != Screen::Game) {
     int choice = x == -1000 ? y : -1;
     if (x != -1000) {  // which line was tapped
-      int top = layout_ == Layout::Wide ? 22 : layout_ == Layout::Tall ? 16 : 6;
+      int top = menu_top();
       int step = layout_ == Layout::Watch ? 2 : 2;
       choice = (y - top) / step;
       if ((y - top) < 0) choice = -1;
@@ -543,21 +543,40 @@ void Client::frame() {
   ctx_.present(con_, vp);
 }
 
+int Client::menu_top() const {
+  if (layout_ == Layout::Watch) return 6;
+  if (layout_ == Layout::Tall) return 46;
+  return 29;
+}
+
 void Client::draw_title() {
   int cw = con_.get_width();
-  int top = layout_ == Layout::Wide ? 22 : layout_ == Layout::Tall ? 16 : 6;
+  int top = menu_top();
   auto centre = [&](int y, const std::string& s, int col) {
     int n = 0; for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++n;
     text(std::max(0, (cw - n) / 2), y, s, col);
   };
   if (layout_ != Layout::Watch) {
-    centre(top - 12, "P Y R E H E A R T", 0xFF8C28);
-    centre(top - 10, "a dive under Ashmoor", GREY);
-    if (layout_ == Layout::Wide) {
-      int y = top - 7;
-      for (auto& l : lore::INTRO) { centre(y++, l, 0xB4A078); }
+    draw_logo(layout_ == Layout::Wide ? 2 : 2);
+    if (screen_ == Screen::Title) {
+      int w = std::min(cw - 4, 76), y = top + 11;
+      std::string intro;
+      for (auto& l : lore::INTRO) intro += (intro.empty() ? "" : " ") + l;
+      wrap((cw - w) / 2, y, w, intro, 0x8C7C64);
     }
-  } else centre(2, "PYREHEART", 0xFF8C28);
+  } else {
+    // the watch: the word in fire colours, embers rising behind it
+    double t = now();
+    const std::string word = "PYREHEART";
+    for (int i = 0; i < int(word.size()); ++i) {
+      double f = .5 + .5 * std::sin(t * 2 + i * .7);
+      put(5 + i, 3, word[i], mixc(0xC8B8A8, 0xFF7020, f));
+    }
+    for (int i = 0; i < 6; ++i) {
+      double age = std::fmod(t * (1 + i * .13) + i * .37, 2.0);
+      put(4 + (i * 5) % 11, 3 - int(age * 1.2) + (i % 2), 0x00B7, mixc(0xFFB030, 0x501000, age / 2));
+    }
+  }
   std::vector<std::string> items;
   std::string title;
   if (screen_ == Screen::Title) items = {"Dive alone", "Host a game for friends", "Join a game", "How to play", "Quit"};

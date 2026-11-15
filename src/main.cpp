@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <libtcod.hpp>
 #include <string>
 
@@ -85,8 +86,14 @@ int main(int argc, char** argv) {
         }
       }
       if (at >= script.size() && shot && frames > int(script.size()) * 4 + 20) {
-        ctx.save_screenshot(shot);
-        break;
+        // PYREHEART_SHOTS=n with a %d in the name saves n frames in a row, for an animation
+        const char* many = SDL_getenv("PYREHEART_SHOTS");
+        int n = many ? std::atoi(many) : 1;
+        static int saved = 0;
+        char name[512];
+        std::snprintf(name, sizeof name, shot, saved);
+        ctx.save_screenshot(name);
+        if (++saved >= n) break;
       }
     }
     SDL_Event ev;

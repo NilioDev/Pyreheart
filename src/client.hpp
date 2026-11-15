@@ -75,6 +75,8 @@ class Client {
   std::vector<json> foes() const;
 
   void draw_title();
+  int draw_logo(int y);  // logo.cpp
+  int menu_top() const;
   void draw_game();
   void draw_map();
   void draw_side(int x, int y, int w, int h);
