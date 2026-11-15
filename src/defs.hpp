@@ -1,6 +1,11 @@
 // The shapes of the design tables (filled in data.hpp) and a few small helpers used everywhere.
 #pragma once
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdlib>
+#include <numeric>
+#include <optional>
 #include <cstdint>
 #include <functional>
 #include <map>
