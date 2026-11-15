@@ -1,5 +1,5 @@
 // The title screen's picture: PYREHEART in stone letters that glow from below like coals, a line under them,
-// the mouth of the old Hearthwarden mine with the fire burning inside, a hammer left against it, smoke and embers.
+// the mouth of the old Hearthwarden mine with the fire burning inside, smoke and embers.
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -169,18 +169,6 @@ int Client::draw_logo(int y0) {
         default: break;
       }
     }
-
-  // the hammer, left against the mine: a stone head and a long handle
-  {
-    int hx = mine_x - 3, hy = mine_y + 2;
-    for (int c = 0; c < 8; ++c) {
-      put(hx + c, hy, 0x2584, 0x8C8680);
-      put(hx + c, hy + 1, 0x2588, lerp(0x7A7672, 0x5A5652, noise(c, 1, 3)));
-      put(hx + c, hy + 2, 0x2588, lerp(0x66625E, 0x8A5030, c / 10.0));
-      put(hx + c, hy + 3, 0x2580, 0x4A4642);
-    }
-    for (int i = 0; i < 5; ++i) put(hx + 6 + i, hy + 4 + i, '\\', 0x7A5030);
-  }
 
   // the letters: grey stone above, red-hot below, with cracks, glowing round their edges
   for (auto& c : cells) {
