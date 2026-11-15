@@ -1,0 +1,1049 @@
+#include "client.hpp"
+
+#include <cmath>
+#include <fstream>
+
+#include "data.hpp"
+#include "fx.hpp"
+#include "lore.hpp"
+
+namespace {
+const int WIDE_W = 100, WIDE_H = 50;
+const int GREY = 0xA0A0A0, DIM = 0x606060, WHITE = 0xE8E8E8, GOLD = 0xFFD27F, KEY = 0xFFC860, RED = 0xD04040, BLUE = 0x4070E0;
+const int PANEL = 0x101014;
+
+TCOD_ColorRGB c3(int c) { return {uint8_t((c >> 16) & 255), uint8_t((c >> 8) & 255), uint8_t(c & 255)}; }
+int scale(int c, double f) {
+  auto ch = [&](int v) { return std::clamp(int(v * f), 0, 255); };
+  return (ch((c >> 16) & 255) << 16) | (ch((c >> 8) & 255) << 8) | ch(c & 255);
+}
+int mixc(int a, int b, double f) {
+  auto m = [&](int s) { int x = (a >> s) & 255, y = (b >> s) & 255; return std::clamp(int(x + (y - x) * f), 0, 255) << s; };
+  return m(16) | m(8) | m(0);
+}
+int sgn(int v) { return (v > 0) - (v < 0); }
+
+// key name like [q], drawn as a gold keycap in the help and tips
+const std::vector<std::pair<std::string, std::string>> HELP = {
+    {"", "Pyreheart. Go down sixteen floors under Ashmoor, past the crypt, the caves and the forge, and take back the fire from the Ashen King."},
+    {"", ""},
+    {"[arrows] [numpad]", "walk; walk into a foe to strike it. Diagonals: numpad, or [Home] [PgUp] [End] [PgDn]."},
+    {"[.] [numpad 5]", "wait a moment."},
+    {"[1] [2]", "your two skills. A skill that needs a target lets you aim: [Tab] to the next foe, [Enter] to let go."},
+    {"[f]", "shoot with a bow."},
+    {"[q] [w]", "drink a healing or a mana potion."},
+    {"[i]", "your pack: [Enter] wear or use, [d] put down (anyone may take it), [t] give to the hero next to you."},
+    {"[p]", "choose a perk when you have gone up a level."},
+    {"[>]", "go down the stairs. With friends, the floor changes when all of you stand on the stairs."},
+    {"[l]", "look at what you see."},
+    {"[Esc]", "close a window; the game menu."},
+    {"", ""},
+    {"", "Blue foes are champions, gold ones are uniques: stronger, and they carry better things."},
+    {"", "Every fourth floor a great foe waits by the way down. After it comes a waystation with a fountain and a trader."},
+    {"", "The dead wake again at the next waystation, if their friends get there."},
+    {"", "Things you find are yours alone; what you put down, anyone may take."},
+};
+}  // namespace
+
+Client::Client(tcod::Context& ctx) : ctx_(ctx), con_(WIDE_W, WIDE_H) {
+  load_settings();
+  pick_layout();
+}
+
+double Client::now() const {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void Client::pick_layout() {
+  int pw = 0, ph = 0;
+  SDL_GetWindowSizeInPixels(ctx_.get_sdl_window(), &pw, &ph);
+  if (pw <= 0 || ph <= 0) { pw = 800; ph = 500; }
+  const char* force = SDL_getenv("PYREHEART_LAYOUT");
+  std::string f = force ? force : "";
+  if (f == "watch" || (f.empty() && std::min(pw, ph) < 700 && std::abs(pw - ph) < 80)) {
+    layout_ = Layout::Watch;
+    con_ = tcod::Console(19, 19);
+  } else if (f == "tall" || (f.empty() && ph > pw)) {
+    layout_ = Layout::Tall;
+    int cols = 40;
+    int rows = std::max(30, ph * cols / std::max(1, pw));
+    con_ = tcod::Console(cols, rows);
+  } else {
+    layout_ = Layout::Wide;
+    con_ = tcod::Console(WIDE_W, WIDE_H);
+  }
+}
+
+static std::string pref_file() {
+  char* p = SDL_GetPrefPath("NilioDev", "Pyreheart");
+  std::string s = p ? std::string(p) + "settings.txt" : "settings.txt";
+  SDL_free(p);
+  return s;
+}
+void Client::load_settings() {
+  std::ifstream f(pref_file());
+  std::string line;
+  while (std::getline(f, line)) {
+    if (line.rfind("name=", 0) == 0) name_ = line.substr(5);
+    if (line.rfind("addr=", 0) == 0) addr_ = line.substr(5);
+    if (line.rfind("class=", 0) == 0) cls_ = std::clamp(std::atoi(line.c_str() + 6), 0, 2);
+  }
+}
+void Client::save_settings() {
+  std::ofstream f(pref_file());
+  f << "name=" << name_ << "\naddr=" << addr_ << "\nclass=" << cls_ << "\n";
+}
+
+// ------------------------------------------------------------------ the link
+void Client::start(bool host, bool open) {
+  hosting_ = host;
+  open_ = open;
+  host_ = std::make_unique<Host>(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()), open);
+  link_ = host_->local();
+  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}}}});
+  screen_ = Screen::Game;
+  maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
+  if (open) {
+    std::string a = host_->address();
+    log_.push_back({"Your friends can join you at " + (a.empty() ? std::string("this computer's address") : a) + ", port 7777.", GOLD});
+    log_.push_back({"Over the internet, port 7777 (TCP and UDP) must be opened to this computer on the router.", GREY});
+  }
+}
+
+void Client::join(const std::string& address) {
+  std::string host = address;
+  int port = PORT;
+  auto c = host.rfind(':');
+  if (c != std::string::npos && host.find(':') == c) { port = std::atoi(host.c_str() + c + 1); host = host.substr(0, c); }
+  std::string err;
+  link_ = connect_to(host, port, err);
+  if (!link_) { message_ = err; screen_ = Screen::Title; return; }
+  hosting_ = false;
+  host_.reset();
+  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}}}});
+  screen_ = Screen::Game;
+  maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
+}
+
+void Client::poll() {
+  if (!link_) return;
+  while (auto m = link_->poll()) {
+    if (m->contains("welcome")) pid_ = (*m)["welcome"];
+    else if (m->contains("snap")) apply((*m)["snap"]);
+    else if (m->contains("ready")) ready_ = (*m)["ready"].get<std::vector<int>>();
+    else if (m->contains("error")) { message_ = (*m)["error"]; link_.reset(); host_.reset(); screen_ = Screen::Title; return; }
+  }
+  if (link_ && link_->closed() && screen_ == Screen::Game) {
+    message_ = "The host has gone.";
+    link_.reset(); host_.reset();
+    screen_ = Screen::Title;
+  }
+}
+
+void Client::apply(const json& s) {
+  int fl = s["floor"];
+  if (s.contains("map")) maps_[fl] = s["map"];
+  auto& seen = seen_[fl];
+  if (seen.empty()) seen.assign(W * H, 0);
+  const std::string& vis = s["vis"].get_ref<const std::string&>();
+  for (int i = 0; i < W * H; ++i) if (vis[i] == '1') seen[i] = 1;
+  for (auto& l : s["log"]) log_.push_back({l[0], l[1]});
+  while (log_.size() > 300) log_.pop_front();
+  double t = now();
+  for (auto& f : s["fx"]) fx_.push_back({f, t});
+  if (s["turn"].get<int>() != sent_turn_) { waiting_ = false; ready_.clear(); }
+  bool was_shopping = snap_.is_object() && snap_["me"].value("shopping", false);
+  snap_ = s;
+  bool shopping = s["me"].value("shopping", false);
+  if (shopping && !was_shopping) { over_ = Over::Shop; sel_ = 0; }
+  if (!shopping && over_ == Over::Shop) over_ = Over::None;
+  if (s["me"].value("dead", false) && over_ == Over::Target) over_ = Over::None;
+  if (layout_ == Layout::Watch && !s["fx"].empty()) {
+    for (auto& f : s["fx"])  // a short buzz when you are hurt
+      if (f.value("k", "") == "blood" && f.value("x", -1) == s["me"].value("x", 0) && f.value("y", -1) == s["me"].value("y", 0)) {
+        // vibration is asked of the system by the Android side; desktop has none
+        SDL_Event e{};
+        e.type = SDL_EVENT_USER;
+        SDL_PushEvent(&e);
+        break;
+      }
+  }
+}
+
+void Client::send(const json& a) {
+  if (!link_ || !snap_.is_object()) return;
+  std::string t = a.value("t", "");
+  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close";
+  if (!free) {
+    if (waiting_) return;
+    waiting_ = true;
+    sent_turn_ = snap_["turn"];
+  }
+  link_->send({{"act", a}});
+}
+
+std::vector<json> Client::foes() const {
+  std::vector<json> out;
+  if (!snap_.is_object()) return out;
+  int x = snap_["me"]["x"], y = snap_["me"]["y"];
+  for (auto& e : snap_["ents"]) if (e.value("rank", "") != "npc") out.push_back(e);
+  std::sort(out.begin(), out.end(), [&](const json& a, const json& b) {
+    return cheb(a["x"], a["y"], x, y) < cheb(b["x"], b["y"], x, y);
+  });
+  return out;
+}
+
+void Client::begin_aim(const std::string& what) {
+  auto fs = foes();
+  if (what != "look" && fs.empty()) { log_.push_back({"Nothing to aim at.", GREY}); return; }
+  aim_ = what;
+  over_ = Over::Target;
+  if (!fs.empty()) { tx_ = fs[0]["x"]; ty_ = fs[0]["y"]; }
+  else { tx_ = snap_["me"]["x"]; ty_ = snap_["me"]["y"]; }
+}
+
+void Client::cycle_target(int dir) {
+  auto fs = foes();
+  if (fs.empty()) return;
+  int i = 0;
+  for (size_t k = 0; k < fs.size(); ++k) if (fs[k]["x"] == tx_ && fs[k]["y"] == ty_) i = int(k);
+  i = (i + dir + int(fs.size())) % int(fs.size());
+  tx_ = fs[i]["x"]; ty_ = fs[i]["y"];
+}
+
+// One action by name: the same for a key, a button on the phone and the ring on the watch.
+void Client::act(const std::string& what) {
+  if (!snap_.is_object()) return;
+  auto& me = snap_["me"];
+  if (what == "wait") send({{"t", "wait"}});
+  else if (what == "heal") send({{"t", "quaff"}, {"k", "heal"}});
+  else if (what == "mana") send({{"t", "quaff"}, {"k", "mana"}});
+  else if (what == "down") send({{"t", "down"}});
+  else if (what == "pack") { over_ = Over::Pack; sel_ = 0; }
+  else if (what == "perk") { if (!me["choice"].is_null()) { over_ = Over::Perk; sel_ = 0; } else log_.push_back({"No perk to choose now.", GREY}); }
+  else if (what == "help") over_ = Over::Help;
+  else if (what == "look") begin_aim("look");
+  else if (what == "shoot") { if (me.value("bow", false)) begin_aim("shoot"); else log_.push_back({"You have no bow.", GREY}); }
+  else if (what == "skill1" || what == "skill2") {
+    int n = what == "skill1" ? 1 : 2;
+    auto& sk = me["skills"][n - 1];
+    if (me["mana"].get<int>() < sk[1].get<int>()) { log_.push_back({"Not enough mana for " + sk[0].get<std::string>() + ".", 0x7090FF}); return; }
+    if (sk[2].get<bool>()) begin_aim(what);
+    else send({{"t", "skill"}, {"n", n}});
+  } else if (what == "menu") over_ = Over::Menu;
+}
+
+// ------------------------------------------------------------------ input
+void Client::event(SDL_Event& ev) {
+  if (ev.type == SDL_EVENT_QUIT) { running = false; return; }
+  if (ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) { pick_layout(); return; }
+  if (ev.type == SDL_EVENT_KEY_DOWN) { key(ev.key.key, ev.key.mod); return; }
+  if (ev.type == SDL_EVENT_TEXT_INPUT) {
+    std::string t = ev.text.text;
+    if (screen_ == Screen::Name && name_.size() < 16) name_ += t;
+    if (screen_ == Screen::Join && addr_.size() < 60) addr_ += t;
+    return;
+  }
+  if (ev.type == SDL_EVENT_MOUSE_WHEEL) {  // the watch crown, or a mouse wheel
+    int d = ev.wheel.y > 0 ? -1 : ev.wheel.y < 0 ? 1 : 0;
+    if (!d) return;
+    if (over_ == Over::Ring) ring_ = (ring_ + d + 9) % 9;
+    else if (over_ == Over::Target) cycle_target(d);
+    else if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk) sel_ = std::max(0, sel_ + d);
+    else if (screen_ != Screen::Game) menu_ = std::max(0, menu_ + d);
+    else if (layout_ == Layout::Watch) { over_ = Over::Ring; ring_ = 0; }
+    return;
+  }
+  if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+    SDL_Event e = ev;
+    ctx_.convert_event_coordinates(e);
+    click(int(e.button.x), int(e.button.y), ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+    return;
+  }
+  if (ev.type == SDL_EVENT_MOUSE_MOTION && held_) {
+    SDL_Event e = ev;
+    ctx_.convert_event_coordinates(e);
+    hold_x_ = int(e.motion.x); hold_y_ = int(e.motion.y);
+  }
+}
+
+void Client::key(SDL_Keycode k, SDL_Keymod mod) {
+  if (k == SDLK_AC_BACK) k = SDLK_ESCAPE;  // the back button or swipe on a phone or watch
+  bool shift = mod & SDL_KMOD_SHIFT;
+  if (screen_ == Screen::Name || screen_ == Screen::Join) {
+    std::string& s = screen_ == Screen::Name ? name_ : addr_;
+    if (k == SDLK_BACKSPACE && !s.empty()) s.pop_back();
+    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+      SDL_StopTextInput(ctx_.get_sdl_window());
+      if (screen_ == Screen::Name) { if (name_.empty()) name_ = "Hero"; screen_ = Screen::Class; }
+      else { save_settings(); join(addr_); }
+    } else if (k == SDLK_ESCAPE) { SDL_StopTextInput(ctx_.get_sdl_window()); screen_ = Screen::Title; }
+    return;
+  }
+  if (screen_ == Screen::Title || screen_ == Screen::Class || screen_ == Screen::Finding) {
+    int n = screen_ == Screen::Title ? 5 : screen_ == Screen::Class ? 3 : int(found_.size()) + 1;
+    if (k == SDLK_UP || k == SDLK_KP_8) menu_ = (menu_ + n - 1) % n;
+    else if (k == SDLK_DOWN || k == SDLK_KP_2) menu_ = (menu_ + 1) % n;
+    else if (k == SDLK_ESCAPE) { if (screen_ == Screen::Title) running = false; else { screen_ = Screen::Title; menu_ = 0; } }
+    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) click(-1000, menu_, true);
+    return;
+  }
+  if (!snap_.is_object()) { if (k == SDLK_ESCAPE) over_ = Over::Menu; return; }
+  std::string state = snap_.value("state", "play");
+  if (state != "play") {
+    if (k == SDLK_RETURN || k == SDLK_ESCAPE || k == SDLK_KP_ENTER) { link_.reset(); host_.reset(); screen_ = Screen::Title; menu_ = 0; snap_ = json(); }
+    return;
+  }
+  auto& me = snap_["me"];
+  int dx = 0, dy = 0;
+  switch (k) {
+    case SDLK_UP: case SDLK_KP_8: dy = -1; break;
+    case SDLK_DOWN: case SDLK_KP_2: dy = 1; break;
+    case SDLK_LEFT: case SDLK_KP_4: dx = -1; break;
+    case SDLK_RIGHT: case SDLK_KP_6: dx = 1; break;
+    case SDLK_HOME: case SDLK_KP_7: dx = -1; dy = -1; break;
+    case SDLK_PAGEUP: case SDLK_KP_9: dx = 1; dy = -1; break;
+    case SDLK_END: case SDLK_KP_1: dx = -1; dy = 1; break;
+    case SDLK_PAGEDOWN: case SDLK_KP_3: dx = 1; dy = 1; break;
+    default: break;
+  }
+  bool enter = k == SDLK_RETURN || k == SDLK_KP_ENTER;
+  switch (over_) {
+    case Over::Help:
+      over_ = Over::None;
+      return;
+    case Over::Menu:
+      if (k == SDLK_ESCAPE) over_ = Over::None;
+      else if (k == SDLK_Q || enter) { link_.reset(); host_.reset(); screen_ = Screen::Title; over_ = Over::None; menu_ = 0; snap_ = json(); }
+      return;
+    case Over::Target: {
+      if (k == SDLK_ESCAPE) { over_ = Over::None; return; }
+      if (k == SDLK_TAB) { cycle_target(shift ? -1 : 1); return; }
+      if (dx || dy) { tx_ = std::clamp(tx_ + dx, 0, W - 1); ty_ = std::clamp(ty_ + dy, 0, H - 1); return; }
+      bool fire = enter || k == SDLK_F || (aim_ == "skill1" && k == SDLK_1) || (aim_ == "skill2" && k == SDLK_2);
+      if (fire && aim_ != "look") {
+        over_ = Over::None;
+        if (aim_ == "shoot") send({{"t", "shoot"}, {"x", tx_}, {"y", ty_}});
+        else send({{"t", "skill"}, {"n", aim_ == "skill1" ? 1 : 2}, {"x", tx_}, {"y", ty_}});
+      } else if (enter || k == SDLK_L) over_ = Over::None;
+      return;
+    }
+    case Over::Perk: {
+      auto& ch = me["choice"];
+      if (ch.is_null()) { over_ = Over::None; return; }
+      int n = int(ch.size());
+      if (k == SDLK_ESCAPE) over_ = Over::None;
+      else if (dy) sel_ = (sel_ + dy + n) % n;
+      else if (k >= SDLK_1 && k < SDLK_1 + n) { send({{"t", "perk"}, {"k", ch[k - SDLK_1][0]}}); over_ = Over::None; }
+      else if (enter) { send({{"t", "perk"}, {"k", ch[std::clamp(sel_, 0, n - 1)][0]}}); over_ = Over::None; }
+      return;
+    }
+    case Over::Pack: case Over::Shop: {
+      auto& pack = me["pack"];
+      int np = int(pack.size());
+      int ns = over_ == Over::Shop && snap_.contains("shop") ? int(snap_["shop"]["items"].size()) : 0;
+      int n = np + ns;
+      if (k == SDLK_ESCAPE || k == SDLK_I) { if (over_ == Over::Shop) send({{"t", "close"}}); over_ = Over::None; return; }
+      if (dy && n) { sel_ = (sel_ + dy + n) % n; return; }
+      if (over_ == Over::Shop && k == SDLK_H) { send({{"t", "buyp"}, {"k", "heal"}}); return; }
+      if (over_ == Over::Shop && k == SDLK_M) { send({{"t", "buyp"}, {"k", "mana"}}); return; }
+      if (!n) return;
+      sel_ = std::clamp(sel_, 0, n - 1);
+      if (sel_ < ns) { if (enter) send({{"t", "buy"}, {"i", sel_}}); return; }
+      auto& it = pack[sel_ - ns];
+      if (over_ == Over::Shop && (k == SDLK_S || enter)) { send({{"t", "sell"}, {"id", it["id"]}}); return; }
+      if (enter) send({{"t", "equip"}, {"id", it["id"]}});
+      else if (k == SDLK_D) send({{"t", "drop"}, {"id", it["id"]}});
+      else if (k == SDLK_T) send({{"t", "give"}, {"id", it["id"]}});
+      return;
+    }
+    case Over::Ring:
+      if (k == SDLK_ESCAPE) over_ = Over::None;
+      return;
+    case Over::None: break;
+  }
+  if (k == SDLK_ESCAPE) { over_ = Over::Menu; return; }
+  if (me.value("dead", false) || me.value("gone", false)) return;
+  if (dx || dy) { send({{"t", "move"}, {"dx", dx}, {"dy", dy}}); return; }
+  if ((k == SDLK_PERIOD && shift) || k == SDLK_GREATER) { act("down"); return; }
+  if ((k == SDLK_SLASH && shift) || k == SDLK_QUESTION || k == SDLK_F1) { act("help"); return; }
+  switch (k) {
+    case SDLK_PERIOD: case SDLK_KP_5: case SDLK_SPACE: case SDLK_KP_PERIOD: act("wait"); break;
+    case SDLK_1: act("skill1"); break;
+    case SDLK_2: act("skill2"); break;
+    case SDLK_F: act("shoot"); break;
+    case SDLK_Q: act("heal"); break;
+    case SDLK_W: act("mana"); break;
+    case SDLK_I: act("pack"); break;
+    case SDLK_P: act("perk"); break;
+    case SDLK_L: act("look"); break;
+    case SDLK_RETURN: case SDLK_KP_ENTER: {
+      int t = maps_.count(snap_["floor"]) ? maps_[snap_["floor"]][me["y"].get<int>() * W + me["x"].get<int>()] - '0' : -1;
+      if (t == data::STAIRS) act("down");
+      break;
+    }
+    default: break;
+  }
+}
+
+// A tap or a click. x == -1000 means "the menu line y was chosen" (keyboard on the menus).
+void Client::click(int x, int y, bool down) {
+  if (!down) { held_ = false; return; }
+  if (screen_ != Screen::Game) {
+    int choice = x == -1000 ? y : -1;
+    if (x != -1000) {  // which line was tapped
+      int top = layout_ == Layout::Wide ? 22 : layout_ == Layout::Tall ? 16 : 6;
+      int step = layout_ == Layout::Watch ? 2 : 2;
+      choice = (y - top) / step;
+      if ((y - top) < 0) choice = -1;
+    }
+    if (screen_ == Screen::Title) {
+      if (choice < 0 || choice > 4) return;
+      menu_ = choice;
+      message_.clear();
+      if (choice == 0 || choice == 1) { hosting_ = choice == 1; screen_ = Screen::Name; SDL_StartTextInput(ctx_.get_sdl_window()); }
+      else if (choice == 2) { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
+      else if (choice == 3) over_ = Over::Help, screen_ = Screen::Title;
+      else running = false;
+    } else if (screen_ == Screen::Class) {
+      if (choice < 0 || choice > 2) return;
+      cls_ = choice;
+      save_settings();
+      if (pending_join_) { pending_join_ = false; join(addr_); }
+      else start(true, hosting_);
+      over_ = Over::None;
+    } else if (screen_ == Screen::Finding) {
+      if (choice < 0 || choice > int(found_.size())) return;
+      if (choice < int(found_.size())) {
+        addr_ = found_[choice].substr(found_[choice].find('|') + 1);
+        pending_join_ = true;
+        screen_ = Screen::Name;
+        SDL_StartTextInput(ctx_.get_sdl_window());
+      } else { pending_join_ = true; screen_ = Screen::Join; SDL_StartTextInput(ctx_.get_sdl_window()); }
+      menu_ = 0;
+    } else if (screen_ == Screen::Name) {
+      SDL_StartTextInput(ctx_.get_sdl_window());
+    }
+    return;
+  }
+  if (!snap_.is_object()) return;
+  if (snap_.value("state", "play") != "play") { link_.reset(); host_.reset(); screen_ = Screen::Title; menu_ = 0; snap_ = json(); return; }
+  for (auto& b : buttons_)
+    if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
+      if (b.action.rfind("sel:", 0) == 0) { sel_ = std::atoi(b.action.c_str() + 4); key(SDLK_RETURN, SDL_KMOD_NONE); }
+      else if (b.action.rfind("key:", 0) == 0) key(SDL_Keycode(std::atoi(b.action.c_str() + 4)), SDL_KMOD_NONE);
+      else if (b.action == "close") key(SDLK_ESCAPE, SDL_KMOD_NONE);
+      else { over_ = Over::None; act(b.action); }
+      return;
+    }
+  if (over_ == Over::Help || over_ == Over::Menu) { over_ = Over::None; return; }
+  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk) return;
+  // a tap on the map
+  int mx = x - vx_ + camx_, my = y - vy_ + camy_;
+  if (x < vx_ || y < vy_ || x >= vx_ + vw_ || y >= vy_ + vh_) return;
+  auto& me = snap_["me"];
+  int hx = me["x"], hy = me["y"];
+  if (over_ == Over::Target) {
+    if (mx == tx_ && my == ty_) key(SDLK_RETURN, SDL_KMOD_NONE);
+    else { tx_ = mx; ty_ = my; }
+    return;
+  }
+  if (over_ == Over::Ring) { over_ = Over::None; return; }
+  if (mx == hx && my == hy) {
+    if (layout_ == Layout::Watch) { over_ = Over::Ring; ring_ = 0; }
+    else act("wait");
+    return;
+  }
+  if (layout_ == Layout::Watch) {  // eight slices of the dial round the hero
+    double ang = std::atan2(double(my - hy), double(mx - hx));
+    int s = int(std::lround(ang / (M_PI / 4))) & 7;
+    static const int D[8][2] = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
+    send({{"t", "move"}, {"dx", D[s][0]}, {"dy", D[s][1]}});
+  } else {
+    send({{"t", "move"}, {"dx", sgn(mx - hx)}, {"dy", sgn(my - hy)}});
+  }
+  held_ = true;
+  held_since_ = last_step_ = now();
+  hold_x_ = x; hold_y_ = y;
+}
+
+// ------------------------------------------------------------------ drawing helpers
+void Client::put(int x, int y, int ch, int fg, int bg) {
+  if (!con_.in_bounds({x, y})) return;
+  auto& t = con_.at({x, y});
+  t.ch = ch;
+  t.fg = {uint8_t((fg >> 16) & 255), uint8_t((fg >> 8) & 255), uint8_t(fg & 255), 255};
+  if (bg >= 0) t.bg = {uint8_t((bg >> 16) & 255), uint8_t((bg >> 8) & 255), uint8_t(bg & 255), 255};
+}
+void Client::text(int x, int y, const std::string& s, int fg, int bg) {
+  if (y < 0 || y >= con_.get_height()) return;
+  tcod::print(con_, {x, y}, s, c3(fg), bg >= 0 ? std::optional<TCOD_ColorRGB>(c3(bg)) : std::nullopt);
+}
+// Text with [keys] drawn as gold keycaps, wrapped to w. Returns the lines used.
+int Client::wrap(int x, int y, int w, const std::string& s, int fg, int max_lines) {
+  std::vector<std::string> words;
+  std::string cur;
+  for (char c : s) { if (c == ' ') { words.push_back(cur); cur.clear(); } else cur += c; }
+  words.push_back(cur);
+  int line = 0, col = 0;
+  auto len = [](const std::string& w2) { int n = 0; for (unsigned char c : w2) if ((c & 0xC0) != 0x80) ++n; return n; };
+  for (auto& wd : words) {
+    int l = len(wd);
+    if (col > 0 && col + 1 + l > w) { ++line; col = 0; if (line >= max_lines) return line; }
+    if (col > 0) ++col;
+    bool k = !wd.empty() && wd[0] == '[';
+    text(x + col, y + line, wd, k ? KEY : fg);
+    col += l;
+  }
+  return line + 1;
+}
+void Client::box(int x, int y, int w, int h, const std::string& title) {
+  for (int j = y; j < y + h; ++j) for (int i = x; i < x + w; ++i) put(i, j, ' ', WHITE, PANEL);
+  for (int i = x; i < x + w; ++i) { put(i, y, 0x2500, DIM, PANEL); put(i, y + h - 1, 0x2500, DIM, PANEL); }
+  for (int j = y; j < y + h; ++j) { put(x, j, 0x2502, DIM, PANEL); put(x + w - 1, j, 0x2502, DIM, PANEL); }
+  put(x, y, 0x250C, DIM, PANEL); put(x + w - 1, y, 0x2510, DIM, PANEL);
+  put(x, y + h - 1, 0x2514, DIM, PANEL); put(x + w - 1, y + h - 1, 0x2518, DIM, PANEL);
+  if (!title.empty()) text(x + 2, y, " " + title + " ", GOLD, PANEL);
+}
+void Client::bar(int x, int y, int w, int val, int max, int col, const std::string& label) {
+  int fill = max > 0 ? std::clamp(val * w / max, 0, w) : 0;
+  for (int i = 0; i < w; ++i) put(x + i, y, ' ', WHITE, i < fill ? scale(col, .55) : scale(col, .15));
+  text(x + 1, y, label, WHITE);
+}
+bool Client::in_circle(int x, int y) const {
+  double c = (con_.get_width() - 1) / 2.0, r = con_.get_width() / 2.0;
+  return (x - c) * (x - c) + (y - c) * (y - c) <= r * r;
+}
+
+// ------------------------------------------------------------------ the frame
+void Client::frame() {
+  poll();
+  if (held_ && screen_ == Screen::Game && over_ == Over::None && snap_.is_object()) {
+    // holding a finger down keeps walking, until a foe comes into sight
+    double t = now();
+    if (t - held_since_ > .35 && t - last_step_ > .14 && !waiting_) {
+      bool foe = false;
+      for (auto& e : snap_["ents"]) if (e.value("rank", "") != "npc") foe = true;
+      if (foe) held_ = false;
+      else { last_step_ = t; click(hold_x_, hold_y_, true); held_since_ = t - 1; }
+    }
+  }
+  con_.clear({0x20, {200, 200, 200, 255}, {0, 0, 0, 255}});
+  buttons_.clear();
+  if (screen_ == Screen::Game) draw_game();
+  else draw_title();
+  if (over_ == Over::Help) draw_help();
+  TCOD_ViewportOptions vp{};
+  vp.tcod_version = TCOD_COMPILEDVERSION;
+  vp.keep_aspect = true;
+  vp.integer_scaling = layout_ == Layout::Wide;
+  vp.clear_color = {0, 0, 0, 255};
+  vp.align_x = .5f; vp.align_y = .5f;
+  ctx_.present(con_, vp);
+}
+
+void Client::draw_title() {
+  int cw = con_.get_width();
+  int top = layout_ == Layout::Wide ? 22 : layout_ == Layout::Tall ? 16 : 6;
+  auto centre = [&](int y, const std::string& s, int col) {
+    int n = 0; for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++n;
+    text(std::max(0, (cw - n) / 2), y, s, col);
+  };
+  if (layout_ != Layout::Watch) {
+    centre(top - 12, "P Y R E H E A R T", 0xFF8C28);
+    centre(top - 10, "a dive under Ashmoor", GREY);
+    if (layout_ == Layout::Wide) {
+      int y = top - 7;
+      for (auto& l : lore::INTRO) { centre(y++, l, 0xB4A078); }
+    }
+  } else centre(2, "PYREHEART", 0xFF8C28);
+  std::vector<std::string> items;
+  std::string title;
+  if (screen_ == Screen::Title) items = {"Dive alone", "Host a game for friends", "Join a game", "How to play", "Quit"};
+  else if (screen_ == Screen::Class) {
+    title = "Who are you, " + name_ + "?";
+    for (auto& c : data::CLASSES) items.push_back(c.name);
+  } else if (screen_ == Screen::Finding) {
+    title = found_.empty() ? "No game found on this network." : "Games on this network:";
+    for (auto& f : found_) items.push_back(f.substr(0, f.find('|')) + "  " + f.substr(f.find('|') + 1));
+    items.push_back("Type an address...");
+  } else if (screen_ == Screen::Name) {
+    title = "Your name:";
+    centre(top, name_ + "_", WHITE);
+    centre(top + 2, "[Enter]", KEY);
+  } else if (screen_ == Screen::Join) {
+    title = "Address of the host (as they see it on their screen):";
+    centre(top, addr_ + "_", WHITE);
+    centre(top + 2, "[Enter]", KEY);
+  }
+  if (!title.empty()) centre(top - 2, title, GOLD);
+  for (size_t i = 0; i < items.size(); ++i) {
+    bool on = int(i) == menu_;
+    centre(top + int(i) * 2, (on ? "> " : "  ") + items[i] + (on ? " <" : "  "), on ? WHITE : GREY);
+  }
+  if (screen_ == Screen::Class && layout_ != Layout::Watch) {
+    auto& c = data::CLASSES[std::clamp(menu_, 0, 2)];
+    int w = std::min(cw - 4, 60);
+    wrap((cw - w) / 2, top + 7, w, c.about, 0xB4A078);
+  }
+  if (!message_.empty()) centre(con_.get_height() - 3, message_, 0xFF8080);
+}
+
+void Client::draw_game() {
+  if (!snap_.is_object()) {
+    text(2, 2, "Waiting for the host...", GREY);
+    return;
+  }
+  int cw = con_.get_width(), chh = con_.get_height();
+  if (layout_ == Layout::Wide) {
+    vx_ = 0; vy_ = 0; vw_ = W; vh_ = H;
+    draw_map();
+    draw_side(W, 0, cw - W, chh);
+    draw_log(0, H, W, chh - H);
+  } else if (layout_ == Layout::Tall) {
+    vx_ = 0; vy_ = 2; vw_ = cw; vh_ = chh - 2 - 5 - 6;
+    draw_status_tall(0);
+    draw_map();
+    draw_log(0, vy_ + vh_, cw, 5);
+    draw_buttons();
+  } else {
+    vx_ = 0; vy_ = 0; vw_ = cw; vh_ = chh;
+    draw_map();
+    auto& me = snap_["me"];
+    // life and mana as short bars along the top of the dial, the newest line along the bottom
+    int hp = me["hp"], mhp = me["maxhp"], mn = me["mana"], mmn = me["maxmana"];
+    for (int i = 0; i < 7 && over_ != Over::Ring; ++i) {
+      put(2 + i + 4, 1, i < hp * 7 / std::max(1, mhp) ? 0x2588 : 0x2591, RED);
+      put(2 + i + 4, 2, i < mn * 7 / std::max(1, mmn) ? 0x2588 : 0x2591, BLUE);
+    }
+    if (!log_.empty() && over_ != Over::Ring) {
+      // the newest line slides past, like a ticker, in the part of the dial that is wide enough
+      std::string l = log_.back().first;
+      const int span = 11;
+      if (int(l.size()) > span) {
+        std::string loop = l + "   ";
+        int off = int(now() * 6) % int(loop.size());
+        loop += loop;
+        l = loop.substr(off, span);
+      }
+      text((cw - int(l.size())) / 2, chh - 3, l, log_.back().second);
+    }
+    for (int y = 0; y < chh; ++y) for (int x = 0; x < cw; ++x) if (!in_circle(x, y)) put(x, y, ' ', 0, 0);
+  }
+  if (snap_.contains("boss") && layout_ != Layout::Watch) {
+    auto& b = snap_["boss"];
+    int w = std::min(40, vw_ - 4);
+    bar(vx_ + (vw_ - w) / 2, vy_, w, b["hp"], b["max"], 0xC03030, b["name"].get<std::string>());
+  }
+  auto& me = snap_["me"];
+  if (over_ == Over::None && !me["choice"].is_null() && layout_ != Layout::Watch) text(vx_ + 1, vy_ + vh_ - 1, "[p] a new perk", KEY);
+  if (waiting_ && snap_["heroes"].size() > 1) text(vx_ + 1, vy_ + (snap_.contains("boss") ? 1 : 0), "waiting for the others...", GREY);
+  switch (over_) {
+    case Over::Pack: draw_pack(); break;
+    case Over::Shop: draw_shop(); break;
+    case Over::Perk: draw_perk(); break;
+    case Over::Menu: draw_menu(); break;
+    case Over::Ring: draw_ring(); break;
+    default: break;
+  }
+  if (snap_.value("state", "play") != "play") draw_end();
+}
+
+void Client::draw_map() {
+  auto& s = snap_;
+  int fl = s["floor"];
+  const std::string& map = maps_[fl];
+  if (map.size() != size_t(W * H)) return;
+  auto& seen = seen_[fl];
+  const std::string& vis = s["vis"].get_ref<const std::string&>();
+  auto& act = data::ACTS[s["act"].get<int>()];
+  int hx = s["me"]["x"], hy = s["me"]["y"];
+  camx_ = std::clamp(hx - vw_ / 2, 0, std::max(0, W - vw_));
+  camy_ = std::clamp(hy - vh_ / 2, 0, std::max(0, H - vh_));
+  if (vw_ >= W) camx_ = -(vw_ - W) / 2;
+  if (vh_ >= H) camy_ = -(vh_ - H) / 2;
+  auto sx = [&](int x) { return x - camx_ + vx_; };
+  auto sy = [&](int y) { return y - camy_ + vy_; };
+  for (int y = 0; y < H; ++y)
+    for (int x = 0; x < W; ++x) {
+      int X = sx(x), Y = sy(y);
+      if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
+      int i = y * W + x;
+      if (!seen[i]) continue;
+      int t = map[i] - '0';
+      auto& td = data::TILES[t];
+      int col = td.col >= 0 ? td.col : t == data::WALL ? act.wall : act.floor;
+      int ch = td.ch;
+      if (t == data::WALL) ch = 0x2593 - 0;  // ▓ the rock
+      bool lit = vis[i] == '1';
+      int fg = lit ? col : mixc(scale(col, .35), 0x202430, .3);
+      int bg = 0;
+      if (t == data::WALL) { ch = '#'; bg = lit ? scale(col, .25) : 0x0A0A0E; }
+      put(X, Y, ch, fg, bg);
+    }
+  for (auto& w : s["writ"]) { int i = w; put(sx(i % W), sy(i / W), '?', 0xE6D2A0); }
+  for (auto& it : s["items"]) {
+    std::string ch = it["ch"];
+    put(sx(it["x"]), sy(it["y"]), (unsigned char)ch[0], it["col"]);
+  }
+  for (auto& e : s["ents"]) {
+    int col = e["col"];
+    if (e.value("frozen", false)) col = 0x9CD2FF;
+    put(sx(e["x"]), sy(e["y"]), e["ch"].get<int>(), col);
+  }
+  for (auto& h : s["heroes"]) {
+    if (h.value("gone", false)) continue;
+    bool dead = h.value("dead", false);
+    put(sx(h["x"]), sy(h["y"]), dead ? '%' : '@', dead ? 0x803030 : h["col"].get<int>());
+  }
+  // effects
+  double t = now();
+  fx_.erase(std::remove_if(fx_.begin(), fx_.end(), [&](const Fx& f) { return t - f.start > fx::life(f.kw); }), fx_.end());
+  for (auto& f : fx_)
+    for (auto& c : fx::cells(f.kw, t - f.start)) {
+      int X = sx(c.x), Y = sy(c.y);
+      if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
+      if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H || !seen[c.y * W + c.x] || (map[c.y * W + c.x] - '0') == data::WALL) continue;
+      put(X, Y, c.ch, (c.col.r << 16) | (c.col.g << 8) | c.col.b);
+    }
+  if (over_ == Over::Target) {
+    int X = sx(tx_), Y = sy(ty_);
+    if (con_.in_bounds({X, Y})) {
+      auto& tile = con_.at({X, Y});
+      tile.bg = {120, 100, 30, 255};
+    }
+    // what is under the cursor
+    std::string what;
+    std::string about;
+    for (auto& e : s["ents"])
+      if (e["x"] == tx_ && e["y"] == ty_) {
+        what = e["name"].get<std::string>();
+        if (e.contains("max") && e["max"].get<int>() > 1) what += " (" + std::to_string(e["hp"].get<int>()) + "/" + std::to_string(e["max"].get<int>()) + ")";
+        about = e.value("about", "");
+      }
+    for (auto& it : s["items"]) if (what.empty() && it["x"] == tx_ && it["y"] == ty_) what = it["name"];
+    if (what.empty() && seen[ty_ * W + tx_]) what = data::TILES[map[ty_ * W + tx_] - '0'].name;
+    int ly = vy_ + vh_ - 2;
+    if (layout_ != Layout::Watch) {
+      text(vx_ + 1, ly, what, WHITE, 0);
+      if (!about.empty()) text(vx_ + 1, ly + 1, about, GREY, 0);
+      std::string hint = aim_ == "look" ? "[Esc]" : "[Tab] [Enter] [Esc]";
+      text(vx_ + vw_ - int(hint.size()) - 1, vy_, hint, KEY, 0);
+    }
+  }
+}
+
+void Client::draw_side(int x, int y, int w, int h) {
+  auto& me = snap_["me"];
+  int r = y;
+  text(x + 1, r++, me["name"].get<std::string>(), me["col"].get<int>());
+  text(x + 1, r++, "level " + std::to_string(me["lvl"].get<int>()) + " " + me["clsname"].get<std::string>(), GREY);
+  ++r;
+  bar(x + 1, r++, w - 2, me["hp"], me["maxhp"], RED, "Life " + std::to_string(me["hp"].get<int>()) + "/" + std::to_string(me["maxhp"].get<int>()));
+  bar(x + 1, r++, w - 2, me["mana"], me["maxmana"], BLUE, "Mana " + std::to_string(me["mana"].get<int>()) + "/" + std::to_string(me["maxmana"].get<int>()));
+  int prev = me["prev"], next = me["next"], xp = me["xp"];
+  bar(x + 1, r++, w - 2, xp - prev, next - prev, 0xB09040, "XP");
+  std::string st;
+  if (me.value("poison", false)) st += "poisoned ";
+  if (me.value("numb", false)) st += "numb ";
+  if (me.value("shield", false)) st += "shielded ";
+  if (!st.empty()) text(x + 1, r, st, 0x96E65A);
+  ++r;
+  std::string where = snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
+  text(x + 1, r++, where, GOLD);
+  text(x + 1, r++, data::ACTS[snap_["act"].get<int>()].name, GREY);
+  text(x + 1, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
+  ++r;
+  text(x + 1, r, "[q]", KEY); text(x + 5, r++, "heal x" + std::to_string(me["heal"].get<int>()), 0xFF7070);
+  text(x + 1, r, "[w]", KEY); text(x + 5, r++, "mana x" + std::to_string(me["manap"].get<int>()), 0x7090FF);
+  for (int i = 0; i < 2; ++i) {
+    auto& sk = me["skills"][i];
+    bool ok = me["mana"].get<int>() >= sk[1].get<int>();
+    text(x + 1, r, "[" + std::to_string(i + 1) + "]", KEY);
+    text(x + 5, r++, sk[0].get<std::string>() + " " + std::to_string(sk[1].get<int>()), ok ? WHITE : DIM);
+  }
+  text(x + 1, r++, "damage " + me["dmg"].get<std::string>(), GREY);
+  text(x + 1, r++, "armour " + std::to_string(me["armour"].get<int>()), GREY);
+  ++r;
+  if (snap_["heroes"].size() > 1) {
+    text(x + 1, r++, "PARTY", GOLD);
+    for (auto& o : snap_["heroes"]) {
+      if (o["pid"] == me["pid"]) continue;
+      std::string n = o["name"].get<std::string>();
+      if (o.value("dead", false)) n += " (fallen)";
+      else if (o.value("gone", false)) n += " (at stairs)";
+      bool ready = std::find(ready_.begin(), ready_.end(), o["pid"].get<int>()) != ready_.end();
+      text(x + 1, r, ready ? "+" : " ", 0x80E080);
+      text(x + 2, r++, n, o["col"].get<int>());
+      if (!o.value("dead", false)) bar(x + 2, r++, w - 3, o["hp"], o["max"], RED, "");
+    }
+    ++r;
+  }
+  text(x + 1, r++, "IN SIGHT", GOLD);
+  for (auto& e : foes()) {
+    if (r >= h - 1) break;
+    std::string n = e["name"].get<std::string>();
+    if (int(n.size()) > w - 4) n = n.substr(0, w - 4);
+    put(x + 1, r, e["ch"].get<int>(), e["col"].get<int>());
+    text(x + 3, r++, n, e["rank"] == "normal" ? GREY : e["col"].get<int>());
+    bar(x + 3, r++, w - 4, e["hp"], e["max"], 0x903030, "");
+  }
+}
+
+void Client::draw_status_tall(int y) {
+  auto& me = snap_["me"];
+  int cw = con_.get_width();
+  bar(0, y, cw / 2 - 1, me["hp"], me["maxhp"], RED, std::to_string(me["hp"].get<int>()) + "/" + std::to_string(me["maxhp"].get<int>()));
+  bar(cw / 2, y, cw - cw / 2, me["mana"], me["maxmana"], BLUE, std::to_string(me["mana"].get<int>()) + "/" + std::to_string(me["maxmana"].get<int>()));
+  std::string where = snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
+  text(0, y + 1, where + "  lvl " + std::to_string(me["lvl"].get<int>()) + "  " + std::to_string(me["gold"].get<int>()) + "g", GOLD);
+}
+
+void Client::draw_log(int x, int y, int w, int h) {
+  // newest at the bottom, wrapped
+  std::vector<std::pair<std::string, int>> lines;
+  for (auto it = log_.rbegin(); it != log_.rend() && int(lines.size()) < h; ++it) {
+    std::vector<std::string> parts;
+    std::string cur, word;
+    std::string s = it->first + " ";
+    for (char c : s) {
+      if (c == ' ') {
+        if (int(cur.size() + word.size()) + (cur.empty() ? 0 : 1) > w - 1 && !cur.empty()) { parts.push_back(cur); cur.clear(); }
+        cur += (cur.empty() ? "" : " ") + word;
+        word.clear();
+      } else word += c;
+    }
+    if (!cur.empty()) parts.push_back(cur);
+    for (auto p = parts.rbegin(); p != parts.rend(); ++p) lines.push_back({*p, it->second});
+  }
+  int n = std::min(h, int(lines.size()));
+  for (int i = 0; i < n; ++i) {
+    auto& [s, c] = lines[i];
+    int age = i;
+    text(x + 1, y + h - 1 - i, s, age < 3 ? c : scale(c, .6));
+  }
+}
+
+void Client::draw_buttons() {
+  int cw = con_.get_width(), chh = con_.get_height();
+  std::vector<std::pair<std::string, std::string>> b = {{"1 ", "skill1"}, {"2 ", "skill2"}, {"Heal", "heal"}, {"Mana", "mana"},
+                                                        {"Wait", "wait"}, {"Bag", "pack"}, {"> ", "down"}, {"Perk", "perk"},
+                                                        {"Look", "look"}, {"?", "help"}};
+  if (snap_["me"].value("bow", false)) b.insert(b.begin(), {"Shoot", "shoot"});
+  int per = 5, bw = cw / per, bh = 3;
+  int top = chh - 6;
+  for (size_t i = 0; i < b.size() && i < 10; ++i) {
+    int x = int(i % per) * bw, y = top + int(i / per) * bh;
+    for (int j = 0; j < bh; ++j) for (int k = 0; k < bw - 1; ++k) put(x + k, y + j, ' ', WHITE, 0x202028);
+    text(x + (bw - 1 - int(b[i].first.size())) / 2, y + 1, b[i].first, KEY, 0x202028);
+    buttons_.push_back({x, y, bw - 1, bh, b[i].first, b[i].second});
+  }
+}
+
+void Client::draw_pack() {
+  auto& me = snap_["me"];
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 74), h = std::min(chh, 34);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  box(x, y, w, h, "Your things");
+  int r = y + 1;
+  for (size_t i = 0; i < data::SLOTS.size(); ++i) {
+    auto& it = me["equip"][i];
+    text(x + 2, r, data::SLOTS[i], DIM);
+    if (!it.is_null()) text(x + 10, r, it["short"].get<std::string>(), data::rarity_col(it["rarity"]));
+    ++r;
+  }
+  ++r;
+  auto& pack = me["pack"];
+  text(x + 2, r++, "Pack (" + std::to_string(pack.size()) + "/" + std::to_string(data::PACK_MAX) + ")", GOLD);
+  int list_top = r;
+  sel_ = pack.empty() ? 0 : std::clamp(sel_, 0, int(pack.size()) - 1);
+  for (size_t i = 0; i < pack.size() && r < y + h - 2; ++i) {
+    auto& it = pack[i];
+    bool on = int(i) == sel_;
+    int col = data::rarity_col(it["rarity"]);
+    if (!it.value("use", true)) col = scale(col, .5);
+    text(x + 2, r, on ? ">" : " ", WHITE);
+    text(x + 4, r, it["short"].get<std::string>(), col, on ? 0x303040 : PANEL);
+    buttons_.push_back({x + 2, r, w / 2 - 2, 1, "", "sel:" + std::to_string(i)});
+    ++r;
+  }
+  if (!pack.empty()) {
+    auto& it = pack[sel_];
+    int dx = x + w / 2 + 1, dy = list_top;
+    text(dx, dy++, it["name"].get<std::string>(), data::rarity_col(it["rarity"]));
+    for (auto& l : it["lines"]) dy += wrap(dx, dy, w / 2 - 3, l.get<std::string>(), GREY);
+    // what it would replace
+    for (size_t i = 0; i < data::SLOTS.size(); ++i)
+      if (data::SLOTS[i] == it["slot"].get<std::string>() && !me["equip"][i].is_null()) {
+        ++dy;
+        text(dx, dy++, "now: " + me["equip"][i]["short"].get<std::string>(), DIM);
+      }
+    if (!it.value("use", true)) text(dx, ++dy, "Not for a " + me["clsname"].get<std::string>() + ".", 0xC06060);
+  }
+  if (layout_ == Layout::Wide) wrap(x + 2, y + h - 2, w - 4, "[Enter] wear  [d] put down  [t] give  [Esc] close", GREY);
+  else {
+    int bw = w / 3;
+    std::vector<std::pair<std::string, int>> b = {{"Wear", SDLK_RETURN}, {"Drop", SDLK_D}, {"Give", SDLK_T}};
+    for (int i = 0; i < 3; ++i) {
+      text(x + i * bw + 2, y + h - 2, "[" + b[i].first + "]", KEY);
+      buttons_.push_back({x + i * bw, y + h - 2, bw, 1, "", "key:" + std::to_string(b[i].second)});
+    }
+    buttons_.push_back({x + w - 3, y, 3, 1, "", "close"});
+    text(x + w - 3, y, "[x]", KEY);
+  }
+}
+
+void Client::draw_shop() {
+  auto& me = snap_["me"];
+  if (!snap_.contains("shop")) return;
+  auto& shop = snap_["shop"];
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 74), h = std::min(chh, 34);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  box(x, y, w, h, "The trader");
+  int r = y + 1;
+  text(x + 2, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
+  text(x + 2, r, "[h]", KEY); text(x + 6, r++, "healing potion, " + std::to_string(shop["potion"].get<int>()) + " gold (you have " + std::to_string(me["heal"].get<int>()) + ")", 0xFF7070);
+  text(x + 2, r, "[m]", KEY); text(x + 6, r++, "mana potion, " + std::to_string(shop["potion"].get<int>()) + " gold (you have " + std::to_string(me["manap"].get<int>()) + ")", 0x7090FF);
+  buttons_.push_back({x + 2, r - 2, w - 4, 1, "", "key:" + std::to_string(SDLK_H)});
+  buttons_.push_back({x + 2, r - 1, w - 4, 1, "", "key:" + std::to_string(SDLK_M)});
+  ++r;
+  auto& items = shop["items"];
+  auto& pack = me["pack"];
+  int n = int(items.size() + pack.size());
+  sel_ = n ? std::clamp(sel_, 0, n - 1) : 0;
+  text(x + 2, r++, "For sale", GOLD);
+  int i = 0;
+  json shown;
+  for (auto& it : items) {
+    bool on = i == sel_;
+    text(x + 2, r, on ? ">" : " ", WHITE);
+    text(x + 4, r, it["short"].get<std::string>() + "  " + std::to_string(it["price"].get<int>()) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
+    buttons_.push_back({x + 2, r, w / 2, 1, "", "sel:" + std::to_string(i)});
+    if (on) shown = it;
+    ++r; ++i;
+  }
+  ++r;
+  text(x + 2, r++, "Yours to sell", GOLD);
+  for (size_t k = 0; k < pack.size() && r < y + h - 2; ++k) {
+    auto& it = pack[k];
+    bool on = i == sel_;
+    int price = 1;
+    for (auto& s : shop["sell"]) if (s[0] == it["id"]) price = s[1];
+    text(x + 2, r, on ? ">" : " ", WHITE);
+    text(x + 4, r, it["short"].get<std::string>() + "  " + std::to_string(price) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
+    buttons_.push_back({x + 2, r, w / 2, 1, "", "sel:" + std::to_string(i)});
+    if (on) shown = it;
+    ++r; ++i;
+  }
+  if (shown.is_object()) {
+    int dy = y + 5;
+    text(x + w / 2 + 1, dy++, shown["name"].get<std::string>(), data::rarity_col(shown["rarity"]));
+    for (auto& l : shown["lines"]) dy += wrap(x + w / 2 + 1, dy, w / 2 - 3, l.get<std::string>(), GREY);
+  }
+  wrap(x + 2, y + h - 2, w - 4, layout_ == Layout::Wide ? "[Enter] buy or sell  [Esc] leave" : "tap twice to buy or sell", GREY);
+  if (layout_ != Layout::Wide) { buttons_.push_back({x + w - 3, y, 3, 1, "", "close"}); text(x + w - 3, y, "[x]", KEY); }
+}
+
+void Client::draw_perk() {
+  auto& ch = snap_["me"]["choice"];
+  if (ch.is_null()) { over_ = Over::None; return; }
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 60), h = 4 + int(ch.size()) * 4;
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  box(x, y, w, h, "Choose a perk");
+  for (size_t i = 0; i < ch.size(); ++i) {
+    int r = y + 2 + int(i) * 4;
+    bool on = int(i) == sel_;
+    text(x + 2, r, "[" + std::to_string(i + 1) + "]", KEY);
+    text(x + 6, r, ch[i][1].get<std::string>(), on ? WHITE : GREY, on ? 0x303040 : PANEL);
+    wrap(x + 6, r + 1, w - 8, ch[i][2].get<std::string>(), 0xB4A078);
+    buttons_.push_back({x + 1, r, w - 2, 3, "", "key:" + std::to_string(SDLK_1 + int(i))});
+  }
+}
+
+void Client::draw_menu() {
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 40), h = 7;
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  box(x, y, w, h, "Pyreheart");
+  text(x + 2, y + 2, "[Esc] back to the dive", WHITE);
+  text(x + 2, y + 4, "[q] leave the dive", WHITE);
+  buttons_.push_back({x, y + 2, w, 1, "", "close"});
+  buttons_.push_back({x, y + 4, w, 1, "", "key:" + std::to_string(SDLK_Q)});
+}
+
+void Client::draw_help() {
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 80), h = std::min(chh, 40);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  box(x, y, w, h, "How to play");
+  int r = y + 2;
+  for (auto& [k, t] : HELP) {
+    if (r >= y + h - 1) break;
+    if (k.empty()) { r += t.empty() ? 1 : wrap(x + 2, r, w - 4, t, 0xC8C8C8); continue; }
+    wrap(x + 2, r, 22, k, KEY);
+    r += std::max(1, wrap(x + 24, r, w - 26, t, 0xC8C8C8));
+  }
+}
+
+void Client::draw_ring() {
+  // the watch: actions round the edge of the dial; the crown turns it, a tap on one does it
+  static const std::vector<std::pair<std::string, std::string>> R = {
+      {"1 ", "skill1"}, {"2 ", "skill2"}, {"Hl", "heal"}, {"Mn", "mana"}, {"..", "wait"}, {"> ", "down"}, {"Bg", "pack"}, {"Pk", "perk"}, {"Sh", "shoot"}};
+  int cw = con_.get_width();
+  // the dial goes dark behind the ring, so the actions stand out
+  for (int y = 0; y < con_.get_height(); ++y)
+    for (int x = 0; x < cw; ++x) {
+      auto& t = con_.at({x, y});
+      bool wall = t.ch != ' ' && t.ch != 0x00B7;
+      t.ch = wall ? t.ch : ' ';
+      t.fg = {uint8_t(t.fg.r / 6), uint8_t(t.fg.g / 6), uint8_t(t.fg.b / 6), 255};
+      t.bg = {0, 0, 0, 255};
+    }
+  double c = (cw - 1) / 2.0, rad = cw / 2.0 - 2.5;
+  for (size_t i = 0; i < R.size(); ++i) {
+    double a = -M_PI / 2 + i * 2 * M_PI / R.size();
+    int x = int(std::lround(c + std::cos(a) * rad)) - 1, y = int(std::lround(c + std::sin(a) * rad));
+    bool on = int(i) == ring_;
+    text(x, y, R[i].first, on ? 0x000000 : KEY, on ? KEY : 0x202028);
+    buttons_.push_back({x - 1, y - 1, 4, 3, "", R[i].second});
+  }
+  // the middle names what the crown points at; a tap there does it
+  auto& me = snap_["me"];
+  std::string name;
+  const std::string& a = R[ring_].second;
+  if (a == "skill1" || a == "skill2") {
+    auto& sk = me["skills"][a == "skill1" ? 0 : 1];
+    name = sk[0].get<std::string>();
+  } else if (a == "heal") name = "Heal x" + std::to_string(me["heal"].get<int>());
+  else if (a == "mana") name = "Mana x" + std::to_string(me["manap"].get<int>());
+  else if (a == "wait") name = "Wait";
+  else if (a == "down") name = "Go down";
+  else if (a == "pack") name = "Pack";
+  else if (a == "perk") name = me["choice"].is_null() ? "Perks" : "New perk!";
+  else name = "Shoot";
+  if (int(name.size()) > 9) name = name.substr(0, 9);
+  int w = int(name.size());
+  for (int x = int(c) - 5; x <= int(c) + 5; ++x) for (int y = int(c) - 1; y <= int(c) + 1; ++y) put(x, y, ' ', 0, 0x181820);
+  text(int(c) - w / 2, int(c), name, WHITE, 0x181820);
+  buttons_.push_back({int(c) - 5, int(c) - 1, 11, 3, "", a});
+}
+
+void Client::draw_end() {
+  auto& me = snap_["me"];
+  int cw = con_.get_width(), chh = con_.get_height();
+  bool won = snap_["state"] == "won";
+  int w = std::min(cw, 60), h = std::min(chh, 14);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  box(x, y, w, h, won ? "The fire is yours" : "The dive is over");
+  int r = y + 2;
+  if (won) for (auto& l : lore::VICTORY) r += wrap(x + 2, r, w - 4, l, GOLD);
+  else r += wrap(x + 2, r, w - 4, "Ashmoor waits in vain.", 0xFF8080);
+  ++r;
+  text(x + 2, r++, me["name"].get<std::string>() + ", level " + std::to_string(me["lvl"].get<int>()) + " " + me["clsname"].get<std::string>(), WHITE);
+  text(x + 2, r++, "depth " + std::to_string(snap_["depth"].get<int>()) + ", " + std::to_string(me["kills"].get<int>()) + " foes slain, " +
+                       std::to_string(snap_["turn"].get<int>()) + " turns", GREY);
+  text(x + 2, y + h - 2, "[Enter]", KEY);
+}

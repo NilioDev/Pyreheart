@@ -1,0 +1,57 @@
+// One game, two apps: "phone" for Android phones and tablets, "wear" for Wear OS watches.
+// The native part is the same CMake project as the desktop game (../../CMakeLists.txt).
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace = "com.niliodev.pyreheart"
+    compileSdk 35
+    ndkVersion "27.2.12479018"
+    defaultConfig {
+        applicationId "com.niliodev.pyreheart"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "0.1"
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_static", "-DCMAKE_BUILD_TYPE=Release"
+                targets "pyreheart", "SDL3-shared"
+            }
+        }
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+    flavorDimensions = ["device"]
+    productFlavors {
+        phone {
+            dimension "device"
+        }
+        wear {
+            dimension "device"
+            // the Pixel Watch 4 and other watches are 32-bit or 64-bit ARM
+            minSdk 30
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            // signed with the debug key, so it installs straight away; a store build would use its own key
+            signingConfig signingConfigs.debug
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path '../../CMakeLists.txt'
+            version project.findProperty('cmakeVersion') ?: '3.31.6'
+        }
+    }
+    sourceSets.main {
+        assets.srcDirs = ['../../assets']
+    }
+    lint {
+        abortOnError = false
+    }
+}

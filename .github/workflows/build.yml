@@ -1,0 +1,73 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: SDL needs these on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libgl1-mesa-dev \
+            libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release -R "k5|net" --output-on-failure
+      - name: Gather
+        shell: bash
+        run: |
+          mkdir -p dist/Pyreheart
+          if [ "$RUNNER_OS" = "Windows" ]; then cp build/Release/pyreheart.exe dist/Pyreheart/; else cp build/pyreheart dist/Pyreheart/; fi
+          cp -r assets dist/Pyreheart/
+          cp README.md dist/Pyreheart/ || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyreheart-${{ runner.os }}
+          path: dist
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: NDK and the runner's own CMake
+        run: |
+          sdkmanager --install "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+          sudo apt-get install -y ninja-build
+          CM=$(dirname "$(dirname "$(command -v cmake)")")
+          [ -x "$CM/bin/ninja" ] || sudo ln -sf "$(command -v ninja)" "$CM/bin/ninja"
+          echo "cmake.dir=$CM" > android/local.properties
+          echo "CMAKE_VERSION=$(cmake --version | head -1 | cut -d' ' -f3)" >> "$GITHUB_ENV"
+      - name: Build phone and watch apps
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assemblePhoneRelease assembleWearRelease -PcmakeVersion=$CMAKE_VERSION
+      - name: Gather
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/phone/release/*.apk dist/pyreheart-phone.apk
+          cp android/app/build/outputs/apk/wear/release/*.apk dist/pyreheart-wear.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyreheart-android
+          path: dist
