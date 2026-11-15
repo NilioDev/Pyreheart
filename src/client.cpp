@@ -1,5 +1,6 @@
 #include "client.hpp"
 
+#include <numbers>
 #include <cmath>
 #include <fstream>
 
@@ -456,7 +457,7 @@ void Client::click(int x, int y, bool down) {
   }
   if (layout_ == Layout::Watch) {  // eight slices of the dial round the hero
     double ang = std::atan2(double(my - hy), double(mx - hx));
-    int s = int(std::lround(ang / (M_PI / 4))) & 7;
+    int s = int(std::lround(ang / (std::numbers::pi / 4))) & 7;
     static const int D[8][2] = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
     send({{"t", "move"}, {"dx", D[s][0]}, {"dy", D[s][1]}});
   } else {
@@ -1004,7 +1005,7 @@ void Client::draw_ring() {
     }
   double c = (cw - 1) / 2.0, rad = cw / 2.0 - 2.5;
   for (size_t i = 0; i < R.size(); ++i) {
-    double a = -M_PI / 2 + i * 2 * M_PI / R.size();
+    double a = -std::numbers::pi / 2 + i * 2 * std::numbers::pi / R.size();
     int x = int(std::lround(c + std::cos(a) * rad)) - 1, y = int(std::lround(c + std::sin(a) * rad));
     bool on = int(i) == ring_;
     text(x, y, R[i].first, on ? 0x000000 : KEY, on ? KEY : 0x202028);
