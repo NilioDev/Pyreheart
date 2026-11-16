@@ -18,7 +18,7 @@ Long ago a forgotten dwarven clan unearthed the Pyreheart, the molten crystal co
 | --- | --- |
 | [arrows] [numpad] | walk; walk into a foe to strike it. Diagonals: numpad, or [Home] [PgUp] [End] [PgDn] |
 | [.] [numpad 5] | wait a moment |
-| [1] [2] | your two skills. A skill that needs a target lets you aim: [Tab] to the next foe, [Enter] to let go |
+| [1] [2] [3] [4] | your skills: two at the start, the third at level 3, the fourth at level 6. A skill that needs a target lets you aim: [Tab] to the next foe, [Enter] to let go |
 | [f] | shoot with a bow |
 | [q] [w] | drink a healing or a mana potion |
 | [i] | your pack: [Enter] wear or use, [d] put down, [t] give to the hero next to you |
@@ -32,6 +32,19 @@ Long ago a forgotten dwarven clan unearthed the Pyreheart, the molten crystal co
 On a phone, tap where you want to go, and hold to keep walking until a foe comes into sight. The buttons along the bottom do the rest.
 
 On a watch, tap a side of the dial to step that way. Turn the crown and a ring of actions appears round the edge; the crown chooses, the middle shows what is chosen, and a tap does it.
+
+## Six heroes
+
+Each plays by a rule of its own, and each can make the whole dive alone. At level 5 every hero chooses one of two paths.
+
+| Hero | Its rule | Skills | Paths |
+|---|---|---|---|
+| Warrior | Every blow given or taken fills his fury; fury pays for his skills and dulls the pain | Cleave, War Cry, Charge, Stand Fast | Berserker, Guardian |
+| Ranger | Each arrow loosed without moving hits harder than the last | Volley, Piercing Shot, Tumble, Pinning Shot | Sharpshooter, Skirmisher |
+| Adept | Fire on a frozen foe shatters it for three times the harm | Firebolt, Frost Nova, Blink, Ember Wall | Pyromancer, Frostbinder |
+| Lamplighter | Near his lantern wounds close and the dead burn | Smite, Mend, Hallow, Beacon | Shepherd, Zealot |
+| Runecarver | Carves dwarven runes that burst when a foe steps on them | Carve Rune, Kindle, Rune of Binding, Rune of Return | Fireward, Stoneward |
+| Cutthroat | A busy foe (winding up, stunned, frozen, spent, or fighting a friend) takes a bleeding critical blow | Shadowstep, Fan of Knives, Smoke, Garrote | Duelist, Poisoner |
 
 ## Fighting and finding
 

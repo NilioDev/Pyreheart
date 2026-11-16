@@ -178,13 +178,13 @@ Stats Game::stats(const Hero& h) const {
   auto res = [&](const std::string& k) { return std::min(75, s(k) + 20 * h.perk("ward")); };
   Stats st{};
   st.maxhp = h.cls->hp + h.cls->hp_lvl * (h.lvl - 1) + 15 * h.perk("tough") + s("hp");
-  st.maxmana = h.cls->mana + h.cls->mana_lvl * (h.lvl - 1) + 15 * h.perk("well") + s("mana");
+  st.maxmana = h.cls->fury() ? 10 : h.cls->mana + h.cls->mana_lvl * (h.lvl - 1) + 15 * h.perk("well") + s("mana");
   st.lo = (w ? w->lo : 1) + s("dmg");
   st.hi = (w ? w->hi : 3) + s("dmg");
   st.pct = s("dmg_pct") + 15 * h.perk("brute");
   st.acc = h.cls->acc + h.lvl + 8 * h.perk("eye") + s("acc");
-  st.crit = 5 + 4 * h.perk("eye") + s("crit") + (bow ? 10 * h.perk("sniper") : 0);
-  st.armour = ar + s("armour") + 3 * h.perk("hide");
+  st.crit = 5 + 4 * h.perk("eye") + s("crit") + (bow ? 10 * (h.perk("sniper") + h.perk("sharpshooter")) : 0);
+  st.armour = ar + s("armour") + 3 * h.perk("hide") + 4 * h.perk("guardian");
   st.res_f = res("res_fire"); st.res_c = res("res_cold"); st.res_p = res("res_poison");
   st.leech = s("leech"); st.spell = s("spell"); st.fire = s("fire_dmg");
   st.regen = 1 + h.perk("well") + s("regen"); st.thorns = s("thorns");
@@ -207,7 +207,7 @@ Verdict Game::compare(const Hero& h, const Item& it) const {
   t.cls = h.cls; t.lvl = h.lvl; t.perks = h.perks; t.equip = h.equip;
   t.equip[it.slot] = std::make_shared<Item>(it);
   Stats a = stats(h), b = stats(t);
-  bool mage = h.cls->key == "mage";
+  bool mage = h.cls->key == "adept" || h.cls->key == "runecarver";
   auto avg = [](const Stats& s) { return (s.lo + s.hi) / 2.0 * (1 + s.pct / 100.0); };
   double score = 0; bool up = false, down = false;
   auto add = [&](const std::string& what, double by, double weight) {
@@ -222,6 +222,7 @@ Verdict Game::compare(const Hero& h, const Item& it) const {
   add("armour", b.armour - a.armour, 1);
   add("life", b.maxhp - a.maxhp, .5);
   add("mana", b.maxmana - a.maxmana, mage ? .6 : .2);
+  if (h.cls->fury()) out.d.erase(std::remove_if(out.d.begin(), out.d.end(), [](const Change& c) { return c.what == "mana"; }), out.d.end());
   add("accuracy", b.acc - a.acc, .3);
   add("crit %", b.crit - a.crit, 1.5);
   add("fire resist %", b.res_f - a.res_f, .4);
@@ -535,6 +536,7 @@ void Game::move(Hero& h, int dx, int dy) {
   }
   if (!floor->walk(nx, ny)) return;
   h.x = nx; h.y = ny;
+  h.focus = h.perk("skirmisher") ? std::max(0, h.focus - 1) : 0;
   arrive(h);
 }
 
@@ -597,20 +599,55 @@ void Game::check_stairs() {
 }
 
 // ------------------------------------------------------------------ fighting
-bool Game::strike(Hero& h, Mon& m, double mult) {
+// A foe with its mind on something else: winding up, stunned, frozen, spent, held, lost, caught off guard,
+// or fighting another hero. The Cutthroat lives on these.
+bool Game::busy(const Mon& m, const Hero& h) {
+  if (m.blow.turns > 0 || m.stun > 0 || m.frozen > 0 || m.spent > 0 || m.pinned > 0 || m.lost > 0 || m.surprised > 0 || m.open > 0 || !m.awake)
+    return true;
+  for (auto* o : active()) if (o != &h && cheb(o->x, o->y, m.x, m.y) <= 1) return true;
+  return false;
+}
+
+void Game::focus_up(Hero& h) {
+  if (h.cls->key == "ranger") h.focus = std::min(h.perk("sharpshooter") ? 5 : 3, h.focus + 1);
+}
+
+void Game::bleed(Hero& h, Mon& m, int dmg) {
+  bool poison = h.perk("poisoner") > 0;
+  m.bleed = poison ? 5 : 3;
+  m.bleed_dmg = std::max(m.bleed_dmg, std::max(1, poison ? dmg / 3 : dmg / 4));
+}
+
+bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   Stats st = stats(h);
+  bool opening = h.cls->key == "cutthroat" && !ranged && busy(m, h);
   m.awake = true;
-  int chance = std::clamp(st.acc - m.ar * 2 + 12, 25, 97);
+  m.open = 0;
+  int chance = std::clamp(st.acc - m.ar * 2 + 12 + (opening ? 30 : 0), 25, 97);
   if (rnd.below(100) >= chance) { h.say("You miss " + the(m) + ".", 0x909090); return false; }
   double d = rnd.range(st.lo, st.hi) * (1 + st.pct / 100.0) * mult;
   if (h.numb > 0) d *= .75;
-  bool crit = rnd.below(100) < st.crit;
-  if (crit) { d *= 2; add_fx({{"k", "crit"}, {"x", m.x}, {"y", m.y}}); }
+  if (h.perk("berserker")) d *= 1 + .03 * h.mana;
+  if (ranged && h.cls->key == "ranger") d *= 1 + .2 * h.focus;
+  if (m.frozen > 0 && h.perk("frostbinder")) d *= 1.25;
+  if (h.perk("duelist")) {
+    if (h.combo_id == m.id) h.combo = std::min(6, h.combo + 1); else { h.combo_id = m.id; h.combo = 1; }
+    d *= 1 + .12 * (h.combo - 1);
+  }
+  if (h.cls->fury()) h.mana = std::min(10, h.mana + 1);
+  bool crit = opening || rnd.below(100) < st.crit;
+  if (crit) { d *= opening ? 2.5 : 2; add_fx({{"k", "crit"}, {"x", m.x}, {"y", m.y}}); }
   int dmg = std::max(1, rnd_i(d - m.ar / 2.0));
   if (st.fire > 0) dmg += m.def->fire ? st.fire / 2 : st.fire;
   add_fx({{"k", "blood"}, {"x", m.x}, {"y", m.y}, {"src", xy(h.x, h.y)}});
   if (st.leech > 0) h.hp = std::min(st.maxhp, h.hp + std::max(1, dmg * st.leech / 100));
-  hurt(m, dmg, &h, crit ? "You strike " + the(m) + " hard (" + std::to_string(dmg) + ")." : "");
+  if (opening) {
+    bleed(h, m, dmg);
+    h.mana = std::min(st.maxmana, h.mana + 2);
+    tip(h, "opening", "An opening! A busy foe takes a critical blow from you, and bleeds.");
+  }
+  hurt(m, dmg, &h, opening ? "An opening: you cut " + the(m) + " deep (" + std::to_string(dmg) + ")."
+                   : crit ? "You strike " + the(m) + " hard (" + std::to_string(dmg) + ")." : "");
   return true;
 }
 
@@ -804,8 +841,21 @@ void Game::gain_xp(Hero& h, int xp) {
     h.mana = st.maxmana;
     h.say("You reach level " + std::to_string(h.lvl) + "!", 0xFFE680);
     add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", 0xFFE680}});
+    for (int i = 0; i < 4; ++i)
+      if (SKILL_LEVELS[i] == h.lvl && i < int(h.cls->skills.size()))
+        h.say("You can now use " + skill_def(h.cls->skills[i]).name + ": [" + std::to_string(i + 1) + "].", 0xFFE680);
+    if (h.lvl == PATH_LEVEL && !h.cls->paths.empty()) {
+      h.perk_choices.push_back(h.cls->paths);
+      tip(h, "path", "Choose your path: [p]. It decides which perks come to you after.");
+      continue;
+    }
     std::vector<std::string> pool;
-    for (auto& p : PERKS) if ((p.cls.empty() || p.cls == h.cls->key) && h.perk(p.key) < p.max) pool.push_back(p.key);
+    for (auto& p : PERKS) {
+      if (!p.cls.empty() && p.cls != h.cls->key) continue;
+      if (p.path == "*" || (!p.path.empty() && !h.perk(p.path)) || h.perk(p.key) >= p.max) continue;
+      if (p.key == "well" && h.cls->fury()) continue;
+      pool.push_back(p.key);
+    }
     rnd.shuffle(pool);
     if (pool.size() > 3) pool.resize(3);
     if (!pool.empty()) { h.perk_choices.push_back(pool); tip(h, "perk", "You may learn a perk: [p]."); }
@@ -918,24 +968,35 @@ void Game::shoot(Hero& h, int x, int y) {
   std::vector<P> cells; std::vector<MonP> hit;
   path(h, x, y, 9, false, cells, hit);
   add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xDCDCC8}, {"ch", "-"}, {"src", xy(h.x, h.y)}});
-  if (!hit.empty()) strike(h, *hit[0], 1.0);
+  if (!hit.empty()) strike(h, *hit[0], 1.0, true);
+  focus_up(h);
 }
 
 void Game::skill(Hero& h, int n, int x, int y) {
   if (n < 1 || n > int(h.cls->skills.size())) return;
   const std::string& key = h.cls->skills[n - 1];
   const SkillDef& sk = skill_def(key);
-  int cost = sk.mana - (key == "cleave" ? 2 * h.perk("whirl") : 0);
-  if (h.mana < cost) { h.say("Not enough mana for " + sk.name + ".", 0x7090FF); return; }
+  if (h.lvl < SKILL_LEVELS[n - 1]) { h.say(sk.name + " comes to you at level " + std::to_string(SKILL_LEVELS[n - 1]) + ".", 0x909090); return; }
+  int cost = sk.mana;
+  if (key == "charge" && h.perk("frenzy")) cost = 0;
+  if (key == "tumble") cost -= 2 * h.perk("quick");
+  if (key == "kindle" && h.perk("deeprunes")) cost = 0;
+  if (h.mana < cost) { h.say(std::string(h.cls->fury() ? "Not enough fury" : "Not enough mana") + " for " + sk.name + ".", 0x7090FF); return; }
   if (sk.target && !target(h, x, y)) { h.say("No target.", 0x909090); return; }
   Stats st = stats(h);
   double sp = 1 + st.spell / 100.0;
-  if ((key == "volley" || key == "pierce") && !st.bow) { h.say(sk.name + " needs a bow.", 0x909090); return; }
+  if ((key == "volley" || key == "pierce" || key == "tumble" || key == "pin") && !st.bow) { h.say(sk.name + " needs a bow.", 0x909090); return; }
+  if (key != "cleave" && key != "warcry" && key != "volley" && key != "pierce" && key != "firebolt" && key != "nova") {
+    if (skill_new(h, key, x, y, st, sp)) h.mana -= cost;
+    return;
+  }
   h.mana -= cost;
   if (key == "cleave") {
     add_fx({{"k", "spin"}, {"x", h.x}, {"y", h.y}});
     auto ms = floor->mons;
-    for (auto& m : ms) if (m->hp > 0 && cheb(m->x, m->y, h.x, h.y) == 1) strike(h, *m, 1.0 + .25 * h.perk("whirl"));
+    for (auto& m : ms)
+      if (m->hp > 0 && cheb(m->x, m->y, h.x, h.y) == 1 && strike(h, *m, 1.0 + .25 * h.perk("whirl")) && h.perk("whirl"))
+        h.hp = std::min(st.maxhp, h.hp + 2 * h.perk("whirl"));
   } else if (key == "warcry") {
     add_fx({{"k", "wave"}, {"x", h.x}, {"y", h.y}, {"r", 2}, {"col", 0xFFDC96}, {"sign", "sound"}});
     for (auto& m : floor->mons) if (cheb(m->x, m->y, h.x, h.y) <= 2) { m->stun = m->rank == "boss" ? 1 : 2; m->awake = true; }
@@ -951,22 +1012,30 @@ void Game::skill(Hero& h, int n, int x, int y) {
       std::vector<P> cells; std::vector<MonP> hit;
       path(h, m->x, m->y, 9, false, cells, hit);
       add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xDCDCC8}, {"ch", "-"}, {"src", xy(h.x, h.y)}, {"delay", i++ * .05}});
-      if (!hit.empty() && hit[0]->hp > 0) strike(h, *hit[0], .8);
+      if (!hit.empty() && hit[0]->hp > 0) strike(h, *hit[0], .8, true);
     }
+    focus_up(h);
   } else if (key == "pierce") {
     std::vector<P> cells; std::vector<MonP> hit;
     path(h, x, y, 10, true, cells, hit);
     add_fx({{"k", "line"}, {"cells", cells_json(cells)}, {"col", 0xFFFFC8}, {"dur", .3}});
-    for (auto& m : hit) if (m->hp > 0) strike(h, *m, 1.3);
+    for (auto& m : hit) if (m->hp > 0) strike(h, *m, 1.3, true);
+    focus_up(h);
   } else if (key == "firebolt") {
     std::vector<P> cells; std::vector<MonP> hit;
     path(h, x, y, 9, false, cells, hit);
     add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xFF8C28}, {"ch", "*"}});
     if (hit.empty()) return;
     MonP m = hit[0];
-    int dmg = rnd_i((rnd.range(4, 9) + 1.3 * h.lvl) * sp);
+    int dmg = rnd_i((rnd.range(4, 9) + 1.3 * h.lvl) * sp * (h.perk("pyromancer") ? 1.3 : 1.0));
     if (m->def->fire) dmg /= 2;
-    h.say("Your firebolt hits " + the(*m) + " (" + std::to_string(dmg) + ").", 0xFF8C28);
+    if (m->frozen > 0) {
+      dmg *= 3;
+      m->frozen = 0;
+      add_fx({{"k", "burst"}, {"x", m->x}, {"y", m->y}, {"r", 1}, {"col", 0xC8E6FF}, {"delay", .1}});
+      h.say("The frost on " + the(*m) + " shatters (" + std::to_string(dmg) + ")!", 0xC8E6FF);
+      tip(h, "shatter", "Fire on a frozen foe shatters it for three times the harm.");
+    } else h.say("Your firebolt hits " + the(*m) + " (" + std::to_string(dmg) + ").", 0xFF8C28);
     int mx = m->x, my = m->y;
     hurt(*m, dmg, &h);
     if (h.perk("blast")) {
@@ -985,6 +1054,312 @@ void Game::skill(Hero& h, int n, int x, int y) {
         hurt(*m, m->def->cold ? dmg / 2 : dmg, &h);
       }
   }
+}
+
+// ------------------------------------------------------------------ the skills that came with the six classes
+int Game::rune_dmg(const Hero& h) {
+  double sp = 1 + stats(h).spell / 100.0;
+  return rnd_i((rnd.range(6, 10) + 1.8 * h.lvl) * sp * (h.perk("fireward") ? 1.3 : 1.0));
+}
+
+void Game::burst_rune(Hero& h, P at) {
+  int r = h.perk("fireward") ? 2 : 1;
+  add_fx({{"k", "burst"}, {"x", at.x}, {"y", at.y}, {"r", r}, {"col", 0x50E6E6}});
+  int dmg = rune_dmg(h);
+  auto ms = floor->mons;
+  for (auto& m : ms) {
+    if (m->hp <= 0 || cheb(m->x, m->y, at.x, at.y) > r) continue;
+    int d = m->pinned > 0 && h.perk("heavyrunes") ? dmg * 5 / 4 : dmg;
+    if (h.perk("stoneward")) m->pinned = std::max(m->pinned, 2);
+    hurt(*m, m->def->fire ? d / 2 : d, &h);
+  }
+}
+
+// a foe has stepped: runes under it go off
+void Game::trod(Mon& m) {
+  if (m.hp <= 0) return;
+  for (size_t i = 0; i < floor->runes.size(); ++i) {
+    if (floor->runes[i].p != P{m.x, m.y}) continue;
+    Rune r = floor->runes[i];
+    floor->runes.erase(floor->runes.begin() + i);
+    auto it = heroes.find(r.owner);
+    if (it == heroes.end()) return;
+    say_near(m.x, m.y, cap(the(m)) + " steps on a rune. It flares!", 0x50E6E6);
+    burst_rune(*it->second, r.p);
+    return;
+  }
+}
+
+// every turn: the lantern's light, burning and hallowed ground, bleeding, held foes, fury draining away
+void Game::classes_tick() {
+  for (auto* h : active()) {
+    if (h->cls->key == "lamplighter") {
+      int r = h->perk("shepherd") ? 3 : 2;
+      for (auto* o : active()) {
+        if (cheb(o->x, o->y, h->x, h->y) > r) continue;
+        o->hp = std::min(stats(*o).maxhp, o->hp + 1 + h->perk("warmth") + h->lvl / 6);
+      }
+      auto ms = floor->mons;
+      for (auto& m : ms)
+        if (m->hp > 0 && m->def->undead && cheb(m->x, m->y, h->x, h->y) <= r && h->sees(m->x, m->y)) {
+          m->awake = true;
+          hurt(*m, 1 + h->lvl / 3, h);
+        }
+    }
+    if (h->cls->fury() && turn % 3 == 0 && h->mana > 0) {
+      bool fight = false;
+      for (auto& m : floor->mons) if (m->awake && h->sees(m->x, m->y)) fight = true;
+      if (!fight) --h->mana;
+    }
+  }
+  for (auto& g : floor->ground) {
+    auto ms = floor->mons;
+    for (auto& m : ms) {
+      if (m->hp <= 0 || m->x != g.p.x || m->y != g.p.y) continue;
+      auto it = heroes.find(g.owner);
+      int d = g.kind == 1 && m->def->undead ? g.dmg * 2 : g.dmg;
+      if (g.kind == 0 && m->def->fire) d /= 2;
+      hurt(*m, std::max(1, d), it == heroes.end() ? nullptr : it->second.get());
+    }
+    --g.turns;
+  }
+  floor->ground.erase(std::remove_if(floor->ground.begin(), floor->ground.end(), [](const Ground& g) { return g.turns <= 0; }), floor->ground.end());
+  auto ms = floor->mons;
+  for (auto& m : ms) {
+    if (m->hp <= 0) continue;
+    if (m->pinned > 0) --m->pinned;
+    if (m->open > 0) --m->open;
+    if (m->bleed > 0) {
+      --m->bleed;
+      hurt(*m, m->bleed_dmg, nullptr);
+      if (m->bleed == 0) m->bleed_dmg = 0;
+    }
+  }
+}
+
+bool Game::skill_new(Hero& h, const std::string& key, int x, int y, const Stats& st, double sp) {
+  auto free = [&](int cx, int cy) { return floor->walk(cx, cy) && !mon_at(cx, cy) && !hero_at(cx, cy); };
+  auto seen_foes = [&](int r) {
+    std::vector<MonP> out;
+    for (auto& m : floor->mons) if (m->hp > 0 && h.sees(m->x, m->y) && cheb(m->x, m->y, h.x, h.y) <= r) out.push_back(m);
+    return out;
+  };
+  auto adjacent = [&]() -> MonP {  // the foe next to you, the busy or the weakest first
+    MonP best;
+    for (auto& m : floor->mons) {
+      if (m->hp <= 0 || cheb(m->x, m->y, h.x, h.y) != 1) continue;
+      if (!best || (busy(*m, h) && !busy(*best, h)) || (busy(*m, h) == busy(*best, h) && m->hp < best->hp)) best = m;
+    }
+    return best;
+  };
+  auto hold = [&](Mon& m, int turns) { if (m.rank == "boss") m.stun = std::max(m.stun, 1); else m.stun = std::max(m.stun, turns); };
+  if (key == "charge") {
+    MonP m = target(h, x, y);
+    if (!m || cheb(m->x, m->y, h.x, h.y) > 5) { h.say("No foe within 5 to charge.", 0x909090); return false; }
+    P best{-1, -1};
+    int bd = 99;
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        int cx = m->x + dx, cy = m->y + dy;
+        if ((dx || dy) && free(cx, cy) && h.sees(cx, cy) && cheb(cx, cy, h.x, h.y) < bd) { bd = cheb(cx, cy, h.x, h.y); best = {cx, cy}; }
+      }
+    if (cheb(m->x, m->y, h.x, h.y) == 1) best = {h.x, h.y};
+    if (best.x < 0) { h.say("No room to charge in.", 0x909090); return false; }
+    add_fx({{"k", "bolt"}, {"cells", json::array({xy(h.x, h.y), xy(best.x, best.y)})}, {"col", 0xFFDC96}, {"ch", "*"}});
+    h.x = best.x; h.y = best.y;
+    if (strike(h, *m, 1.2) && m->hp > 0) hold(*m, 1);
+    arrive(h);
+  } else if (key == "standfast") {
+    h.standfast = 4 + 3 * h.perk("bulwark");
+    add_fx({{"k", "wave"}, {"x", h.x}, {"y", h.y}, {"r", 3}, {"col", 0xE6C878}, {"sign", "sound"}});
+    h.say("You plant your feet. Come, then.", 0xE6C878);
+  } else if (key == "tumble") {
+    auto foes = seen_foes(9);
+    if (foes.empty()) { h.say("No foe in sight.", 0x909090); return false; }
+    std::sort(foes.begin(), foes.end(), [&](const MonP& a, const MonP& b) { return cheb(a->x, a->y, h.x, h.y) < cheb(b->x, b->y, h.x, h.y); });
+    MonP m = foes[0];
+    for (int step = 0; step < 2; ++step) {
+      P best{h.x, h.y};
+      int bd = cheb(h.x, h.y, m->x, m->y);
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          int cx = h.x + dx, cy = h.y + dy;
+          if ((dx || dy) && free(cx, cy) && !floor->burning(cx, cy) && cheb(cx, cy, m->x, m->y) > bd) { bd = cheb(cx, cy, m->x, m->y); best = {cx, cy}; }
+        }
+      h.x = best.x; h.y = best.y;
+    }
+    std::vector<P> cells; std::vector<MonP> hit;
+    path(h, m->x, m->y, 9, false, cells, hit);
+    add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xDCDCC8}, {"ch", "-"}, {"src", xy(h.x, h.y)}});
+    if (!hit.empty()) strike(h, *hit[0], 1.0, true);
+    focus_up(h);
+    arrive(h);
+  } else if (key == "pin") {
+    if (!target(h, x, y)) { h.say("No target.", 0x909090); return false; }
+    std::vector<P> cells; std::vector<MonP> hit;
+    path(h, x, y, 9, false, cells, hit);
+    add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xC8C8FF}, {"ch", "-"}, {"src", xy(h.x, h.y)}});
+    if (!hit.empty() && strike(h, *hit[0], 1.0, true) && hit[0]->hp > 0) {
+      if (hit[0]->rank == "boss") hit[0]->stun = std::max(hit[0]->stun, 1);
+      else hit[0]->pinned = std::max(hit[0]->pinned, 3);
+      h.say(cap(the(*hit[0])) + " is pinned where it stands.", 0xC8C8FF);
+    }
+    focus_up(h);
+  } else if (key == "blink") {
+    auto foes = seen_foes(12);
+    P best{-1, -1};
+    int bd = -1;
+    for (int dy = -5; dy <= 5; ++dy)
+      for (int dx = -5; dx <= 5; ++dx) {
+        int cx = h.x + dx, cy = h.y + dy;
+        if (cheb(cx, cy, h.x, h.y) < 3 || !free(cx, cy) || !h.sees(cx, cy) || floor->burning(cx, cy)) continue;
+        int near = 99;
+        for (auto& m : foes) near = std::min(near, cheb(cx, cy, m->x, m->y));
+        int score = near * 10 + int(rnd.below(10));
+        if (score > bd) { bd = score; best = {cx, cy}; }
+      }
+    if (best.x < 0) { h.say("Nowhere to blink to.", 0x909090); return false; }
+    add_fx({{"k", "inward"}, {"x", h.x}, {"y", h.y}, {"col", 0xA0B4FF}});
+    h.x = best.x; h.y = best.y;
+    add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xA0B4FF}, {"delay", .1}});
+    arrive(h);
+  } else if (key == "emberwall") {
+    MonP m = target(h, x, y);
+    if (!m) { h.say("No target.", 0x909090); return false; }
+    int dx = (m->x > h.x) - (m->x < h.x), dy = (m->y > h.y) - (m->y < h.y);
+    int dist = std::max(1, std::min(2, cheb(m->x, m->y, h.x, h.y) - 1));
+    P c{h.x + dx * dist, h.y + dy * dist};
+    int px = -dy, py = dx;
+    int dmg = rnd_i((3 + .8 * h.lvl) * sp * (h.perk("pyromancer") ? 1.3 : 1.0));
+    json cells = json::array();
+    for (int k = -2; k <= 2; ++k) {
+      P p{c.x + px * k, c.y + py * k};
+      if (!floor->walk(p.x, p.y) || hero_at(p.x, p.y)) continue;
+      floor->ground.push_back({p, 0, 5, dmg, h.pid});
+      cells.push_back(xy(p.x, p.y));
+    }
+    if (cells.empty()) { h.say("No room for a wall there.", 0x909090); return false; }
+    add_fx({{"k", "line"}, {"cells", cells}, {"col", 0xFF8C28}, {"dur", .4}});
+    h.say("A wall of embers rises.", 0xFF8C28);
+  } else if (key == "smite") {
+    MonP m = adjacent();
+    if (!m) { h.say("No foe next to you.", 0x909090); return false; }
+    double mult = (m->def->undead ? 2.5 : 1.6) * (h.perk("zealot") ? 1.4 : 1.0);
+    add_fx({{"k", "burst"}, {"x", m->x}, {"y", m->y}, {"r", 1}, {"col", 0xFFE68C}});
+    int mx = m->x, my = m->y;
+    strike(h, *m, mult);
+    if (h.perk("zealot"))
+      for (auto& o : floor->mons)
+        if (o != m && o->hp > 0 && cheb(o->x, o->y, mx, my) <= 2 && h.sees(o->x, o->y)) {
+          add_fx({{"k", "bolt"}, {"cells", json::array({xy(mx, my), xy(o->x, o->y)})}, {"col", 0xFFE68C}, {"ch", "*"}});
+          strike(h, *o, (o->def->undead ? 1.6 : 1.0));
+          break;
+        }
+  } else if (key == "mend") {
+    for (auto* o : active()) {
+      if (cheb(o->x, o->y, h.x, h.y) > 3) continue;
+      Stats os = stats(*o);
+      int heal = rnd_i((os.maxhp * .25 + 2 * h.lvl) * (h.perk("shepherd") ? 1.5 : 1.0));
+      o->hp = std::min(os.maxhp, o->hp + heal);
+      o->poison = 0;
+      add_fx({{"k", "rise"}, {"x", o->x}, {"y", o->y}, {"col", 0xFFE68C}});
+      o->say(o == &h ? "Your wounds close." : h.name + "'s light closes your wounds.", 0xFFE68C);
+    }
+  } else if (key == "hallow") {
+    int dmg = rnd_i((2 + .6 * h.lvl) * sp * (h.perk("pyre") ? 2 : 1));
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx)
+        if (floor->walk(h.x + dx, h.y + dy)) floor->ground.push_back({{h.x + dx, h.y + dy}, 1, 5, dmg, h.pid});
+    add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xFFE68C}, {"hollow", true}});
+    h.say("The ground around you is hallowed.", 0xFFE68C);
+  } else if (key == "beacon") {
+    add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 4}, {"col", 0xFFF0B4}, {"hollow", true}});
+    auto ms = seen_foes(4);
+    for (auto& m : ms) {
+      hold(*m, 2);
+      m->awake = true;
+      if (m->def->undead) hurt(*m, rnd_i(6 + 1.5 * h.lvl), &h);
+    }
+    h.say("Your lantern flares white.", 0xFFF0B4);
+  } else if (key == "rune") {
+    for (auto& r : floor->runes) if (r.p == P{h.x, h.y}) { h.say("A rune is already carved here.", 0x909090); return false; }
+    floor->runes.push_back({{h.x, h.y}, h.pid});
+    int mine = 0;
+    for (auto& r : floor->runes) if (r.owner == h.pid) ++mine;
+    if (mine > (h.perk("stoneward") ? 5 : 3))
+      for (size_t i = 0; i < floor->runes.size(); ++i) if (floor->runes[i].owner == h.pid) { floor->runes.erase(floor->runes.begin() + i); break; }
+    add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", 0x50E6E6}});
+    h.say("You carve a rune into the floor.", 0x50E6E6);
+    tip(h, "rune", "A foe that steps on your rune sets it off. Lure them over it, or burst them all with Kindle: [2].");
+  } else if (key == "kindle") {
+    std::vector<P> mine;
+    for (auto& r : floor->runes) if (r.owner == h.pid) mine.push_back(r.p);
+    if (mine.empty()) { h.say("You have no runes carved.", 0x909090); return false; }
+    floor->runes.erase(std::remove_if(floor->runes.begin(), floor->runes.end(), [&](const Rune& r) { return r.owner == h.pid; }), floor->runes.end());
+    for (auto p : mine) burst_rune(h, p);
+  } else if (key == "ward") {
+    MonP m = target(h, x, y);
+    if (!m || cheb(m->x, m->y, h.x, h.y) > 7) { h.say("No foe within 7.", 0x909090); return false; }
+    add_fx({{"k", "burst"}, {"x", m->x}, {"y", m->y}, {"r", 1}, {"col", 0x50E6E6}, {"gather", true}});
+    if (m->rank == "boss") m->stun = std::max(m->stun, 1); else m->pinned = std::max(m->pinned, 3);
+    m->awake = true;
+    say_near(m->x, m->y, "Runes close round " + the(*m) + ".", 0x50E6E6);
+    hurt(*m, rune_dmg(h) / 2, &h);
+  } else if (key == "recall") {
+    int idx = -1;
+    for (size_t i = 0; i < floor->runes.size(); ++i) if (floor->runes[i].owner == h.pid) { idx = int(i); break; }
+    if (idx < 0) { h.say("You have no runes carved.", 0x909090); return false; }
+    P to = floor->runes[idx].p;
+    if (!free(to.x, to.y)) { h.say("Something stands on your rune.", 0x909090); return false; }
+    floor->runes.erase(floor->runes.begin() + idx);
+    P from{h.x, h.y};
+    add_fx({{"k", "inward"}, {"x", h.x}, {"y", h.y}, {"col", 0x50E6E6}});
+    h.x = to.x; h.y = to.y;
+    burst_rune(h, from);
+    arrive(h);
+  } else if (key == "shadowstep") {
+    MonP m = target(h, x, y);
+    if (!m || cheb(m->x, m->y, h.x, h.y) > 4) { h.say("No foe within 4.", 0x909090); return false; }
+    P best{-1, -1};
+    int bd = -1;
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        int cx = m->x + dx, cy = m->y + dy;
+        if ((dx || dy) && free(cx, cy) && !floor->burning(cx, cy) && cheb(cx, cy, h.x, h.y) > bd) { bd = cheb(cx, cy, h.x, h.y); best = {cx, cy}; }
+      }
+    if (best.x < 0) { h.say("No room behind it.", 0x909090); return false; }
+    add_fx({{"k", "inward"}, {"x", h.x}, {"y", h.y}, {"col", 0x8C7896}});
+    h.x = best.x; h.y = best.y;
+    m->surprised = 1;
+    m->open = 2;
+    m->awake = true;
+    h.say("You step out of the shadows behind " + the(*m) + ".", 0xC8A0C8);
+    tip(h, "shadowstep", "A foe caught off guard is busy: strike it now for an opening.");
+    arrive(h);
+  } else if (key == "fan") {
+    auto ms = seen_foes(2);
+    if (ms.empty()) { h.say("No foe within 2.", 0x909090); return false; }
+    add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 2}, {"col", 0xC8C8D2}, {"signs", "/\\-|"}});
+    for (auto& m : ms)
+      if (m->hp > 0 && strike(h, *m, .8) && m->hp > 0 && h.perk("venom")) {
+        m->bleed = 5;
+        m->bleed_dmg = std::max(m->bleed_dmg, 2 + h.lvl / 2);
+      }
+  } else if (key == "smoke") {
+    add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 3}, {"col", 0x8C8C96}, {"signs", "~"}});
+    for (auto& m : seen_foes(3)) m->lost = 2;
+    h.say("Smoke fills the air. They have lost you.", 0xA0A0AA);
+  } else if (key == "garrote") {
+    MonP m = adjacent();
+    if (!m) { h.say("No foe next to you.", 0x909090); return false; }
+    bool was_busy = busy(*m, h);
+    if (strike(h, *m, 1.2) && m->hp > 0) {
+      hold(*m, 2);
+      if (!was_busy) bleed(h, *m, 4 + h.lvl);
+      say_near(m->x, m->y, cap(the(*m)) + " chokes and cannot act.", 0xC8A0C8);
+    }
+  } else return false;
+  return true;
 }
 
 void Game::quaff(Hero& h, const std::string& k) {
@@ -1121,6 +1496,7 @@ void Game::monsters() {
 }
 
 Hero* Game::nearest_hero(const Mon& m, bool seen_only) {
+  for (auto* h : active()) if (h->standfast > 0 && cheb(h->x, h->y, m.x, m.y) <= 3) return h;
   Hero* best = nullptr;
   int bd = 1 << 30;
   for (auto* h : active()) {
@@ -1137,6 +1513,8 @@ void Game::mon_turn(Mon& m) {
   if (!m.awake) return;
   if (m.blow.turns > 0) return;               // winding up: it does nothing else
   if (m.spent > 0) { --m.spent; return; }     // open after a great blow
+  if (m.surprised > 0) { --m.surprised; return; }
+  if (m.lost > 0) { --m.lost; if (m.pinned <= 0) { step_random(m); trod(m); } return; }
   Hero* h = nearest_hero(m, true);
   if (!h) h = nearest_hero(m, false);
   if (!h) return;
@@ -1174,7 +1552,9 @@ void Game::mon_turn(Mon& m) {
     }
   }
   if (d <= 1) { mon_hit(m, *h, false); return; }
+  if (m.pinned > 0) return;
   step_toward(m);
+  trod(m);
 }
 
 void Game::step_random(Mon& m) {
@@ -1183,7 +1563,7 @@ void Game::step_random(Mon& m) {
   rnd.shuffle(dirs);
   for (auto c : dirs) {
     int nx = m.x + c.x, ny = m.y + c.y;
-    if (floor->walk(nx, ny) && !mon_at(nx, ny) && !hero_at(nx, ny)) { m.x = nx; m.y = ny; return; }
+    if (floor->walk(nx, ny) && !mon_at(nx, ny) && !hero_at(nx, ny) && !floor->burning(nx, ny)) { m.x = nx; m.y = ny; return; }
   }
 }
 
@@ -1196,7 +1576,7 @@ void Game::step_toward(Mon& m) {
       int nx = m.x + dx, ny = m.y + dy;
       if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
       int dd = dist_[ny * W + nx];
-      if (dd < bd && !mon_at(nx, ny) && !hero_at(nx, ny)) { bd = dd; bx = nx; by = ny; }
+      if (dd < bd && !mon_at(nx, ny) && !hero_at(nx, ny) && !floor->burning(nx, ny)) { bd = dd; bx = nx; by = ny; }
     }
   if (bx < 0) return;
   if (floor->tile(bx, by) == DOOR) { floor->set(bx, by, OPEN); return; }
@@ -1206,9 +1586,9 @@ void Game::step_toward(Mon& m) {
 
 void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   Stats st = stats(h);
-  int chance = std::clamp(m.acc + depth * 2 - st.armour, 20, 95);
+  int chance = std::clamp(m.acc + depth * 2 - st.armour - (h.cls->key == "cutthroat" && !ranged ? 15 : 0), 20, 95);
   if (!ranged) add_fx({{"k", "swing"}, {"src", xy(m.x, m.y)}, {"cells", json::array({xy(h.x, h.y)})}});
-  if (rnd.below(100) >= chance) return;
+  if (rnd.below(100) >= chance) { if (h.perk("riposte")) m.open = 2; return; }
   int dmg = std::max(1, rnd.range(m.lo, m.hi) - st.armour / 6);
   if (m.def->fire || m.has("Fire-blooded")) dmg += rnd_i(rnd.range(m.lo, m.hi) * .3 * (1 - st.res_f / 100.0));
   hero_hurt(h, &m, dmg, "");
@@ -1228,6 +1608,9 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   if (kind == "fire") dmg = rnd_i(dmg * (1 - st.res_f / 100.0));
   if (kind == "cold") dmg = rnd_i(dmg * (1 - st.res_c / 100.0));
   if (h.shield > 0) dmg = std::max(1, dmg / 2);
+  if (h.standfast > 0) dmg = std::max(1, dmg / 2);
+  if (h.cls->fury()) dmg = std::max(1, rnd_i(dmg * (1 - .02 * h.mana)));  // fury dulls the pain
+  if (h.cls->fury() && m) h.mana = std::min(10, h.mana + (h.perk("guardian") ? 2 : 1));
   h.hp -= dmg;
   add_fx({{"k", "blood"}, {"x", h.x}, {"y", h.y}, {"src", xy(m ? m->x : h.x, m ? m->y : h.y - 1)}});
   h.say((m ? cap(the(*m)) : std::string(kind == "fire" ? "Fire" : "Poison")) + " hurts you (" + std::to_string(dmg) + ").", 0xFF8080);
@@ -1299,11 +1682,13 @@ void Game::tick() {
     }
     if (h->numb > 0) --h->numb;
     if (h->shield > 0) --h->shield;
-    if (turn % 3 == 0) h->mana = std::min(st.maxmana, h->mana + st.regen);
+    if (turn % 3 == 0 && !h->cls->fury()) h->mana = std::min(st.maxmana, h->mana + st.regen);
+    if (h->standfast > 0) --h->standfast;
     h->hp = std::min(h->hp, st.maxhp);
   }
   for (auto& m : floor->mons)
     if (m->has("Regenerating") && m->hp < m->maxhp) m->hp = std::min(m->maxhp, m->hp + std::max(1, m->maxhp / 50));
+  classes_tick();
 }
 
 void Game::look() {

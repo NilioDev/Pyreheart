@@ -57,7 +57,14 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     if (h.sees(m->x, m->y))
       ents.push_back({{"id", m->id}, {"x", m->x}, {"y", m->y}, {"ch", m->def->ch}, {"col", m->col}, {"name", m->name},
                       {"hp", m->hp}, {"max", m->maxhp}, {"rank", m->rank}, {"frozen", m->frozen > 0}, {"stun", m->stun > 0},
-                      {"about", describe(*m)}, {"spent", m->spent > 0}});
+                      {"about", describe(*m)}, {"spent", m->spent > 0}, {"bleed", m->bleed > 0}, {"pinned", m->pinned > 0},
+                      {"busy", g.busy(*m, h)}});
+  json runes = json::array();
+  for (auto& r : f.runes) if (h.sees(r.p.x, r.p.y) || r.owner == h.pid) runes.push_back({r.p.x, r.p.y, r.owner});
+  out["runes"] = runes;
+  json ground = json::array();
+  for (auto& gr : f.ground) if (h.sees(gr.p.x, gr.p.y)) ground.push_back({gr.p.x, gr.p.y, gr.kind});
+  out["ground"] = ground;
   // blows being wound up: where they land and in how many turns
   json marks = json::array();
   for (auto& m : f.mons) {
@@ -107,9 +114,14 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     for (auto& k : h.perk_choices.front()) { auto& p = perk_def(k); choice.push_back({k, p.name, p.text}); }
   }
   json skills = json::array();
-  for (auto& k : h.cls->skills) {
+  for (size_t i = 0; i < h.cls->skills.size(); ++i) {
+    auto& k = h.cls->skills[i];
     auto& s = skill_def(k);
-    skills.push_back({s.name, s.mana - (k == "cleave" ? 2 * h.perk("whirl") : 0), s.target, s.about});
+    int cost = s.mana;
+    if (k == "charge" && h.perk("frenzy")) cost = 0;
+    if (k == "tumble") cost -= 2 * h.perk("quick");
+    if (k == "kindle" && h.perk("deeprunes")) cost = 0;
+    skills.push_back({s.name, cost, s.target, s.about, data::SKILL_LEVELS[i]});
   }
   std::string dmg = std::to_string(st.lo) + "-" + std::to_string(st.hi) + (st.pct > 0 ? " +" + std::to_string(st.pct) + "%" : "");
   out["me"] = {{"pid", h.pid}, {"name", h.name}, {"cls", h.cls->key}, {"clsname", h.cls->name}, {"x", h.x}, {"y", h.y},
@@ -118,7 +130,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                {"manap", h.mana_pots}, {"dead", h.dead}, {"gone", h.gone}, {"shopping", h.shopping}, {"poison", h.poison > 0},
                {"numb", h.numb > 0}, {"shield", h.shield > 0}, {"dmg", dmg}, {"armour", st.armour}, {"acc", st.acc},
                {"crit", st.crit}, {"res", {st.res_f, st.res_c, st.res_p}}, {"equip", equip}, {"pack", pack}, {"perks", perks},
-               {"choice", choice}, {"skills", skills}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
+               {"choice", choice}, {"skills", skills}, {"pool", h.cls->res}, {"focus", h.focus}, {"standfast", h.standfast}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
   if (h.shopping) {
     json shop = json::array();
     for (auto& it : f.shop) { json j = it->to_json(); j["price"] = it->value * 2; j["cmp"] = cmp(g, h, *it); shop.push_back(j); }

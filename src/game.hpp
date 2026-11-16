@@ -44,6 +44,7 @@ struct Hero {
   std::vector<std::vector<std::string>> perk_choices;
   bool dead = false, gone = false, away = false, drank = false, shopping = false;
   int shield = 0, poison = 0, poison_dmg = 0, numb = 0, kills = 0;
+  int focus = 0, standfast = 0, combo_id = 0, combo = 0;  // ranger's focus, warrior's Stand Fast, duelist's run of blows
   std::vector<char> vis = std::vector<char>(W * H, 0);
   std::vector<char> seen = std::vector<char>(W * H, 0);  // all it has seen of this floor, for a dive taken up again
   std::vector<LogLine> log;
@@ -77,11 +78,17 @@ struct Mon {
   int energy = 0, stun = 0, frozen = 0, cool = 3;
   bool awake = false, summoned = false;
   Blow blow;                       // turns > 0 while it winds up
+  int bleed = 0, bleed_dmg = 0;    // turns left, harm each turn
+  int pinned = 0, lost = 0, surprised = 0, open = 0;  // held fast; lost in smoke; caught off guard; open after missing
   int spent = 0, phase = 0;        // spent: turns it stands open after a great blow
   std::vector<std::string> deck;   // a boss's next moves
   bool has(const std::string& m) const { return std::find(mods.begin(), mods.end(), m) != mods.end(); }
 };
 using MonP = std::shared_ptr<Mon>;
+
+// a rune carved by a hero, or burning ground (0 a wall of embers, 1 hallowed ground)
+struct Rune { P p; int owner; };
+struct Ground { P p; int kind, turns, dmg, owner; };
 
 struct FloorItem { int x, y; ItemP item; int gold = 0; std::string pot; int owner = 0; };  // owner 0: anyone
 
@@ -98,6 +105,9 @@ struct Floor {
   std::vector<ItemP> shop;
   MonP boss;
   bool boss_woke = false;
+  std::vector<Rune> runes;
+  std::vector<Ground> ground;
+  bool burning(int x, int y) const { for (auto& g : ground) if (g.kind == 0 && g.p == P{x, y}) return true; return false; }
   int tile(int x, int y) const { return x >= 0 && x < W && y >= 0 && y < H ? t[y * W + x] : data::WALL; }
   void set(int x, int y, int v) { t[y * W + x] = v; ++version; }
   bool walk(int x, int y) const { return !data::blocks(tile(x, y)); }
@@ -138,6 +148,7 @@ class Game {
   int need(int lvl) const;
   bool can_use(const Hero& h, const Item& it) const;
   Verdict compare(const Hero& h, const Item& it) const;
+  bool busy(const Mon& m, const Hero& h);
   Hero* hero_at(int x, int y);
   MonP mon_at(int x, int y);
   void look();
@@ -170,7 +181,14 @@ class Game {
   void arrive(Hero& h);
   void descend(Hero& h);
   void check_stairs();
-  bool strike(Hero& h, Mon& m, double mult);
+  bool strike(Hero& h, Mon& m, double mult, bool ranged = false);
+  void focus_up(Hero& h);
+  void bleed(Hero& h, Mon& m, int dmg);
+  int rune_dmg(const Hero& h);
+  void burst_rune(Hero& h, P at);
+  void trod(Mon& m);
+  void classes_tick();
+  bool skill_new(Hero& h, const std::string& key, int x, int y, const Stats& st, double sp);
   void melee(Hero& h, Mon& m);
   void hurt(Mon& m, int dmg, Hero* by, const std::string& text = "");
   void kill(Mon& m, Hero* by);

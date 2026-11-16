@@ -20,14 +20,15 @@ struct TileDef { int ch; int col; bool walk; bool see; std::string name; };
 struct ActDef { std::string name; int wall, floor; std::string mood, boss; };
 struct MonDef {
   std::string key, name; int ch; int col; int hp, lo, hi, acc, ar, spd, xp; std::string ai; int rng; int shot_ch; int shot_col;
-  bool boss, gear; int poison; bool fire, cold; std::vector<std::string> moves;
+  bool boss, gear; int poison; bool fire, cold; std::vector<std::string> moves; bool undead;
 };
 struct ClassDef {
   std::string key, name; int col; int hp, mana, hp_lvl, mana_lvl, acc;
-  std::vector<std::string> start, skills, kinds; std::string about;
+  std::vector<std::string> start, skills, kinds; std::string about, res; std::vector<std::string> paths;
+  bool fury() const { return res == "fury"; }
 };
 struct SkillDef { std::string key, name; int mana; bool target; std::string about; };
-struct PerkDef { std::string key, name, text; int max; std::string cls; };
+struct PerkDef { std::string key, name, text; int max; std::string cls, path; };  // path "*": a path itself
 struct BaseDef { std::string key, name, slot, kind; int tier, lo, hi, ar, spell; };
 struct AffixDef { std::string name, stat; int lo, hi; double grow; std::vector<std::string> slots; };
 struct UniqueDef { std::string name, base; std::vector<std::pair<std::string, int>> stats; };

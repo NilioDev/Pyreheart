@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <set>
+#include <tuple>
 
 #include "game.hpp"
 
@@ -35,11 +37,41 @@ static json toward(Game& g, Hero& h, int tx, int ty) {
 }
 static bool still(const json& a) { return a["dx"] == 0 && a["dy"] == 0; }
 
+static json skill(int n, const MonP& m = nullptr) {
+  json a{{"t", "skill"}, {"n", n}};
+  if (m) { a["x"] = m->x; a["y"] = m->y; }
+  return a;
+}
+
+// what a careful player does about a blow being wound up: step off red, into gold
+static json dodge(Game& g, Hero& h) {
+  Floor& f = *g.floor;
+  for (auto& m : f.mons) {
+    if (m->blow.turns <= 0) continue;
+    auto in = [&](int x, int y) { for (auto& c : m->blow.cells) if (c.x == x && c.y == y) return true; return false; };
+    bool here = in(h.x, h.y);
+    if (m->blow.kind == BLOW_RED && !here) continue;
+    if (m->blow.kind == BLOW_GOLD && here) continue;
+    if (m->blow.kind == BLOW_PURPLE) continue;
+    int bx = 0, by = 0, best = 1 << 30;
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        int nx = h.x + dx, ny = h.y + dy;
+        if ((!dx && !dy) || !f.walk(nx, ny) || g.mon_at(nx, ny) || g.hero_at(nx, ny)) continue;
+        int cost = 0;
+        if (m->blow.kind == BLOW_RED) cost = in(nx, ny) ? 100 : 0;
+        else { cost = 1000; for (auto& c : m->blow.cells) cost = std::min(cost, cheb(nx, ny, c.x, c.y)); }
+        if (cost < best) { best = cost; bx = dx; by = dy; }
+      }
+    if (bx || by) return {{"t", "move"}, {"dx", bx}, {"dy", by}};
+  }
+  return nullptr;
+}
+
 static json choose(Game& g, Hero& h) {
-  if (!h.perk_choices.empty()) g.free_action(h, {{"t", "perk"}, {"k", h.perk_choices.front().front()}});
+  if (!h.perk_choices.empty()) g.free_action(h, {{"t", "perk"}, {"k", h.perk_choices.front()[g.rnd.below(int(h.perk_choices.front().size()))]}});
   Stats st = g.stats(h);
   if (h.hp < st.maxhp * .4 && h.heal > 0) return {{"t", "quaff"}, {"k", "heal"}};
-  if (h.mana < 5 && h.mana_pots > 0 && h.cls->key == "adept") return {{"t", "quaff"}, {"k", "mana"}};
   auto score = [](const ItemP& i) { if (!i) return 0; int s = i->lo + i->hi + i->ar * 2; for (auto& [k, v] : i->stats) s += v / 3; return s; };
   for (auto& it : h.pack) {
     if (!g.can_use(h, *it)) continue;
@@ -48,26 +80,87 @@ static json choose(Game& g, Hero& h) {
   }
   Floor& f = *g.floor;
   if (h.shopping) g.free_action(h, {{"t", "buyp"}, {"k", "heal"}});
+  // the cutthroat answers a blow by stepping behind the one who swings it
+  if (h.cls->key == "cutthroat" && h.mana >= 3)
+    for (auto& m : f.mons)
+      if (m->blow.turns > 0 && m->blow.kind == BLOW_RED && cheb(m->x, m->y, h.x, h.y) <= 4)
+        for (auto& c : m->blow.cells) if (c.x == h.x && c.y == h.y) return skill(1, m);
+  if (auto d = dodge(g, h); !d.is_null()) return d;
   MonP seen;
-  for (auto& m : f.mons) if (h.sees(m->x, m->y) && (!seen || cheb(h.x, h.y, m->x, m->y) < cheb(h.x, h.y, seen->x, seen->y))) seen = m;
+  int visible = 0;
+  for (auto& m : f.mons)
+    if (h.sees(m->x, m->y) || cheb(m->x, m->y, h.x, h.y) <= 1) {
+      ++visible;
+      if (!seen || cheb(h.x, h.y, m->x, m->y) < cheb(h.x, h.y, seen->x, seen->y)) seen = m;
+    }
   if (seen) {
+    if (!h.cls->fury() && h.mana < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
     int d = cheb(h.x, h.y, seen->x, seen->y);
     int near = 0;
     for (auto& m : f.mons) if (cheb(h.x, h.y, m->x, m->y) <= 1) ++near;
-    if (h.cls->key == "adept" && h.mana >= 4) {
-      if (d <= 2 && h.mana >= 10 && near >= 2) return {{"t", "skill"}, {"n", 2}};
-      return {{"t", "skill"}, {"n", 1}, {"x", seen->x}, {"y", seen->y}};
+    MonP purple;
+    for (auto& m : f.mons) if (m->blow.turns > 0 && m->blow.kind == BLOW_PURPLE && h.sees(m->x, m->y)) purple = m;
+    MonP adj;
+    for (auto& m : f.mons) if (cheb(h.x, h.y, m->x, m->y) == 1 && (!adj || g.busy(*m, h))) adj = m;
+    const std::string& k = h.cls->key;
+    if (std::getenv("BOTWHY")) std::printf("   why: k=%s d=%d near=%d seen=%s\n", k.c_str(), d, near, seen->name.c_str());
+    int L = h.lvl, M = h.mana;
+    if (k == "warrior") {
+      if (purple && cheb(h.x, h.y, purple->x, purple->y) <= 2 && M >= 3) return skill(2);
+      if (L >= 6 && M >= 4 && h.standfast == 0 && h.hp < st.maxhp * .6 && near >= 1) return skill(4);
+      if (near >= 2 && M >= 2) return skill(1);
+      if (L >= 3 && M >= 2 && d >= 2 && d <= 5) return skill(3, seen);
+    } else if (k == "ranger") {
+      if (purple && L >= 6 && M >= 6) return skill(4, purple);
+      if (d <= 1 && L >= 3 && M >= 4) return skill(3);
+      if (visible >= 3 && M >= 7) return skill(1);
+      if (d > 1) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+    } else if (k == "adept") {
+      for (auto& m : f.mons) if (m->frozen > 0 && h.sees(m->x, m->y) && M >= 4) return skill(1, m);
+      if (d <= 2 && M >= 10 && (near >= 1 || purple)) return skill(2);
+      if (d <= 1 && L >= 3 && M >= 5) return skill(3);
+      if (L >= 6 && M >= 8 && d >= 3 && seen->rank != "normal") return skill(4, seen);
+      if (M >= 4) return skill(1, seen);
+    } else if (k == "lamplighter") {
+      if (h.hp < st.maxhp * .5 && M >= 6) return skill(2);
+      if (purple && L >= 6 && M >= 9 && cheb(h.x, h.y, purple->x, purple->y) <= 4) return skill(4);
+      if (near >= 2 && L >= 3 && M >= 7) return skill(3);
+      if (adj && M >= 3) return skill(1);
+    } else if (k == "runecarver") {
+      int mine = 0; bool on = false, foe_on = false;
+      for (auto& r : f.runes) if (r.owner == h.pid) { ++mine; if (r.p == P{h.x, h.y}) on = true; for (auto& m : f.mons) if (cheb(m->x, m->y, r.p.x, r.p.y) <= 1) foe_on = true; }
+      if (purple && L >= 3 && M >= 6) return skill(3, purple);
+      if (foe_on && M >= 4) return skill(2);
+      if (d <= 1 && L >= 6 && mine > 0 && M >= 6) return skill(4);
+      if (!on && M >= 3 && d <= 6) return skill(1);
+      if (d >= 2 && on) {  // step back and let them come over it
+        int bx = 0, by = 0, bd = d;
+        for (int dy = -1; dy <= 1; ++dy)
+          for (int dx = -1; dx <= 1; ++dx) {
+            int nx = h.x + dx, ny = h.y + dy;
+            if ((dx || dy) && f.walk(nx, ny) && !g.mon_at(nx, ny) && !g.hero_at(nx, ny) && cheb(nx, ny, seen->x, seen->y) > bd) { bd = cheb(nx, ny, seen->x, seen->y); bx = dx; by = dy; }
+          }
+        if (bx || by) return {{"t", "move"}, {"dx", bx}, {"dy", by}};
+      }
+    } else if (k == "cutthroat") {
+      if (purple && L >= 6 && M >= 6 && cheb(h.x, h.y, purple->x, purple->y) == 1) return skill(4);
+      if (adj && g.busy(*adj, h)) return {{"t", "move"}, {"dx", adj->x - h.x}, {"dy", adj->y - h.y}};
+      if (near >= 3 && L >= 3 && M >= 7) return skill(3);
+      if (near >= 2 && M >= 5) return skill(2);
+      if (adj && L >= 6 && M >= 6) return skill(4);
+      if (d <= 4 && M >= 3) return skill(1, adj ? adj : seen);
     }
-    if (h.cls->key == "ranger" && d > 1) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
-    if (h.cls->key == "warrior" && near >= 2 && h.mana >= 5) return {{"t", "skill"}, {"n", 1}};
     if (d == 1) return {{"t", "move"}, {"dx", seen->x - h.x}, {"dy", seen->y - h.y}};
     auto a = toward(g, h, seen->x, seen->y);
     if (!still(a)) return a;
   }
   if (f.tile(h.x, h.y) == STAIRS) return {{"t", "down"}};
   const FloorItem* loot = nullptr;
+  // things it stands on and could not take (a full belt or pack): leave them be
+  static std::set<std::tuple<int, int, int>> left;
+  for (auto& fi : f.items) if (fi.x == h.x && fi.y == h.y) left.insert({f.id, fi.x, fi.y});
   for (auto& fi : f.items)
-    if ((!fi.owner || fi.owner == h.pid) && cheb(h.x, h.y, fi.x, fi.y) < 14 && (!loot || cheb(h.x, h.y, fi.x, fi.y) < cheb(h.x, h.y, loot->x, loot->y))) loot = &fi;
+    if (!left.count({f.id, fi.x, fi.y}) && (!fi.owner || fi.owner == h.pid) && cheb(h.x, h.y, fi.x, fi.y) < 14 && (!loot || cheb(h.x, h.y, fi.x, fi.y) < cheb(h.x, h.y, loot->x, loot->y))) loot = &fi;
   if (std::getenv("BOTDBG2")) std::printf("seen=%d loot=%d,%d down=%d,%d tile=%d\n", seen?1:0, loot?loot->x:-1, loot?loot->y:-1, f.down.x, f.down.y, f.tile(f.down.x,f.down.y));
   if (loot) { auto a = toward(g, h, loot->x, loot->y); if (!still(a)) return a; }
   auto a = toward(g, h, f.down.x, f.down.y);
@@ -82,8 +175,10 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
   while (g.state == "play" && steps < 20000) {
     std::map<int, json> acts;
     for (auto& [id, h] : g.heroes) if (h->present()) acts[id] = choose(g, *h);
+    if (std::getenv("BOTACT")) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%5d %d,%d hp%d mp%d %s\n", g.turn + 1, h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%d,%d hp%d mana%d %s\n", h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
     g.step(acts);
+    if (std::getenv("BOTLOG")) for (auto& [id, h] : g.heroes) { for (auto& l : h->log) std::printf("%5d hp%3d mp%2d %s\n", g.turn, h->hp, h->mana, l.text.c_str()); h->log.clear(); }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, h] : g.heroes) for (auto& l : h->log) std::printf("  %s\n", l.text.c_str());
     if (!std::getenv("BOTDBG")) for (auto& [id, h] : g.heroes) { view::snapshot(g, *h, steps % 50 == 0); }
     ++steps;
@@ -98,7 +193,11 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
 }
 
 int main() {
-  for (auto& c : CLASSES) for (uint64_t s = 1; s <= 3; ++s) run({c.key}, s);
-  run({"warrior", "ranger", "adept"}, 9);
+  const char* only = std::getenv("BOTCLASS");
+  int seeds = std::getenv("BOTSEEDS") ? std::atoi(std::getenv("BOTSEEDS")) : 3;
+  for (auto& c : CLASSES)
+    if (!only || c.key == only)
+      for (uint64_t s = 1; s <= uint64_t(seeds); ++s) run({c.key}, s);
+  if (!only) run({"warrior", "lamplighter", "cutthroat"}, 9);
   return 0;
 }

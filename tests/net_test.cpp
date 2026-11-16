@@ -61,7 +61,9 @@ int main() {
   Side a{host.local()};
   a.link->send({{"hello", {{"name", "Aldo"}, {"cls", "warrior"}, {"ver", NET_VERSION}}}});
   std::string err;
-  auto remote = connect_to("127.0.0.1", PORT, err);
+  // the host opens its port on a thread of its own: give it a moment
+  std::shared_ptr<Link> remote;
+  for (int i = 0; i < 20 && !remote; ++i) { remote = connect_to("127.0.0.1", PORT, err); if (!remote) std::this_thread::sleep_for(100ms); }
   CHECK(remote != nullptr);
   if (!remote) { std::printf("connect: %s\n", err.c_str()); return 1; }
   Side b{remote};

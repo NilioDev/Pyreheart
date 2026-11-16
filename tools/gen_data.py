@@ -26,10 +26,10 @@ o.append('};')
 o.append('inline const std::vector<MonDef> MONSTERS = {')
 for k, m in D.M.items():
     shot = m.get('shot', ('*', (255, 255, 255)))
-    o.append('    {%s, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %s, %d, %s, %s, %s, %s, %d, %s, %s, %s},' % (
+    o.append('    {%s, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %s, %d, %s, %s, %s, %s, %d, %s, %s, %s, %s},' % (
         s(k), s(m['name']), cp(m['ch']), col(m['col']), m['hp'], m['dmg'][0], m['dmg'][1], m['acc'], m['ar'], m['spd'], m['xp'],
         s(m['ai']), m.get('rng', 1), cp(shot[0]), col(shot[1]), b(m.get('boss')), b(m.get('gear')),
-        m.get('poison', 0), b(m.get('fire')), b(m.get('cold')), lst(m.get('moves', ()))))
+        m.get('poison', 0), b(m.get('fire')), b(m.get('cold')), lst(m.get('moves', ())), b(m.get('undead'))))
 o.append('};')
 o.append('inline const std::vector<std::vector<std::pair<std::string, int>>> SPAWNS = {')
 for act in D.SPAWNS: o.append('    {' + ', '.join('{%s, %d}' % (s(k), w) for k, w in act) + '},')
@@ -40,14 +40,17 @@ o.append('inline const std::vector<std::string> UNIQUE_EPITHET = ' + lst(D.UNIQU
 o.append('inline const std::vector<ClassDef> CLASSES = {')
 for k in D.CLASS_ORDER:
     cl = D.CLASSES[k]
-    o.append('    {%s, %s, %s, %d, %d, %d, %d, %d, %s, %s, %s, %s},' % (s(k), s(cl['name']), col(cl['col']), cl['hp'], cl['mana'],
-             cl['hp_lvl'], cl['mana_lvl'], cl['acc'], lst(cl['start']), lst(cl['skills']), lst(cl['kinds']), s(cl['about'])))
+    o.append('    {%s, %s, %s, %d, %d, %d, %d, %d, %s, %s, %s, %s, %s, %s},' % (s(k), s(cl['name']), col(cl['col']), cl['hp'], cl['mana'],
+             cl['hp_lvl'], cl['mana_lvl'], cl['acc'], lst(cl['start']), lst(cl['skills']), lst(cl['kinds']), s(cl['about']),
+             s(cl['res']), lst(cl['paths'])))
 o.append('};')
+o.append('inline const int SKILL_LEVELS[] = {' + ', '.join(str(x) for x in D.SKILL_LEVELS) + '};')
+o.append('constexpr int PATH_LEVEL = %d;' % D.PATH_LEVEL)
 o.append('inline const std::vector<SkillDef> SKILLS = {')
 for k, sk in D.SKILLS.items(): o.append('    {%s, %s, %d, %s, %s},' % (s(k), s(sk['name']), sk['mana'], b(sk['target']), s(sk['about'])))
 o.append('};')
 o.append('inline const std::vector<PerkDef> PERKS = {')
-for k, (n, t, mx, cl) in D.PERKS.items(): o.append('    {%s, %s, %s, %d, %s},' % (s(k), s(n), s(t), mx, s(cl) if cl else '""'))
+for k, (n, t, mx, cl, pa) in D.PERKS.items(): o.append('    {%s, %s, %s, %d, %s, %s},' % (s(k), s(n), s(t), mx, s(cl) if cl else '""', s(pa) if pa else '""'))
 o.append('};')
 o.append('inline const std::vector<std::string> SLOTS = ' + lst(D.SLOTS) + ';')
 o.append('inline const std::vector<BaseDef> BASES = {')
