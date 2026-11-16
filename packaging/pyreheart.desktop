@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Pyreheart
+Comment=A coffeebreak dungeon dive in ASCII
+Exec=pyreheart
+Icon=pyreheart
+Categories=Game;RolePlaying;
+Terminal=false

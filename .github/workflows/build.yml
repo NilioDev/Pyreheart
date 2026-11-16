@@ -11,7 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Linux on the older Ubuntu: an AppImage built there runs on more systems
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Keep line ends as they are (libtcod applies patches)
@@ -37,10 +38,22 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then cp build/Release/pyreheart.exe dist/Pyreheart/; else cp build/pyreheart dist/Pyreheart/; fi
           cp -r assets dist/Pyreheart/
           cp README.md dist/Pyreheart/ || true
+      - name: AppImage
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSL -o linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy packaging/appimage.sh
+          packaging/appimage.sh build ./linuxdeploy
+          mkdir -p appimage && mv Pyreheart-x86_64.AppImage appimage/
       - uses: actions/upload-artifact@v4
         with:
           name: pyreheart-${{ runner.os }}
           path: dist
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: pyreheart-appimage
+          path: appimage
 
   android:
     runs-on: ubuntu-latest
@@ -80,7 +93,7 @@ jobs:
   # the newest phone and watch apps as plain downloads, so a phone can fetch them without unzipping
   latest:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [android]
+    needs: [android, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -89,10 +102,14 @@ jobs:
         with:
           name: pyreheart-android
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: pyreheart-appimage
+          path: dist
       - name: Update the "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create latest dist/*.apk -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
-            --title "Latest build" --notes "Built from ${GITHUB_SHA::7}. pyreheart-wear.apk is for the watch, pyreheart-phone.apk for a phone."
+          gh release create latest dist/*.apk dist/*.AppImage -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Latest build" --notes "Built from ${GITHUB_SHA::7}. pyreheart-wear.apk is for the watch, pyreheart-phone.apk for a phone, Pyreheart-x86_64.AppImage for Linux (make it executable and run it)."

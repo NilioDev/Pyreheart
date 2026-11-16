@@ -56,7 +56,7 @@ cd android
 ./gradlew assemblePhoneRelease assembleWearRelease
 ```
 
-GitHub Actions builds all of these on every push; the desktop games are attached to each run, and the newest APKs are always on the [Latest build](https://github.com/NilioDev/Pyreheart/releases/tag/latest) release.
+GitHub Actions builds all of these on every push; the desktop games are attached to each run, and the newest APKs and the Linux AppImage are always on the [Latest build](https://github.com/NilioDev/Pyreheart/releases/tag/latest) release.
 
 To put the watch app on a Wear OS watch without a computer: turn on developer options and wireless debugging on the watch, download `pyreheart-wear.apk` on the paired phone, and send it over with a sideloading app such as Wear Installer 2.
 
