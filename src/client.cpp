@@ -47,6 +47,7 @@ const std::vector<std::pair<std::string, std::string>> HELP = {
 }  // namespace
 
 Client::Client(tcod::Context& ctx) : ctx_(ctx), con_(WIDE_W, WIDE_H) {
+  intro_start_ = now();
   load_settings();
   pick_layout();
 }
@@ -248,6 +249,7 @@ void Client::event(SDL_Event& ev) {
   if (ev.type == SDL_EVENT_MOUSE_WHEEL) {  // the watch crown, or a mouse wheel
     int d = ev.wheel.y > 0 ? -1 : ev.wheel.y < 0 ? 1 : 0;
     if (!d) return;
+    if (screen_ == Screen::Intro) { screen_ = Screen::Title; menu_ = 0; return; }
     if (over_ == Over::Ring) ring_ = (ring_ + d + 9) % 9;
     else if (over_ == Over::Target) cycle_target(d);
     else if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk) sel_ = std::max(0, sel_ + d);
@@ -270,6 +272,7 @@ void Client::event(SDL_Event& ev) {
 
 void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (k == SDLK_AC_BACK) k = SDLK_ESCAPE;  // the back button or swipe on a phone or watch
+  if (screen_ == Screen::Intro) { screen_ = Screen::Title; menu_ = 0; return; }
   bool shift = mod & SDL_KMOD_SHIFT;
   if (screen_ == Screen::Name || screen_ == Screen::Join) {
     std::string& s = screen_ == Screen::Name ? name_ : addr_;
@@ -390,6 +393,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
 // A tap or a click. x == -1000 means "the menu line y was chosen" (keyboard on the menus).
 void Client::click(int x, int y, bool down) {
   if (!down) { held_ = false; return; }
+  if (screen_ == Screen::Intro) { screen_ = Screen::Title; menu_ = 0; return; }
   if (screen_ != Screen::Game) {
     int choice = x == -1000 ? y : -1;
     if (x != -1000) {  // which line was tapped
@@ -549,7 +553,52 @@ int Client::menu_top() const {
   return 30;
 }
 
+// before the title: the story crawls up the whole screen, then the title comes. Any key or tap skips it.
+void Client::draw_intro() {
+  int cw = con_.get_width(), chh = con_.get_height();
+  bool watch = layout_ == Layout::Watch;
+  int w = watch ? 13 : std::min(cw - 4, 64);
+  std::vector<std::pair<std::string, int>> lines;  // text, colour
+  lines.push_back({"PYREHEART", 0xFF8C28});
+  lines.push_back({"", 0});
+  for (auto& para : lore::INTRO) {
+    if (para.empty()) { lines.push_back({"", 0}); continue; }
+    std::string line, word;
+    for (size_t i = 0; i <= para.size(); ++i) {
+      if (i == para.size() || para[i] == ' ') {
+        if (!line.empty() && int(line.size() + 1 + word.size()) > w) { lines.push_back({line, 0xC8B48C}); line.clear(); }
+        line += (line.empty() ? "" : " ") + word;
+        word.clear();
+      } else word += para[i];
+    }
+    if (!line.empty()) lines.push_back({line, 0xC8B48C});
+  }
+  // a blank row between lines, so the text breathes; it rises from under the screen to past its top
+  const int gap = watch ? 1 : 2;
+  double speed = watch ? 1.6 : 1.4;  // rows a second
+  int pos = int((now() - intro_start_) * speed);
+  int total = int(lines.size()) * gap + chh;
+  if (pos >= total) { screen_ = Screen::Title; menu_ = 0; return; }
+  for (int i = 0; i < int(lines.size()); ++i) {
+    int y = chh - pos + i * gap;
+    if (y < 0 || y >= chh || lines[i].first.empty()) continue;
+    double edge = std::clamp(std::min(y + 1, chh - y) / (chh * .18), 0.0, 1.0);  // fade in at the foot, out at the top
+    const std::string& t = lines[i].first;
+    int x = (cw - int(t.size())) / 2;
+    if (i == 0) {  // the name, letter by letter in fire colours
+      for (int k = 0; k < int(t.size()); ++k)
+        put(x + k, y, t[k], mixc(0x000000, mixc(0xC8B8A8, 0xFF7020, .5 + .5 * std::sin(now() * 2 + k * .7)), edge));
+    } else text(x, y, t, mixc(0x000000, lines[i].second, edge));
+  }
+  if (!watch) {
+    std::string hint = layout_ == Layout::Tall ? "tap to skip" : "[any key] skip";
+    text(cw - int(hint.size()) - 2, chh - 1, hint, 0x504840);
+  }
+  if (watch) for (int y = 0; y < chh; ++y) for (int x = 0; x < cw; ++x) if (!in_circle(x, y)) put(x, y, ' ', 0, 0);
+}
+
 void Client::draw_title() {
+  if (screen_ == Screen::Intro) { draw_intro(); return; }
   int cw = con_.get_width();
   int top = menu_top();
   auto centre = [&](int y, const std::string& s, int col) {
@@ -558,35 +607,6 @@ void Client::draw_title() {
   };
   if (layout_ != Layout::Watch) {
     draw_logo(layout_ == Layout::Wide ? 2 : 2);
-    if (screen_ == Screen::Title) {
-      // the story crawls slowly upward under the menu, fading in at the foot and out at the top, and starts again
-      int w = std::min(cw - 4, 72), y0 = top + 11, h = con_.get_height() - 1 - y0;
-      std::vector<std::string> lines;
-      for (auto& para : lore::INTRO) {
-        if (para.empty()) { lines.push_back(""); continue; }
-        std::string line, word;
-        for (size_t i = 0; i <= para.size(); ++i) {
-          if (i == para.size() || para[i] == ' ') {
-            if (!line.empty() && int(line.size() + 1 + word.size()) > w) { lines.push_back(line); line.clear(); }
-            line += (line.empty() ? "" : " ") + word;
-            word.clear();
-          } else word += para[i];
-        }
-        if (!line.empty()) lines.push_back(line);
-      }
-      if (h > 2) {
-        double speed = .8;  // lines a second
-        int cycle = int(lines.size()) + h;
-        int pos = int(std::fmod(now() * speed, double(cycle)));
-        for (int i = 0; i < int(lines.size()); ++i) {
-          int row = h - pos + i;  // from the foot of the window upward
-          if (row < 0 || row >= h) continue;
-          double edge = std::min(row + 1, h - row) / 3.0;
-          int col = mixc(0x000000, 0xB4A078, std::clamp(edge, 0.0, 1.0));
-          text((cw - w) / 2, y0 + row, lines[i], col);
-        }
-      }
-    }
   } else {
     // the watch: the word in fire colours, embers rising behind it
     double t = now();

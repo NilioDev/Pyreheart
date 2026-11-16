@@ -19,12 +19,13 @@ class Client {
   void frame();
 
  private:
-  enum class Screen { Title, Name, Class, Join, Finding, Game };
+  enum class Screen { Intro, Title, Name, Class, Join, Finding, Game };
   enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
-  Screen screen_ = Screen::Title;
+  Screen screen_ = Screen::Intro;
+  double intro_start_ = 0;
   Over over_ = Over::None;
   int menu_ = 0, sel_ = 0, cls_ = 0;
   bool hosting_ = false, open_ = false;
@@ -75,6 +76,7 @@ class Client {
   std::vector<json> foes() const;
 
   void draw_title();
+  void draw_intro();
   int draw_logo(int y);  // logo.cpp
   int menu_top() const;
   void draw_game();
