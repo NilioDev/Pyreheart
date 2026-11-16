@@ -89,6 +89,10 @@ struct Floor {
   bool opaque(int x, int y) const { return !data::TILES[tile(x, y)].see; }
 };
 
+// what wearing an item would change, for a player who is not sure which of two things is better
+struct Change { std::string what; double by; };
+struct Verdict { int v = 0; std::vector<Change> d; };  // v: 2 better, 1 mostly better, 0 the same, -1 mostly worse, -2 worse, -9 not yours
+
 struct Stats {
   int maxhp, maxmana, lo, hi, pct, acc, crit, armour, res_f, res_c, res_p, leech, spell, fire, regen, thorns;
   bool bow;
@@ -118,6 +122,7 @@ class Game {
   Stats stats(const Hero& h) const;
   int need(int lvl) const;
   bool can_use(const Hero& h, const Item& it) const;
+  Verdict compare(const Hero& h, const Item& it) const;
   Hero* hero_at(int x, int y);
   MonP mon_at(int x, int y);
   void look();

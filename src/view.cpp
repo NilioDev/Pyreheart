@@ -24,6 +24,13 @@ static std::string describe(const Mon& m) {
   return out;
 }
 
+static json cmp(const Game& g, const Hero& h, const Item& it) {
+  Verdict v = g.compare(h, it);
+  json d = json::array();
+  for (auto& c : v.d) d.push_back({c.what, c.by});
+  return {{"v", v.v}, {"d", d}};
+}
+
 json snapshot(Game& g, Hero& h, bool with_map) {
   Floor& f = *g.floor;
   Stats st = g.stats(h);
@@ -66,7 +73,8 @@ json snapshot(Game& g, Hero& h, bool with_map) {
       items.push_back({{"x", fi.x}, {"y", fi.y}, {"ch", "!"}, {"col", fi.pot == "heal" ? 0xFF5050 : 0x5070FF},
                        {"name", fi.pot == "heal" ? "a healing potion" : "a mana potion"}});
     else if (fi.item)
-      items.push_back({{"x", fi.x}, {"y", fi.y}, {"ch", glyph(*fi.item)}, {"col", data::rarity_col(fi.item->rarity)}, {"name", fi.item->name}});
+      items.push_back({{"x", fi.x}, {"y", fi.y}, {"ch", glyph(*fi.item)}, {"col", data::rarity_col(fi.item->rarity)}, {"name", fi.item->name},
+                       {"cmp", cmp(g, h, *fi.item)}});
   }
   out["items"] = items;
   json writ = json::array();
@@ -78,7 +86,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     equip.push_back(it == h.equip.end() ? json(nullptr) : it->second->to_json());
   }
   json pack = json::array();
-  for (auto& it : h.pack) { json j = it->to_json(); j["use"] = g.can_use(h, *it); pack.push_back(j); }
+  for (auto& it : h.pack) { json j = it->to_json(); j["use"] = g.can_use(h, *it); j["cmp"] = cmp(g, h, *it); pack.push_back(j); }
   json perks = json::array();
   for (auto& [k, v] : h.perks) perks.push_back({perk_def(k).name, v});
   json choice = nullptr;
@@ -101,7 +109,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                {"choice", choice}, {"skills", skills}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
   if (h.shopping) {
     json shop = json::array();
-    for (auto& it : f.shop) { json j = it->to_json(); j["price"] = it->value * 2; shop.push_back(j); }
+    for (auto& it : f.shop) { json j = it->to_json(); j["price"] = it->value * 2; j["cmp"] = cmp(g, h, *it); shop.push_back(j); }
     json sell = json::array();
     for (auto& it : h.pack) sell.push_back({it->id, std::max(1, it->value / 3)});
     out["shop"] = {{"items", shop}, {"potion", 25 + 5 * g.depth}, {"sell", sell}};

@@ -79,6 +79,9 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   h->name = name;
   h->cls = &class_def(cls);
   for (auto& b : h->cls->start) { auto it = loot::make(b); h->equip[it->slot] = it; }
+  // for screenshots and tests: start with a full pack of things to compare
+  if (const char* g = std::getenv("PYREHEART_GIFTS"))
+    for (int i = 0; i < std::atoi(g) && int(h->pack.size()) < PACK_MAX; ++i) h->pack.push_back(loot::roll(3, rnd, h->cls->kinds));
   h->hp = stats(*h).maxhp;
   h->mana = stats(*h).maxmana;
   Hero& r = *h;
@@ -184,6 +187,44 @@ int Game::need(int lvl) const { return rnd_i(10 * std::pow(lvl + 1.0, 2.2)); }  
 
 bool Game::can_use(const Hero& h, const Item& it) const {
   return it.slot != "weapon" || std::find(h.cls->kinds.begin(), h.cls->kinds.end(), it.kind) != h.cls->kinds.end();
+}
+
+// Puts the item on a copy of the hero and measures what moved. The weights only decide the one-glance mark;
+// the player still sees every number.
+Verdict Game::compare(const Hero& h, const Item& it) const {
+  Verdict out;
+  if (!can_use(h, it)) { out.v = -9; return out; }
+  Hero t;
+  t.cls = h.cls; t.lvl = h.lvl; t.perks = h.perks; t.equip = h.equip;
+  t.equip[it.slot] = std::make_shared<Item>(it);
+  Stats a = stats(h), b = stats(t);
+  bool mage = h.cls->key == "mage";
+  auto avg = [](const Stats& s) { return (s.lo + s.hi) / 2.0 * (1 + s.pct / 100.0); };
+  double score = 0; bool up = false, down = false;
+  auto add = [&](const std::string& what, double by, double weight) {
+    if (std::abs(by) < .05) return;
+    out.d.push_back({what, by});
+    score += by * weight;
+    (by > 0 ? up : down) = true;
+  };
+  add("damage", std::round((avg(b) - avg(a)) * 10) / 10, mage ? .5 : 3);
+  add("spell power %", b.spell - a.spell, mage ? 1.5 : 0);
+  add("fire damage", b.fire - a.fire, 2);
+  add("armour", b.armour - a.armour, 1);
+  add("life", b.maxhp - a.maxhp, .5);
+  add("mana", b.maxmana - a.maxmana, mage ? .6 : .2);
+  add("accuracy", b.acc - a.acc, .3);
+  add("crit %", b.crit - a.crit, 1.5);
+  add("fire resist %", b.res_f - a.res_f, .4);
+  add("cold resist %", b.res_c - a.res_c, .4);
+  add("poison resist %", b.res_p - a.res_p, .4);
+  add("life leech %", b.leech - a.leech, 1.5);
+  add("mana regen", b.regen - a.regen, mage ? 3 : 1);
+  add("thorns", b.thorns - a.thorns, .5);
+  if (up && !down) out.v = 2;
+  else if (down && !up) out.v = -2;
+  else if (up) out.v = score > 0 ? 1 : score < 0 ? -1 : 0;
+  return out;
 }
 
 void Game::rescale() {
@@ -504,7 +545,14 @@ void Game::arrive(Hero& h) {
       if (int(h.pack.size()) >= PACK_MAX) { h.say("Your pack is full: " + fi.item->name + " stays here.", 0x909090); took = false; }
       else {
         h.pack.push_back(fi.item);
-        h.say("You pick up " + fi.item->name + ".", rarity_col(fi.item->rarity));
+        Verdict v = compare(h, *fi.item);
+        static const std::map<int, std::string> SAYS = {{2, " It is better than what you wear."}, {1, " It is mostly better than what you wear."},
+                                                        {-1, " It is mostly worse than what you wear."}, {-2, " It is worse than what you wear."},
+                                                        {-9, " It is not for a " + h.cls->name + "."}};
+        std::string what = SAYS.count(v.v) ? SAYS.at(v.v) : "";
+        if (v.v == 0 && !h.equip.count(fi.item->slot)) what = " You wear nothing like it.";
+        h.say("You pick up " + fi.item->name + "." + what, rarity_col(fi.item->rarity));
+        if (v.v > 0) tip(h, "better", "Open your pack with [i]: a green ▲ marks a thing better than what you wear.");
         tip(h, "pack", "Your pack: [i]. Wear or use the chosen thing with [Enter].");
       }
     }

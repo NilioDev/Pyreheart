@@ -525,6 +525,30 @@ void Client::put(int x, int y, int ch, int fg, int bg) {
   t.fg = {uint8_t((fg >> 16) & 255), uint8_t((fg >> 8) & 255), uint8_t(fg & 255), 255};
   if (bg >= 0) t.bg = {uint8_t((bg >> 16) & 255), uint8_t((bg >> 8) & 255), uint8_t(bg & 255), 255};
 }
+// The one-glance mark in front of an item: is it better than what I wear?
+static std::pair<std::string, int> mark(const json& it) {
+  if (!it.contains("cmp")) return {" ", 0};
+  int v = it["cmp"]["v"];
+  switch (v) {
+    case 2: return {"▲", 0x50D050};
+    case 1: return {"▲", 0xB0C050};
+    case -1: return {"▼", 0xC09050};
+    case -2: return {"▼", 0xD05050};
+    case -9: return {"×", 0x806060};
+    default: return {it["cmp"]["d"].empty() ? "=" : "~", 0x909090};
+  }
+}
+
+static std::string clip(const std::string& s, int n) { return int(s.size()) <= n ? s : s.substr(0, std::max(0, n - 1)) + "\u2026"; }
+static std::string verdict_text(const json& c) {
+  static const char* SAY[] = {"worse than what you wear", "mostly worse than what you wear", "some better, some worse",
+                              "mostly better than what you wear", "better than what you wear"};
+  int v = c["v"];
+  if (v == -9) return "not for you";
+  if (v == 0 && c["d"].empty()) return "no different from what you wear";
+  return SAY[v + 2];
+}
+
 void Client::text(int x, int y, const std::string& s, int fg, int bg) {
   if (y < 0 || y >= con_.get_height()) return;
   tcod::print(con_, {x, y}, s, c3(fg), bg >= 0 ? std::optional<TCOD_ColorRGB>(c3(bg)) : std::nullopt);
@@ -861,7 +885,19 @@ void Client::draw_map() {
         if (e.contains("max") && e["max"].get<int>() > 1) what += " (" + std::to_string(e["hp"].get<int>()) + "/" + std::to_string(e["max"].get<int>()) + ")";
         about = e.value("about", "");
       }
-    for (auto& it : s["items"]) if (what.empty() && it["x"] == tx_ && it["y"] == ty_) what = it["name"];
+    for (auto& it : s["items"])
+      if (what.empty() && it["x"] == tx_ && it["y"] == ty_) {
+        what = it["name"];
+        if (it.contains("cmp")) {
+          about = verdict_text(it["cmp"]);
+          for (auto& d : it["cmp"]["d"]) {
+            double by = d[1];
+            char buf[48];
+            snprintf(buf, sizeof buf, std::abs(by - std::round(by)) < .05 ? ", %+.0f %s" : ", %+.1f %s", by, d[0].get<std::string>().c_str());
+            about += buf;
+          }
+        }
+      }
     if (what.empty() && seen[ty_ * W + tx_]) what = data::TILES[map[ty_ * W + tx_] - '0'].name;
     int ly = vy_ + vh_ - 2;
     if (layout_ != Layout::Watch) {
@@ -980,6 +1016,30 @@ void Client::draw_buttons() {
   }
 }
 
+// Every number that would move if this were worn, green up and red down. Returns the lines used.
+int Client::draw_changes(int x, int y, int w, const json& it) {
+  if (!it.contains("cmp")) return 0;
+  auto& c = it["cmp"];
+  int v = c["v"], r = y;
+  auto [m, col] = mark(it);
+  if (v == -9) return 0;
+  text(x, r, m, col);
+  text(x + 2, r++, verdict_text(c), col);
+  for (auto& d : c["d"]) {
+    double by = d[1];
+    char buf[32];
+    if (std::abs(by - std::round(by)) < .05) snprintf(buf, sizeof buf, "%+d", int(std::round(by)));
+    else snprintf(buf, sizeof buf, "%+.1f", by);
+    int dc = by > 0 ? 0x60D060 : 0xD06060;
+    text(x, r, by > 0 ? "▲" : "▼", dc);
+    text(x + 2, r, buf, dc);
+    text(x + 8, r, d[0].get<std::string>(), GREY);
+    if (++r >= y + 12) break;
+  }
+  (void)w;
+  return r - y;
+}
+
 void Client::draw_pack() {
   auto& me = snap_["me"];
   int cw = con_.get_width(), chh = con_.get_height();
@@ -1003,8 +1063,10 @@ void Client::draw_pack() {
     bool on = int(i) == sel_;
     int col = data::rarity_col(it["rarity"]);
     if (!it.value("use", true)) col = scale(col, .5);
+    auto [m, mc] = mark(it);
     text(x + 2, r, on ? ">" : " ", WHITE);
-    text(x + 4, r, it["short"].get<std::string>(), col, on ? 0x303040 : PANEL);
+    text(x + 3, r, m, mc);
+    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 6), col, on ? 0x303040 : PANEL);
     buttons_.push_back({x + 2, r, w / 2 - 2, 1, "", "sel:" + std::to_string(i)});
     ++r;
   }
@@ -1019,6 +1081,8 @@ void Client::draw_pack() {
         ++dy;
         text(dx, dy++, "now: " + me["equip"][i]["short"].get<std::string>(), DIM);
       }
+    ++dy;
+    dy += draw_changes(dx, dy, w / 2 - 3, it);
     if (!it.value("use", true)) text(dx, ++dy, "Not for a " + me["clsname"].get<std::string>() + ".", 0xC06060);
   }
   if (layout_ == Layout::Wide) wrap(x + 2, y + h - 2, w - 4, "[Enter] wear  [d] put down  [t] give  [Esc] close", GREY);
@@ -1058,8 +1122,10 @@ void Client::draw_shop() {
   json shown;
   for (auto& it : items) {
     bool on = i == sel_;
+    auto [m, mc] = mark(it);
     text(x + 2, r, on ? ">" : " ", WHITE);
-    text(x + 4, r, it["short"].get<std::string>() + "  " + std::to_string(it["price"].get<int>()) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
+    text(x + 3, r, m, mc);
+    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 12) + "  " + std::to_string(it["price"].get<int>()) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
     buttons_.push_back({x + 2, r, w / 2, 1, "", "sel:" + std::to_string(i)});
     if (on) shown = it;
     ++r; ++i;
@@ -1071,8 +1137,10 @@ void Client::draw_shop() {
     bool on = i == sel_;
     int price = 1;
     for (auto& s : shop["sell"]) if (s[0] == it["id"]) price = s[1];
+    auto [m, mc] = mark(it);
     text(x + 2, r, on ? ">" : " ", WHITE);
-    text(x + 4, r, it["short"].get<std::string>() + "  " + std::to_string(price) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
+    text(x + 3, r, m, mc);
+    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 12) + "  " + std::to_string(price) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
     buttons_.push_back({x + 2, r, w / 2, 1, "", "sel:" + std::to_string(i)});
     if (on) shown = it;
     ++r; ++i;
@@ -1081,6 +1149,8 @@ void Client::draw_shop() {
     int dy = y + 5;
     text(x + w / 2 + 1, dy++, shown["name"].get<std::string>(), data::rarity_col(shown["rarity"]));
     for (auto& l : shown["lines"]) dy += wrap(x + w / 2 + 1, dy, w / 2 - 3, l.get<std::string>(), GREY);
+    ++dy;
+    draw_changes(x + w / 2 + 1, dy, w / 2 - 3, shown);
   }
   wrap(x + 2, y + h - 2, w - 4, layout_ == Layout::Wide ? "[Enter] buy or sell  [Esc] leave" : "tap twice to buy or sell", GREY);
   if (layout_ != Layout::Wide) { buttons_.push_back({x + w - 3, y, 3, 1, "", "close"}); text(x + w - 3, y, "[x]", KEY); }

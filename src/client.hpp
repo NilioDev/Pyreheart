@@ -92,6 +92,7 @@ class Client {
   void draw_log(int x, int y, int w, int h);
   void draw_buttons();
   void draw_pack();
+  int draw_changes(int x, int y, int w, const json& it);
   void draw_perk();
   void draw_shop();
   void draw_help();
