@@ -4,7 +4,7 @@ affixes and uniques. No rules live here."""
 # ------------------------------------------------------------------ tiles
 # (sign, colour, walkable, see-through, name)
 WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
-    SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS = range(31)
+    SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE = range(39)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -38,9 +38,17 @@ TILES = [
     (',', (230, 110, 40), True, True, 'a warm crack in the ground'),
     ('○', (150, 140, 125), False, True, 'a pillar'),
     ('.', (75, 70, 66), True, True, 'worn flagstones'),
+    ('▲', (255, 160, 40), False, True, 'the great fire of Charnfen'),
+    ('∙', (120, 110, 100), False, True, 'the ring of hearth stones'),
+    ('■', (90, 70, 60), False, False, 'a chimney'),
+    ('@', (170, 220, 170), False, True, 'Ysolde, the healer'),
+    ('@', (200, 150, 110), False, True, 'Brann, the smith'),
+    ('@', (150, 150, 170), False, True, 'old Ebb, the gravedigger'),
+    ('¡', (255, 190, 80), False, True, 'a torch on a post'),
+    ('ı', (255, 230, 160), False, True, 'a row of candles'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD,
-               WINDOW, LIT, PILLAR}
+               WINDOW, LIT, PILLAR, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE}
 
 # ------------------------------------------------------------------ the four acts
 ACTS = [

@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -36,8 +36,16 @@ inline const TileDef TILES[] = {
     {0x2C, 0xE66E28, true, true, "a warm crack in the ground"},
     {0x25CB, 0x968C7D, false, true, "a pillar"},
     {0x2E, 0x4B4642, true, true, "worn flagstones"},
+    {0x25B2, 0xFFA028, false, true, "the great fire of Charnfen"},
+    {0x2219, 0x786E64, false, true, "the ring of hearth stones"},
+    {0x25A0, 0x5A463C, false, false, "a chimney"},
+    {0x40, 0xAADCAA, false, true, "Ysolde, the healer"},
+    {0x40, 0xC8966E, false, true, "Brann, the smith"},
+    {0x40, 0x9696AA, false, true, "old Ebb, the gravedigger"},
+    {0xA1, 0xFFBE50, false, true, "a torch on a post"},
+    {0x131, 0xFFE6A0, false, true, "a row of candles"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case GRAVE: case CROSS: case TREE: case PEW: case ALTAR: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case PILLAR: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case GRAVE: case CROSS: case TREE: case PEW: case ALTAR: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case PILLAR: case FIRE: case STONES: case CHIMNEY: case HEALER: case SMITH: case DIGGER: case TORCH: case CANDLE: return true; default: return false; } }
 constexpr int FLOORS = 16;
 inline bool rest_after(int d) { return d == 4 || d == 8 || d == 12; }
 inline const ActDef ACTS[] = {
