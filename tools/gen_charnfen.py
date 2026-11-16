@@ -82,11 +82,10 @@ SX0,SX1,SY0,SY1=38,82,43,57
 for y in range(SY0,SY1+1):
     for x in range(SX0,SX1+1):
         if ((x-cx)/23)**2+((y-50)/8.2)**2<1: put(x,y,':')
-for y in range(48,53):
+for y in range(48,53):                      # the fire, 1-3-1, in a ring of hearth stones
     for x in range(57,64):
-        d=math.hypot((x-cx)/1.6,y-50)
-        if d<1.3: put(x,y,'F')
-        elif d<2.4: put(x,y,'r')
+        if abs(x-cx)+abs(y-50)<=1: put(x,y,'F')
+        elif math.hypot((x-cx)/1.4,y-50)<2.3: put(x,y,'r')
 # folk round the fire, and benches of split logs
 put(53,49,'h'); put(67,49,'b'); put(55,54,'g'); put(65,54,'$')
 for x in (56,57,58): put(x,46,'≡')
