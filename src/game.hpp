@@ -45,6 +45,7 @@ struct Hero {
   bool dead = false, gone = false, away = false, drank = false, shopping = false;
   int shield = 0, poison = 0, poison_dmg = 0, numb = 0, kills = 0;
   std::vector<char> vis = std::vector<char>(W * H, 0);
+  std::vector<char> seen = std::vector<char>(W * H, 0);  // all it has seen of this floor, for a dive taken up again
   std::vector<LogLine> log;
   std::unordered_set<std::string> tips;
 

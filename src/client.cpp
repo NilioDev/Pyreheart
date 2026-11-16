@@ -120,11 +120,35 @@ void Client::save_settings() {
   }
 }
 
+static std::string save_file() {
+  char* p = SDL_GetPrefPath("NilioDev", "Pyreheart");
+  std::string s = p ? std::string(p) + "dive.jsonl" : "dive.jsonl";
+  SDL_free(p);
+  return s;
+}
+
+std::vector<std::string> Client::title_items() const {
+  std::vector<std::string> items;
+  if (saved_dive(save_file())) items.push_back("Go on with the dive");
+  for (auto s : {"Dive alone", "Host a game for friends", "Join a game", "How to play", "Listen to the music"}) items.push_back(s);
+  items.push_back(music_on_ ? "Music: on" : "Music: off");
+  items.push_back("Quit");
+  return items;
+}
+
+int Client::title_index(const std::string& item) const {
+  auto items = title_items();
+  for (int i = 0; i < int(items.size()); ++i) if (items[i] == item) return i;
+  return 0;
+}
+
 // ------------------------------------------------------------------ the link
-void Client::start(bool host, bool open) {
+void Client::start(bool host, bool open, bool resume) {
   hosting_ = host;
   open_ = open;
-  host_ = std::make_unique<Host>(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()), open);
+  // a dive alone is saved after every move, so it goes on after the app is closed or killed
+  host_ = std::make_unique<Host>(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()), open,
+                                 open ? "" : save_file(), resume);
   link_ = host_->local();
   link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}}}});
   screen_ = Screen::Game;
@@ -173,6 +197,10 @@ void Client::apply(const json& s) {
   if (seen.empty()) seen.assign(W * H, 0);
   const std::string& vis = s["vis"].get_ref<const std::string&>();
   for (int i = 0; i < W * H; ++i) if (vis[i] == '1') seen[i] = 1;
+  if (s.contains("seen")) {
+    const std::string& sn = s["seen"].get_ref<const std::string&>();
+    for (int i = 0; i < W * H && i < int(sn.size()); ++i) if (sn[i] == '1') seen[i] = 1;
+  }
   for (auto& l : s["log"]) log_.push_back({l[0], l[1]});
   while (log_.size() > 300) log_.pop_front();
   double t = now();
@@ -321,10 +349,10 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (screen_ == Screen::Listen) {
     if (k == SDLK_F) { listen_fight_ = !listen_fight_; return; }
     if (k == SDLK_N) { music_.renew(); return; }
-    if (k == SDLK_ESCAPE) { screen_ = Screen::Title; menu_ = 4; return; }
+    if (k == SDLK_ESCAPE) { screen_ = Screen::Title; menu_ = title_index("Listen to the music"); return; }
   }
   if (screen_ == Screen::Title || screen_ == Screen::Class || screen_ == Screen::Finding || screen_ == Screen::Listen) {
-    int n = screen_ == Screen::Title ? 7 : screen_ == Screen::Class ? 3 : screen_ == Screen::Listen ? 6 : int(found_.size()) + 1;
+    int n = screen_ == Screen::Title ? int(title_items().size()) : screen_ == Screen::Class ? 3 : screen_ == Screen::Listen ? 6 : int(found_.size()) + 1;
     if (k == SDLK_UP || k == SDLK_KP_8) menu_ = (menu_ + n - 1) % n;
     else if (k == SDLK_DOWN || k == SDLK_KP_2) menu_ = (menu_ + 1) % n;
     else if (k == SDLK_ESCAPE) { if (screen_ == Screen::Title) running = false; else { screen_ = Screen::Title; menu_ = 0; } }
@@ -445,20 +473,23 @@ void Client::click(int x, int y, bool down) {
       else if (layout_ == Layout::Watch) choice += std::max(0, menu_ - 2);
     }
     if (screen_ == Screen::Title) {
-      if (choice < 0 || choice > 6) return;
+      auto items = title_items();
+      if (choice < 0 || choice >= int(items.size())) return;
       menu_ = choice;
       message_.clear();
-      if (choice == 0 || choice == 1) { hosting_ = choice == 1; screen_ = Screen::Name; SDL_StartTextInput(ctx_.get_sdl_window()); }
-      else if (choice == 2) { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
-      else if (choice == 3) over_ = Over::Help, screen_ = Screen::Title;
-      else if (choice == 4) { screen_ = Screen::Listen; menu_ = 0; }
-      else if (choice == 5) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
+      const std::string& it = items[choice];
+      if (it == "Go on with the dive") start(true, false, true);
+      else if (it == "Dive alone" || it == "Host a game for friends") { hosting_ = it != "Dive alone"; screen_ = Screen::Name; SDL_StartTextInput(ctx_.get_sdl_window()); }
+      else if (it == "Join a game") { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
+      else if (it == "How to play") over_ = Over::Help, screen_ = Screen::Title;
+      else if (it == "Listen to the music") { screen_ = Screen::Listen; menu_ = 0; }
+      else if (it.rfind("Music:", 0) == 0) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
       else running = false;
     } else if (screen_ == Screen::Listen) {
       // a tap on a place plays it; a tap on the one playing writes a new piece; below the list, back
       if (choice >= 0 && choice < 6) { if (choice == menu_) music_.renew(); menu_ = choice; }
       else if (choice == 6) listen_fight_ = !listen_fight_;
-      else { screen_ = Screen::Title; menu_ = 4; }
+      else { screen_ = Screen::Title; menu_ = title_index("Listen to the music"); }
     } else if (screen_ == Screen::Class) {
       if (choice < 0 || choice > 2) return;
       cls_ = choice;
@@ -711,9 +742,7 @@ void Client::draw_title() {
   }
   std::vector<std::string> items;
   std::string title;
-  if (screen_ == Screen::Title)
-    items = {"Dive alone", "Host a game for friends", "Join a game", "How to play", "Listen to the music",
-             music_on_ ? "Music: on" : "Music: off", "Quit"};
+  if (screen_ == Screen::Title) items = title_items();
   else if (screen_ == Screen::Listen) {
     title = "The music writes itself: a new piece every time.";
     items = {"Charnfen", "The Crypt", "The Caves", "The Forge", "The Deep", "A waystation"};

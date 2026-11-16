@@ -449,6 +449,7 @@ void Game::next_floor() {
   floor = make_floor(depth, to_rest);
   scaled_ = 1.0;
   rescale();
+  for (auto& [id, h] : heroes) h->seen.assign(W * H, 0);
   for (auto& [id, h] : heroes) {
     h->gone = false; h->shopping = false; h->drank = false;
     if (to_rest && h->dead && !h->away) {
@@ -1314,7 +1315,10 @@ void Game::look() {
     if (h.away) continue;
     TCOD_map_compute_fov(map, h.x, h.y, SIGHT, true, FOV_SYMMETRIC_SHADOWCAST);
     for (int y = 0; y < H; ++y)
-      for (int x = 0; x < W; ++x) h.vis[y * W + x] = TCOD_map_is_in_fov(map, x, y) && cheb(x, y, h.x, h.y) <= SIGHT;
+      for (int x = 0; x < W; ++x) {
+        h.vis[y * W + x] = TCOD_map_is_in_fov(map, x, y) && cheb(x, y, h.x, h.y) <= SIGHT;
+        if (h.vis[y * W + x]) h.seen[y * W + x] = 1;
+      }
     if (!h.present()) continue;
     for (auto& m : floor->mons)
       if (!m->awake && h.sees(m->x, m->y)) {

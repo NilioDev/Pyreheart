@@ -39,6 +39,10 @@ Every thing you carry or see for sale is marked against what you wear: a green â
 
 Great foes show their heavy blows before they land, as a count on the ground. Red: step off it. Purple: a spell; stun the foe or hurt it hard to break it. Gold: the only safe ground, so stand in it. After its greatest blow a foe is spent for a moment and takes more harm. Each of the four great foes fights harder at two thirds and at one third of its life, and the bar at the top of the screen shows where. Champions and uniques have a heavy blow of their own.
 
+## Saving
+
+A dive alone is saved after every move, so you can close the game, or have your phone close it, at any moment. Choose "Go on with the dive" on the title screen to take it up again. Death ends the dive for good. A saved dive only loads in the same version of the game.
+
 ## Playing together
 
 One player hosts ("Host a game for friends"), the others join with the host's address. On the same network the game finds hosts by itself.

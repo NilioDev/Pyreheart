@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
-project(pyreheart LANGUAGES C CXX)
+project(pyreheart VERSION 0.1.0 LANGUAGES C CXX)
+# a saved dive replays its moves, so it only loads in the build that made it
+execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE PYREHEART_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT PYREHEART_COMMIT)
+  set(PYREHEART_COMMIT dev)
+endif()
+add_compile_definitions(PYREHEART_VERSION="${PROJECT_VERSION}" PYREHEART_BUILD="${PROJECT_VERSION}-${PYREHEART_COMMIT}")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FetchContent)

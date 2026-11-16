@@ -69,7 +69,9 @@ class Client {
   void load_settings();
   void save_settings();
 
-  void start(bool host, bool open);
+  void start(bool host, bool open, bool resume = false);
+  std::vector<std::string> title_items() const;
+  int title_index(const std::string& item) const;
   void join(const std::string& address);
   void poll();
   void apply(const json& snap);

@@ -1,7 +1,9 @@
 #include "net.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -79,7 +81,49 @@ struct Host::Peer {
   std::atomic<bool> dead{false};
 };
 
-Host::Host(uint64_t seed, bool open) : game_(seed) {
+static uint64_t journal_seed(const std::string& path) {
+  std::ifstream f(path);
+  std::string line;
+  if (!std::getline(f, line)) return 0;
+  json head = json::parse(line, nullptr, false);
+  if (!head.is_object() || head.value("build", "") != PYREHEART_BUILD) return 0;
+  return head.value("seed", uint64_t(0));
+}
+
+bool saved_dive(const std::string& journal) { return journal_seed(journal) != 0; }
+
+Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume)
+    : game_(resume && journal_seed(journal) ? journal_seed(journal) : seed), journal_(journal) {
+  if (resume && journal_seed(journal)) {
+    std::ifstream f(journal);
+    std::string line;
+    std::getline(f, line);
+    while (std::getline(f, line)) {
+      json e = json::parse(line, nullptr, false);
+      if (!e.is_object()) break;  // a line cut short when the app was killed
+      if (e.contains("j")) {
+        game_.join(e["j"][0], e["j"][1], e["j"][2]);
+        resume_pid_ = e["j"][0];
+        next_pid_ = std::max(next_pid_, resume_pid_ + 1);
+      } else if (e.contains("f")) {
+        auto it = game_.heroes.find(e["f"][0].get<int>());
+        if (it != game_.heroes.end()) game_.free_action(*it->second, e["f"][1]);
+      } else if (e.contains("s")) {
+        std::map<int, json> acts;
+        for (auto& [k, v] : e["s"].items()) acts[std::stoi(k)] = v;
+        game_.step(acts);
+      }
+    }
+    game_.fx.clear();
+    for (auto& [id, h] : game_.heroes) {
+      h->log.clear();
+      h->say("You take up the dive again, on floor " + std::to_string(game_.depth) + ".", 0xD2B48C);
+    }
+    if (game_.state != "play" || !resume_pid_) { resume_pid_ = 0; finished(); }
+  } else if (!journal_.empty()) {
+    std::ofstream f(journal_, std::ios::trunc);
+    f << json{{"build", PYREHEART_BUILD}, {"seed", seed}}.dump() << "\n";
+  }
   loop_ = std::thread([this] { loop(); });
   if (open) {
     accept_ = std::thread([this] { accept(); });
@@ -227,6 +271,19 @@ std::string Host::address() const {
   return out;
 }
 
+void Host::write(const json& line) {
+  if (journal_.empty()) return;
+  std::ofstream f(journal_, std::ios::app);
+  f << line.dump() << "\n";
+}
+
+// the dive is over: nothing to go on with
+void Host::finished() {
+  if (journal_.empty()) return;
+  std::remove(journal_.c_str());
+  journal_.clear();
+}
+
 void Host::loop() {
   while (running_) {
     bool changed = false;
@@ -241,8 +298,12 @@ void Host::loop() {
         bool all = true;
         for (auto* h : game_.active()) if (!pending_.count(h->pid)) all = false;
         if (all || now_ms() - first_pending_ > AUTO_WAIT_MS) {
+          json s = json::object();
+          for (auto& [pid, a] : pending_) s[std::to_string(pid)] = a;
+          write({{"s", s}});
           game_.step(pending_);
           pending_.clear();
+          if (game_.state != "play") finished();
           changed = true;
         }
       }
@@ -268,10 +329,18 @@ void Host::handle(const std::shared_ptr<Peer>& peer, const json& m) {
     for (auto& [id, h] : game_.heroes) if (!h->away) ++here;
     if (here >= 4) { peer->out(json{{"error", "The party is full (4 heroes)."}}.dump()); return; }
     if (hello.value("ver", 0) != NET_VERSION) { peer->out(json{{"error", "This game is a different version of Pyreheart."}}.dump()); return; }
+    if (resume_pid_) {  // the hero in the saved dive
+      peer->pid = resume_pid_;
+      resume_pid_ = 0;
+      peer->out(json{{"welcome", peer->pid}}.dump());
+      for (auto& p : peers_) push(*p);
+      return;
+    }
     std::string name = hello.value("name", "Nameless").substr(0, 16);
     if (name.empty()) name = "Nameless";
     peer->pid = next_pid_++;
     game_.join(peer->pid, name, hello.value("cls", "warrior"));
+    write({{"j", {peer->pid, name, hello.value("cls", "warrior")}}});
     peer->out(json{{"welcome", peer->pid}}.dump());
     for (auto& p : peers_) push(*p);
     return;
@@ -281,7 +350,7 @@ void Host::handle(const std::shared_ptr<Peer>& peer, const json& m) {
   if (it == game_.heroes.end()) return;
   Hero& h = *it->second;
   const json& a = m["act"];
-  if (game_.free_action(h, a)) { push(*peer); return; }
+  if (game_.free_action(h, a)) { write({{"f", {h.pid, a}}}); push(*peer); return; }
   if (!h.present()) return;
   if (pending_.empty()) first_pending_ = now_ms();
   pending_[h.pid] = a;

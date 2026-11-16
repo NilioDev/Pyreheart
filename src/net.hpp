@@ -30,7 +30,9 @@ class Link {
 
 class Host {
  public:
-  Host(uint64_t seed, bool open);
+  // journal: a file every move is written to, so the dive can go on after the app is closed or killed.
+  // resume: play that file back first; the first player to say hello takes up the hero in it.
+  Host(uint64_t seed, bool open, const std::string& journal = "", bool resume = false);
   ~Host();
   std::shared_ptr<Link> local();
   std::string error() { std::lock_guard<std::mutex> l(mu_); return error_; }
@@ -49,6 +51,11 @@ class Host {
   std::string error_;
   std::thread loop_, accept_, beacon_;
   intptr_t server_ = -1, udp_ = -1;
+  std::string journal_;
+  int resume_pid_ = 0;
+
+  void write(const json& line);
+  void finished();
 
   void loop();
   void accept();
@@ -56,6 +63,9 @@ class Host {
   void handle(const std::shared_ptr<Peer>& p, const json& m);
   void push(Peer& p);
 };
+
+/** Whether a saved dive is there and was made by this build. */
+bool saved_dive(const std::string& journal);
 
 std::shared_ptr<Link> connect_to(const std::string& host, int port, std::string& err);
 /** Hosts answering on the local network within the given time: "name|address". */

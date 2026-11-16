@@ -27,7 +27,35 @@ static void settle(Side& a, Side& b, int ms = 300) {
   for (int i = 0; i < ms / 10; ++i) { a.drain(); b.drain(); std::this_thread::sleep_for(10ms); }
 }
 
+// a dive alone is written down move by move and comes back the same
+static void saved_dive_test() {
+  const std::string path = "net_test_dive.jsonl";
+  std::remove(path.c_str());
+  json before;
+  {
+    Host host(7, false, path);
+    Side a{host.local()}, none{host.local()};
+    a.link->send({{"hello", {{"name", "Cato"}, {"cls", "ranger"}, {"ver", NET_VERSION}}}});
+    settle(a, none);
+    for (int i = 0; i < 12; ++i) { a.link->send({{"act", {{"t", "move"}, {"dx", i % 3 - 1}, {"dy", 1}}}}); settle(a, none, 60); }
+    a.link->send({{"act", {{"t", "wait"}}}});
+    settle(a, none);
+    before = a.last;
+  }
+  CHECK(saved_dive(path));
+  Host host(99, false, path, true);
+  Side a{host.local()}, none{host.local()};
+  a.link->send({{"hello", {{"name", "Someone"}, {"cls", "warrior"}, {"ver", NET_VERSION}}}});
+  settle(a, none);
+  CHECK(a.pid == before["me"]["pid"].get<int>());
+  CHECK(a.last["me"]["x"] == before["me"]["x"] && a.last["me"]["y"] == before["me"]["y"]);
+  CHECK(a.last["me"]["hp"] == before["me"]["hp"] && a.last["turn"] == before["turn"]);
+  CHECK(a.last["me"]["name"] == "Cato");
+  std::remove(path.c_str());
+}
+
 int main() {
+  saved_dive_test();
   Host host(42, true);
   CHECK(host.error().empty());
   Side a{host.local()};

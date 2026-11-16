@@ -3,6 +3,8 @@ name: build
 on:
   push:
     branches: [main]
+    # a tag like v0.1.0 makes a release with every download
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -45,10 +47,21 @@ jobs:
           chmod +x linuxdeploy packaging/appimage.sh
           packaging/appimage.sh build ./linuxdeploy
           mkdir -p appimage && mv Pyreheart-x86_64.AppImage appimage/
+      - name: Zip
+        shell: bash
+        run: |
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a -tzip ../Pyreheart-windows.zip Pyreheart > /dev/null
+          elif [ "$RUNNER_OS" = "macOS" ]; then zip -qry ../Pyreheart-macos.zip Pyreheart; fi
       - uses: actions/upload-artifact@v4
         with:
           name: pyreheart-${{ runner.os }}
           path: dist
+      - uses: actions/upload-artifact@v4
+        if: runner.os != 'Linux'
+        with:
+          name: pyreheart-zip-${{ runner.os }}
+          path: Pyreheart-*.zip
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
@@ -106,10 +119,51 @@ jobs:
         with:
           name: pyreheart-appimage
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pyreheart-zip-*
+          merge-multiple: true
+          path: dist
       - name: Update the "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create latest dist/*.apk dist/*.AppImage -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
-            --title "Latest build" --notes "Built from ${GITHUB_SHA::7}. pyreheart-wear.apk is for the watch, pyreheart-phone.apk for a phone, Pyreheart-x86_64.AppImage for Linux (make it executable and run it)."
+          gh release create latest dist/*.apk dist/*.AppImage dist/*.zip -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Latest build" --notes "Built from ${GITHUB_SHA::7}. pyreheart-wear.apk is for the watch, pyreheart-phone.apk for a phone, Pyreheart-x86_64.AppImage for Linux (make it executable and run it), Pyreheart-windows.zip and Pyreheart-macos.zip for Windows and a Mac."
+
+  # a tag like v0.1.0: a release for players, with the game for Windows, Mac, Linux and Android phones
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pyreheart-android
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: pyreheart-appimage
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pyreheart-zip-*
+          merge-multiple: true
+          path: dist
+      - name: Make the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${GITHUB_REF_NAME}
+          cd dist
+          mv pyreheart-phone.apk Pyreheart-$V-android.apk
+          mv Pyreheart-x86_64.AppImage Pyreheart-$V-linux-x86_64.AppImage
+          mv Pyreheart-windows.zip Pyreheart-$V-windows.zip
+          mv Pyreheart-macos.zip Pyreheart-$V-macos.zip
+          rm -f pyreheart-wear.apk
+          NOTES=../packaging/release-notes.md
+          gh release create "$V" Pyreheart-$V-* -R "$GITHUB_REPOSITORY" --title "Pyreheart $V" --notes-file "$NOTES" --verify-tag
