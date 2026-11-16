@@ -104,7 +104,7 @@ Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume)
       if (e.contains("j")) {
         game_.join(e["j"][0], e["j"][1], e["j"][2]);
         resume_pid_ = e["j"][0];
-        next_pid_ = std::max(next_pid_, resume_pid_ + 1);
+        next_pid_ = (std::max)(next_pid_, resume_pid_ + 1);
       } else if (e.contains("f")) {
         auto it = game_.heroes.find(e["f"][0].get<int>());
         if (it != game_.heroes.end()) game_.free_action(*it->second, e["f"][1]);
