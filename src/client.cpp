@@ -892,7 +892,7 @@ void Client::draw_map() {
     warm.assign(W * H, 0.f);
     double tt = now();
     auto flick = [&](int seed) {
-      return float(.86 + .08 * std::sin(tt * 9.1 + seed * 1.7) + .06 * std::sin(tt * 23.3 + seed * 3.1));
+      return float(.92 + .05 * std::sin(tt * 3.1 + seed * 1.7) + .03 * std::sin(tt * 7.3 + seed * 3.1));
     };
     auto pool = [&](int cx, int cy, float r, float a, float w) {
       int R = int(r) + 1;
@@ -994,12 +994,13 @@ void Client::draw_map() {
         int i = y * W + x, t2 = map[i] - '0';
         if (!inside(x, y)) continue;
         if (t2 == data::FIRE) {
-          // the core is hot and white, the edge red; every cell dances on its own beat
+          // a calm fire: each cell keeps its flame and only breathes slowly between two warm tones
           double core = std::hypot((x - fcx) / 1.6, double(y - fcy));
-          int step = int(tt * 11 + noise(i) * 6);
-          int c = std::clamp(int(core * 2.2) + int(noise(i * 31 + step) * 2.4), 0, 5);
-          int ch = (step + i) % 3 == 0 ? '^' : (step + i) % 3 == 1 ? 0x25B2 : '*';
-          put(sx(x), sy(y), ch, FIREC[c], mixc(0x5A1804, 0xA04008, float(noise(i * 7 + step))));
+          double br = .5 + .5 * std::sin(tt * 1.6 + noise(i) * 6.28);
+          int hot = core < .8 ? 0xFFE08A : core < 1.6 ? 0xFFB040 : 0xF07028;
+          int cool = core < .8 ? 0xFFB850 : core < 1.6 ? 0xE87A28 : 0xB8441A;
+          int ch = core < 1.6 ? 0x25B2 : '^';
+          put(sx(x), sy(y), ch, mixc(cool, hot, float(br)), mixc(0x4A1604, 0x6A2206, float(br)));
         } else if (t2 == data::TORCH || t2 == data::CANDLE) {
           int step = int(tt * 8 + noise(i) * 5);
           int fg = mixc(t2 == data::TORCH ? 0xFFB040 : 0xFFE6A0, 0xFF6020, float(noise(i + step * 13)) * .6f);
@@ -1030,10 +1031,10 @@ void Client::draw_map() {
     int k = 0;
     for (auto& c : smokes) smoke(c, ++k, 5, 9);
     if (fcx >= 0) {
-      smoke({fcx, fcy - 1}, 99, 10, 13);
+      smoke({fcx, fcy - 1}, 99, 5, 12);
       // sparks: thrown up from the fire, drifting, cooling from yellow to red to nothing
-      for (int j = 0; j < 26; ++j) {
-        double period = .9 + noise(j * 3) * 1.4, ph = std::fmod(tt / period + noise(j * 7), 1.0);
+      for (int j = 0; j < 7; ++j) {
+        double period = 2.2 + noise(j * 3) * 1.8, ph = std::fmod(tt / period + noise(j * 7), 1.0);
         P o = fires[size_t(noise(j * 13 + int(tt / period)) * fires.size()) % fires.size()];
         int x = o.x + int(std::round(std::sin(tt * 2.3 + j) * ph * 2 + (noise(j) - .5) * ph * 4));
         int y = o.y - 1 - int(ph * (4 + noise(j * 5) * 6));
