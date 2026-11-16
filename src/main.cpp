@@ -10,6 +10,21 @@
 #include "client.hpp"
 #include "glyphs.hpp"
 
+// the window's size and fullscreen of the last run, from the settings file the client keeps
+static void window_setting(int& w, int& h, bool& full) {
+  char* pref = SDL_GetPrefPath("NilioDev", "Pyreheart");
+  std::string path = pref ? std::string(pref) + "settings.txt" : "settings.txt";
+  SDL_free(pref);
+  size_t size = 0;
+  char* text = static_cast<char*>(SDL_LoadFile(path.c_str(), &size));
+  if (!text) return;
+  std::string all(text, size);
+  SDL_free(text);
+  auto at = all.find("window=");
+  if (at != std::string::npos) std::sscanf(all.c_str() + at, "window=%dx%d", &w, &h);
+  full = all.find("fullscreen=1") != std::string::npos;
+}
+
 static TCOD_Tileset* load_font() {
   // through SDL, so the same code reads the font from the APK's assets on Android
   size_t size = 0;
@@ -60,7 +75,22 @@ int main(int argc, char** argv) {
 #endif
   if (l == "watch") { p.pixel_width = 456; p.pixel_height = 456; }
   else if (l == "tall") { p.pixel_width = 480; p.pixel_height = 960; }
-  else { p.columns = 100; p.rows = 50; }
+  else {
+    // like Avarenthia: the window of the last run, or else the largest whole-number scale of the font that fits
+    // the screen with room to spare, so the pixels stay crisp
+    int w = 0, h = 0;
+    bool full = false;
+    window_setting(w, h, full);
+    if (w < 400 || h < 200) {
+      int k = 1;
+      SDL_Rect r{};
+      if (SDL_InitSubSystem(SDL_INIT_VIDEO) && SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &r))
+        while (800 * (k + 1) <= r.w * .96 && 400 * (k + 1) <= r.h * .94) ++k;
+      w = 800 * k; h = 400 * k;
+    }
+    p.pixel_width = w; p.pixel_height = h;
+    if (full) p.sdl_window_flags |= SDL_WINDOW_FULLSCREEN;
+  }
   auto ctx = tcod::Context(p);
 
   Client client(ctx);
@@ -101,5 +131,6 @@ int main(int argc, char** argv) {
       do client.event(ev); while (client.running && SDL_PollEvent(&ev));
     }
   }
+  client.remember_window();
   return 0;
 }

@@ -2,6 +2,7 @@
 
 #include <numbers>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 
 #include "data.hpp"
@@ -38,6 +39,7 @@ const std::vector<std::pair<std::string, std::string>> HELP = {
     {"[>]", "go down the stairs. With friends, the floor changes when all of you stand on the stairs."},
     {"[l]", "look at what you see."},
     {"[Esc]", "close a window; the game menu."},
+    {"[F11]", "full screen and back; the window remembers its size for the next time."},
     {"", ""},
     {"", "Blue foes are champions, gold ones are uniques: stronger, and they carry better things."},
     {"", "Every fourth floor a great foe waits by the way down. After it comes a waystation with a fountain and a trader."},
@@ -93,11 +95,25 @@ void Client::load_settings() {
     if (line.rfind("addr=", 0) == 0) addr_ = line.substr(5);
     if (line.rfind("class=", 0) == 0) cls_ = std::clamp(std::atoi(line.c_str() + 6), 0, 2);
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
+    if (line.rfind("window=", 0) == 0) std::sscanf(line.c_str(), "window=%dx%d", &win_w_, &win_h_);
+    if (line.rfind("fullscreen=", 0) == 0) fullscreen_ = line[11] == '1';
   }
 }
+void Client::remember_window() {
+  SDL_Window* w = ctx_.get_sdl_window();
+  if (!w || layout_ != Layout::Wide) return;
+  fullscreen_ = (SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN) != 0;
+  if (!fullscreen_) SDL_GetWindowSize(w, &win_w_, &win_h_);
+  save_settings();
+}
+
 void Client::save_settings() {
   std::ofstream f(pref_file());
   f << "name=" << name_ << "\naddr=" << addr_ << "\nclass=" << cls_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\n";
+  if (layout_ == Layout::Wide) {
+    if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
+    f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
+  }
 }
 
 // ------------------------------------------------------------------ the link
@@ -243,7 +259,17 @@ void Client::act(const std::string& what) {
 void Client::event(SDL_Event& ev) {
   if (ev.type == SDL_EVENT_QUIT) { running = false; return; }
   if (ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) { pick_layout(); return; }
-  if (ev.type == SDL_EVENT_KEY_DOWN) { key(ev.key.key, ev.key.mod); return; }
+  if (ev.type == SDL_EVENT_KEY_DOWN) {
+    // [F11] or [Alt+Enter]: full screen and back, anywhere
+    bool alt_enter = (ev.key.key == SDLK_RETURN || ev.key.key == SDLK_KP_ENTER) && (ev.key.mod & SDL_KMOD_ALT);
+    if (ev.key.key == SDLK_F11 || alt_enter) {
+      SDL_Window* w = ctx_.get_sdl_window();
+      if (w) SDL_SetWindowFullscreen(w, (SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN) == 0);
+      return;
+    }
+    key(ev.key.key, ev.key.mod);
+    return;
+  }
   if (ev.type == SDL_EVENT_TEXT_INPUT) {
     std::string t = ev.text.text;
     if (screen_ == Screen::Name && name_.size() < 16) name_ += t;
@@ -288,11 +314,17 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     } else if (k == SDLK_ESCAPE) { SDL_StopTextInput(ctx_.get_sdl_window()); screen_ = Screen::Title; }
     return;
   }
-  if (screen_ == Screen::Title || screen_ == Screen::Class || screen_ == Screen::Finding) {
-    int n = screen_ == Screen::Title ? 6 : screen_ == Screen::Class ? 3 : int(found_.size()) + 1;
+  if (screen_ == Screen::Listen) {
+    if (k == SDLK_F) { listen_fight_ = !listen_fight_; return; }
+    if (k == SDLK_N) { music_.renew(); return; }
+    if (k == SDLK_ESCAPE) { screen_ = Screen::Title; menu_ = 4; return; }
+  }
+  if (screen_ == Screen::Title || screen_ == Screen::Class || screen_ == Screen::Finding || screen_ == Screen::Listen) {
+    int n = screen_ == Screen::Title ? 7 : screen_ == Screen::Class ? 3 : screen_ == Screen::Listen ? 6 : int(found_.size()) + 1;
     if (k == SDLK_UP || k == SDLK_KP_8) menu_ = (menu_ + n - 1) % n;
     else if (k == SDLK_DOWN || k == SDLK_KP_2) menu_ = (menu_ + 1) % n;
     else if (k == SDLK_ESCAPE) { if (screen_ == Screen::Title) running = false; else { screen_ = Screen::Title; menu_ = 0; } }
+    else if (screen_ == Screen::Listen && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) music_.renew();
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) click(-1000, menu_, true);
     return;
   }
@@ -406,16 +438,23 @@ void Client::click(int x, int y, bool down) {
       int step = layout_ == Layout::Watch ? 2 : 2;
       choice = (y - top) / step;
       if ((y - top) < 0) choice = -1;
+      else if (layout_ == Layout::Watch) choice += std::max(0, menu_ - 2);
     }
     if (screen_ == Screen::Title) {
-      if (choice < 0 || choice > 5) return;
+      if (choice < 0 || choice > 6) return;
       menu_ = choice;
       message_.clear();
       if (choice == 0 || choice == 1) { hosting_ = choice == 1; screen_ = Screen::Name; SDL_StartTextInput(ctx_.get_sdl_window()); }
       else if (choice == 2) { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
       else if (choice == 3) over_ = Over::Help, screen_ = Screen::Title;
-      else if (choice == 4) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
+      else if (choice == 4) { screen_ = Screen::Listen; menu_ = 0; }
+      else if (choice == 5) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
       else running = false;
+    } else if (screen_ == Screen::Listen) {
+      // a tap on a place plays it; a tap on the one playing writes a new piece; below the list, back
+      if (choice >= 0 && choice < 6) { if (choice == menu_) music_.renew(); menu_ = choice; }
+      else if (choice == 6) listen_fight_ = !listen_fight_;
+      else { screen_ = Screen::Title; menu_ = 4; }
     } else if (screen_ == Screen::Class) {
       if (choice < 0 || choice > 2) return;
       cls_ = choice;
@@ -529,6 +568,13 @@ bool Client::in_circle(int x, int y) const {
 // ------------------------------------------------------------------ the frame
 // the music follows where you are: the title, an act, a waystation; a great foe awake makes it heavier
 void Client::update_music() {
+  if (screen_ == Screen::Listen) {
+    static const music::Mood order[] = {music::TITLE, music::CRYPT, music::CAVES, music::FORGE, music::DEEP, music::REST};
+    music_.mood(order[std::clamp(menu_, 0, 5)], listen_fight_ && menu_ >= 1 && menu_ <= 4);
+    music_.volume(.7f);  // to listen, the music plays even when it is off for the game
+    return;
+  }
+  music_.volume(music_on_ ? .7f : 0);
   if (screen_ != Screen::Game || !snap_.is_object()) { music_.mood(music::TITLE); return; }
   if (snap_.value("rest", false)) { music_.mood(music::REST); return; }
   int act = std::clamp(snap_.value("act", 0), 0, 3);
@@ -638,7 +684,12 @@ void Client::draw_title() {
   std::vector<std::string> items;
   std::string title;
   if (screen_ == Screen::Title)
-    items = {"Dive alone", "Host a game for friends", "Join a game", "How to play", music_on_ ? "Music: on" : "Music: off", "Quit"};
+    items = {"Dive alone", "Host a game for friends", "Join a game", "How to play", "Listen to the music",
+             music_on_ ? "Music: on" : "Music: off", "Quit"};
+  else if (screen_ == Screen::Listen) {
+    title = "The music writes itself: a new piece every time.";
+    items = {"Charnfen", "The Crypt", "The Caves", "The Forge", "The Deep", "A waystation"};
+  }
   else if (screen_ == Screen::Class) {
     title = "Who are you, " + name_ + "?";
     for (auto& c : data::CLASSES) items.push_back(c.name);
@@ -656,9 +707,19 @@ void Client::draw_title() {
     centre(top + 2, "[Enter]", KEY);
   }
   if (!title.empty()) centre(top - 2, title, GOLD);
-  for (size_t i = 0; i < items.size(); ++i) {
-    bool on = int(i) == menu_;
-    centre(top + int(i) * 2, (on ? "> " : "  ") + items[i] + (on ? " <" : "  "), on ? WHITE : GREY);
+  // the watch has room for five lines: they scroll with the choice
+  int first = layout_ == Layout::Watch ? std::max(0, menu_ - 2) : 0;
+  int last = layout_ == Layout::Watch ? std::min(int(items.size()), first + 5) : int(items.size());
+  for (int i = first; i < last; ++i) {
+    bool on = i == menu_;
+    centre(top + (i - first) * 2, (on ? "> " : "  ") + items[i] + (on ? " <" : "  "), on ? WHITE : GREY);
+  }
+  if (screen_ == Screen::Listen && layout_ != Layout::Watch) {
+    int y = top + 13;
+    centre(y, "Now: " + music_.describe(), 0xB4A078);
+    if (menu_ >= 1 && menu_ <= 4)
+      centre(y + 2, std::string("[f] a great foe awake: ") + (listen_fight_ ? "yes" : "no"), listen_fight_ ? 0xFF8060 : GREY);
+    centre(y + 4, "[Enter] a new piece    [Esc] back", 0x808080);
   }
   if (screen_ == Screen::Class && layout_ != Layout::Watch) {
     auto& c = data::CLASSES[std::clamp(menu_, 0, 2)];

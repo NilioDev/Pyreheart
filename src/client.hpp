@@ -18,9 +18,10 @@ class Client {
   bool running = true;
   void event(SDL_Event& ev);
   void frame();
+  void remember_window();  // the window's size and fullscreen, for the next start
 
  private:
-  enum class Screen { Intro, Title, Name, Class, Join, Finding, Game };
+  enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Game };
   enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring };
   tcod::Context& ctx_;
   tcod::Console con_;
@@ -29,7 +30,9 @@ class Client {
   double intro_start_ = 0;
   Over over_ = Over::None;
   int menu_ = 0, sel_ = 0, cls_ = 0;
-  bool hosting_ = false, open_ = false, music_on_ = true;
+  bool hosting_ = false, open_ = false, music_on_ = true, fullscreen_ = false;
+  int win_w_ = 0, win_h_ = 0;
+  bool listen_fight_ = false;
   music::Player music_;
   void update_music();
   std::string name_ = "Hero", addr_, message_;

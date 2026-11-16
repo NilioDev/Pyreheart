@@ -4,6 +4,7 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <string>
 
 namespace music {
 
@@ -19,6 +20,8 @@ class Player {
   bool open(int rate);
   void mood(Mood m, bool fight = false);  // a great foe awake makes it heavier
   void volume(float v);                   // 0 is off
+  void renew();                           // a new piece in the same mood
+  std::string describe() const;           // the key and tempo now playing
   float volume() const { return volume_; }
 
  private:

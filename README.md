@@ -9,7 +9,7 @@ Long ago a forgotten dwarven clan unearthed the Pyreheart, the molten crystal co
 - Three callings: the warrior, the ranger and the adept. Each has two skills and a handful of perks to choose from as it levels.
 - Loot in the old way: magic, rare and unique things, with blue champions and gold uniques that carry the better ones.
 - Co-op over the network for up to four heroes. Loot can be given to each other, or put down for anyone to take.
-- Music that writes itself: slow dungeon synth, made sample by sample while you play, with its own mood for each act and never the same twice. Turn it off on the title screen or in the [Esc] menu.
+- Music that writes itself: slow dungeon synth, made sample by sample while you play, with its own mood for each act and never the same twice. Listen to it from the title screen (Listen to the music), turn it off there or in the [Esc] menu.
 - Plays on Windows, Linux, macOS, Android phones and Wear OS watches.
 
 ## Keys
@@ -27,6 +27,7 @@ Long ago a forgotten dwarven clan unearthed the Pyreheart, the molten crystal co
 | [l] | look around |
 | [?] | help |
 | [Esc] | close a window; the game menu |
+| [F11] | full screen and back |
 
 On a phone, tap where you want to go, and hold to keep walking until a foe comes into sight. The buttons along the bottom do the rest.
 

@@ -255,13 +255,17 @@ class Composer {
   std::atomic<int> want_{TITLE};
   std::atomic<bool> want_fight_{false};
   std::atomic<float> volume_{.7f};
+  std::atomic<int> renew_{0};          // raised to ask for a new piece in the same mood
+  std::atomic<int> playing_root_{0}, playing_bpm_{0}, playing_mood_{TITLE};
+  int renewed_ = 0;
 
   void render(float* out, int frames) {
     for (int i = 0; i < frames; ++i) {
       // changing mood: fade out, begin anew, fade in
       int w = want_.load(std::memory_order_relaxed);
       bool wf = want_fight_.load(std::memory_order_relaxed);
-      if (w != mood_ || wf != fight_) fading_ = true;
+      int rn = renew_.load(std::memory_order_relaxed);
+      if (w != mood_ || wf != fight_ || rn != renewed_) { fading_ = true; renewed_ = rn; }
       if (fading_) {
         fade_ = std::max(0.f, fade_ - 1 / (1.5f * rate_));
         if (fade_ == 0) { begin(Mood(w), wf); fading_ = false; }
@@ -319,6 +323,7 @@ class Composer {
     float bpm = m_->bpm * (fight ? 1.15f : 1.f) * (.95f + .1f * r_.uni());
     step_len_ = int(rate_ * 60 / bpm / 2);  // eighth notes
     step_ = 0; bar_ = 0; step_left_ = 0;
+    playing_root_ = root_; playing_bpm_ = int(bpm + .5f); playing_mood_ = m;
     room_.feedback = .8f + .08f * m_->room;
     new_progression();
     new_arpeggio();
@@ -528,6 +533,18 @@ void Player::mood(Mood m, bool fight) {
   if (!c_) return;
   c_->want_ = m;
   c_->want_fight_ = fight;
+}
+
+void Player::renew() {
+  if (c_) ++c_->renew_;
+}
+
+std::string Player::describe() const {
+  if (!c_) return "";
+  static const char* names[] = {"C", "C sharp", "D", "E flat", "E", "F", "F sharp", "G", "A flat", "A", "B flat", "B"};
+  static const char* modes[MOODS] = {"minor", "minor", "phrygian", "harmonic minor", "phrygian dominant", "dorian"};
+  int root = c_->playing_root_, mood = std::clamp(int(c_->playing_mood_), 0, MOODS - 1);
+  return std::string(names[root % 12]) + " " + modes[mood] + ", " + std::to_string(int(c_->playing_bpm_)) + " beats a minute";
 }
 
 void Player::volume(float v) {
