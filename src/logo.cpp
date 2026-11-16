@@ -1,5 +1,5 @@
 // The title screen's picture: PYREHEART in stone letters that glow from below like coals, a line under them,
-// the mouth of the old Hearthwarden mine with the fire burning inside, smoke and embers.
+// the mouth of the old dwarven mine with the fire burning inside, smoke and embers.
 #include <cmath>
 #include <cstdint>
 #include <string>

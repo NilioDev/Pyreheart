@@ -85,7 +85,7 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   heroes[pid] = std::move(h);
   rescale();
   place(r);
-  for (auto& l : lore::INTRO) r.say(l, 0xD2B48C);
+  if (depth == 1) r.say("Charnfen, at the edge of ruin. The way down is through the graveyard.", 0xD2B48C);
   auto& open = lore::ACT_OPEN[floor->act];
   r.say(open[0] + ": " + open[1], 0xFFD27F);
   r.say("Walk with the arrow keys or the number pad. Bump a foe to fight it. Help: [?].", 0x9CC89C);
@@ -448,7 +448,7 @@ void Game::step(const std::map<int, json>& actions) {
   look();
   if (living().empty() && !heroes.empty() && state == "play") {
     state = "over";
-    say_all("The dark takes the last of you. Ashmoor waits in vain.", 0xFF6060);
+    say_all("The dark takes the last of you. Charnfen waits in vain.", 0xFF6060);
   }
 }
 
@@ -473,7 +473,7 @@ void Game::move(Hero& h, int dx, int dy) {
   if (hero_at(nx, ny)) return;
   if (floor->has_merchant && floor->merchant == P{nx, ny}) {
     h.shopping = true;
-    h.say("The trader nods. 'Hearthwarden gold spends the same as any.'", 0xD2B48C);
+    h.say("The trader nods. 'Dwarf gold spends the same as any.'", 0xD2B48C);
     return;
   }
   switch (floor->tile(nx, ny)) {

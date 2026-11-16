@@ -2,9 +2,9 @@
 
 A coffeebreak roguelike in ASCII. Sixteen floors down, about half an hour from the top to the end, alone or with up to three friends.
 
-Under the mountain village of Ashmoor the Hearthwardens kept the Cinderfire. They dug too deep, and woke the Ashen King. Now grey snow that is not snow falls on the roofs, and the headman pays in old Hearthwarden gold for anyone who will go down. You are one of them: a mercenary, and nothing more.
+Long ago a forgotten dwarven clan unearthed the Pyreheart, the molten crystal core that kept the world warm. They dug too deep beneath its altar and woke the Ashen King, a fallen god, who slaughtered the clan and forced the crystal into his own hollowed chest. The world has been freezing ever since. Now the Ashen King stirs beneath the backwater town of Charnfen: ash poisons the wells, and the dead claw their way out of the graveyard mud. You have come to Charnfen at the edge of ruin. Descend, and tear the heart back out.
 
-- Four acts: the Crypt, the Caves, the Forge of the Deephold, and the Deep. A great foe waits at the end of each.
+- Four acts: the Crypt, the Caves of the old dwarven mines, the Forge of the fallen dwarves, and the Deep. A great foe waits at the end of each.
 - After each of the first three, a waystation: a fountain, a trader, and the fallen wake again.
 - Three callings: the warrior, the ranger and the adept. Each has two skills and a handful of perks to choose from as it levels.
 - Loot in the old way: magic, rare and unique things, with blue champions and gold uniques that carry the better ones.
@@ -66,4 +66,5 @@ To see another layout on the desktop, set `PYREHEART_LAYOUT=tall` (a phone) or `
 - Built on [libtcod](https://github.com/libtcod/libtcod) and [SDL](https://libsdl.org).
 - The dungeon maker and the spell effects grew out of [Avarenthia](https://github.com/NilioDev/Avarenthia).
 - The font is Px437 IBM CGA from [The Ultimate Oldschool PC Font Pack](https://int10h.org/oldschool-pc-fonts/) by VileR, under CC BY-SA 4.0 (see `assets/LICENSE-Px437.txt`).
+- The story of Charnfen and the Pyreheart is by Niels.
 - `ref/` holds the Python sources the game's tables and lore are generated from (`tools/`).

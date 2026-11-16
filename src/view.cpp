@@ -50,7 +50,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                       {"about", describe(*m)}});
   if (f.has_merchant)
     ents.push_back({{"id", -1}, {"x", f.merchant.x}, {"y", f.merchant.y}, {"ch", int('@')}, {"col", 0xD2B48C},
-                    {"name", "the trader"}, {"rank", "npc"}, {"hp", 1}, {"max", 1}, {"about", "a trader from Ashmoor"}});
+                    {"name", "the trader"}, {"rank", "npc"}, {"hp", 1}, {"max", 1}, {"about", "a trader from Charnfen"}});
   out["ents"] = ents;
   json heroes = json::array();
   for (auto& [id, o] : g.heroes)

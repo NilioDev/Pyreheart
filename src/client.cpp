@@ -26,7 +26,7 @@ int sgn(int v) { return (v > 0) - (v < 0); }
 
 // key name like [q], drawn as a gold keycap in the help and tips
 const std::vector<std::pair<std::string, std::string>> HELP = {
-    {"", "Pyreheart. Go down sixteen floors under Ashmoor, past the crypt, the caves and the forge, and take back the fire from the Ashen King."},
+    {"", "Pyreheart. Go down sixteen floors under Charnfen, past the crypt, the caves and the forge, and tear the Pyreheart out of the Ashen King."},
     {"", ""},
     {"[arrows] [numpad]", "walk; walk into a foe to strike it. Diagonals: numpad, or [Home] [PgUp] [End] [PgDn]."},
     {"[.] [numpad 5]", "wait a moment."},
@@ -559,10 +559,33 @@ void Client::draw_title() {
   if (layout_ != Layout::Watch) {
     draw_logo(layout_ == Layout::Wide ? 2 : 2);
     if (screen_ == Screen::Title) {
-      int w = std::min(cw - 4, 76), y = top + 11;
-      std::string intro;
-      for (auto& l : lore::INTRO) intro += (intro.empty() ? "" : " ") + l;
-      wrap((cw - w) / 2, y, w, intro, 0x8C7C64);
+      // the story crawls slowly upward under the menu, fading in at the foot and out at the top, and starts again
+      int w = std::min(cw - 4, 72), y0 = top + 11, h = con_.get_height() - 1 - y0;
+      std::vector<std::string> lines;
+      for (auto& para : lore::INTRO) {
+        if (para.empty()) { lines.push_back(""); continue; }
+        std::string line, word;
+        for (size_t i = 0; i <= para.size(); ++i) {
+          if (i == para.size() || para[i] == ' ') {
+            if (!line.empty() && int(line.size() + 1 + word.size()) > w) { lines.push_back(line); line.clear(); }
+            line += (line.empty() ? "" : " ") + word;
+            word.clear();
+          } else word += para[i];
+        }
+        if (!line.empty()) lines.push_back(line);
+      }
+      if (h > 2) {
+        double speed = .8;  // lines a second
+        int cycle = int(lines.size()) + h;
+        int pos = int(std::fmod(now() * speed, double(cycle)));
+        for (int i = 0; i < int(lines.size()); ++i) {
+          int row = h - pos + i;  // from the foot of the window upward
+          if (row < 0 || row >= h) continue;
+          double edge = std::min(row + 1, h - row) / 3.0;
+          int col = mixc(0x000000, 0xB4A078, std::clamp(edge, 0.0, 1.0));
+          text((cw - w) / 2, y0 + row, lines[i], col);
+        }
+      }
     }
   } else {
     // the watch: the word in fire colours, embers rising behind it
@@ -1060,7 +1083,7 @@ void Client::draw_end() {
   box(x, y, w, h, won ? "The fire is yours" : "The dive is over");
   int r = y + 2;
   if (won) for (auto& l : lore::VICTORY) r += wrap(x + 2, r, w - 4, l, GOLD);
-  else r += wrap(x + 2, r, w - 4, "Ashmoor waits in vain.", 0xFF8080);
+  else r += wrap(x + 2, r, w - 4, "Charnfen waits in vain.", 0xFF8080);
   ++r;
   text(x + 2, r++, me["name"].get<std::string>() + ", level " + std::to_string(me["lvl"].get<int>()) + " " + me["clsname"].get<std::string>(), WHITE);
   text(x + 2, r++, "depth " + std::to_string(snap_["depth"].get<int>()) + ", " + std::to_string(me["kills"].get<int>()) + " foes slain, " +
