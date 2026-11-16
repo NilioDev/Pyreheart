@@ -56,7 +56,11 @@ json xy(int x, int y) { return json::array({x, y}); }
 json cells_json(const std::vector<P>& cs) { json a = json::array(); for (auto c : cs) a.push_back(xy(c.x, c.y)); return a; }
 }  // namespace
 
-Game::Game(uint64_t seed) : rnd(seed) { floor = make_floor(1, false); }
+Game::Game(uint64_t seed) : rnd(seed) {
+  // for screenshots and tests: PYREHEART_BOSS=4 starts on that boss's floor, next to it
+  if (const char* b = std::getenv("PYREHEART_BOSS")) depth = std::clamp(std::atoi(b), 1, FLOORS);
+  floor = make_floor(depth, false);
+}
 
 // ------------------------------------------------------------------ players
 Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
@@ -82,6 +86,7 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   // for screenshots and tests: start with a full pack of things to compare
   if (const char* g = std::getenv("PYREHEART_GIFTS"))
     for (int i = 0; i < std::atoi(g) && int(h->pack.size()) < PACK_MAX; ++i) h->pack.push_back(loot::roll(3, rnd, h->cls->kinds));
+  if (std::getenv("PYREHEART_BOSS")) h->lvl = std::max(1, depth * 2 - 1);
   h->hp = stats(*h).maxhp;
   h->mana = stats(*h).maxmana;
   Hero& r = *h;
@@ -107,6 +112,10 @@ void Game::leave(int pid) {
 
 void Game::place(Hero& h) {
   P s;
+  if (std::getenv("PYREHEART_BOSS") && floor->boss) {
+    auto& b = *floor->boss;
+    if (free_near(b.x, b.y, 8, s, [&](int x, int y) { return floor->walk(x, y) && cheb(x, y, b.x, b.y) >= 4; })) { h.x = s.x; h.y = s.y; return; }
+  }
   if (free_near(floor->up.x, floor->up.y, 4, s)) { h.x = s.x; h.y = s.y; }
   else { h.x = floor->up.x; h.y = floor->up.y; }
 }
@@ -610,10 +619,153 @@ void Game::melee(Hero& h, Mon& m) {
 }
 
 void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
+  if (m.spent > 0) dmg = dmg * 3 / 2;
   m.hp -= dmg;
   m.awake = true;
   if (by && !text.empty()) by->say(text, 0xFFD25A);
-  if (m.hp <= 0) kill(m, by);
+  if (m.hp <= 0) { kill(m, by); return; }
+  if (m.blow.turns > 0 && m.blow.kind == BLOW_PURPLE && (m.blow.taken += dmg) >= m.maxhp / 10) {
+    m.blow = {};
+    m.spent = 2;
+    say_near(m.x, m.y, "You break " + the(m) + "'s spell! It reels, open to your blows.", 0xD0A0FF);
+    for (auto* h : active()) if (h->sees(m.x, m.y)) tip(*h, "spent", "A reeling foe takes half again as much harm. Strike now.");
+  }
+  if (m.rank == "boss") boss_phase(m);
+}
+
+// ------------------------------------------------------------------ blows that are seen coming
+// Each boss plays from a deck of moves, a new deck at two thirds and one third of its life.
+const std::map<std::string, std::array<std::vector<std::string>, 3>> BOSS_DECKS = {
+    {"gravewarden", {{{"smash", "slam", "summon", "smash"},
+                      {"smash", "sweep", "summon", "line", "slam"},
+                      {"sweep", "smash", "toll", "summon", "line"}}}},
+    {"webmother", {{{"spit", "line", "summon", "smash"},
+                    {"line", "smash", "summon", "toll", "spit"},
+                    {"sweep", "line", "toll", "summon", "spit"}}}},
+    {"furnace", {{{"flame", "smash", "summon", "line"},
+                  {"line", "sweep", "flame", "summon", "smash"},
+                  {"pyre", "line", "flame", "summon", "sweep"}}}},
+    {"ashenking", {{{"nova", "smash", "line", "blink", "summon"},
+                    {"toll", "smash", "line", "blink", "summon", "sweep"},
+                    {"pyre", "toll", "line", "blink", "summon", "smash"}}}},
+};
+// how each blow looks: kind, turns to land, damage as a share of the foe's average hit, heavy (it is spent after)
+struct BlowDef { int kind, turns; double mult; bool heavy; };
+const std::map<std::string, BlowDef> BLOWS = {
+    {"smash", {BLOW_RED, 2, 1.6, false}}, {"line", {BLOW_RED, 2, 1.6, false}}, {"sweep", {BLOW_RED, 2, 2.0, true}},
+    {"toll", {BLOW_PURPLE, 3, 1.5, true}}, {"pyre", {BLOW_GOLD, 3, 2.2, true}},
+};
+// what the players read when it starts, by foe; "" for anyone else
+const std::map<std::string, std::map<std::string, std::string>> BLOW_SAYS = {
+    {"gravewarden", {{"smash", "raises its grave-hammer."}, {"line", "drags its hammer back for a long swing."},
+                     {"sweep", "whirls its hammer up. Get clear!"}, {"toll", "begins to toll a death-knell. Break it!"}}},
+    {"webmother", {{"smash", "rears up over you."}, {"line", "draws back a lash of web."}, {"sweep", "curls all its legs in."},
+                   {"toll", "begins to keen. Break it!"}}},
+    {"furnace", {{"smash", "lifts a fist of slag."}, {"line", "opens its grate toward you."}, {"sweep", "glows white. Get clear!"},
+                 {"pyre", "roars, and the whole hall begins to burn. Find the gold!"}}},
+    {"ashenking", {{"smash", "raises the black blade."}, {"line", "points, and the frost gathers."}, {"sweep", "draws the cold around him."},
+                   {"toll", "speaks a word of the old dwarves. Break it!"}, {"pyre", "opens his chest. The Pyreheart blazes. Find the gold!"}}},
+};
+
+bool Game::wind_up(Mon& m, Hero& h, const std::string& name) {
+  const BlowDef& bd = BLOWS.at(name);
+  Blow b;
+  b.name = name; b.kind = bd.kind; b.turns = bd.turns; b.heavy = bd.heavy;
+  b.dmg = rnd_i((m.lo + m.hi) / 2.0 * bd.mult);
+  b.elem = m.def->fire ? "fire" : m.def->cold ? "cold" : "";
+  auto add = [&](int x, int y) { if (floor->walk(x, y)) b.cells.push_back({x, y}); };
+  if (name == "smash") {
+    for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) add(h.x + dx, h.y + dy);
+  } else if (name == "sweep") {
+    for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) if (dx || dy) add(m.x + dx, m.y + dy);
+  } else if (name == "line") {
+    if (h.x == m.x && h.y == m.y) return false;
+    // past the hero, to the wall
+    int tx = m.x + (h.x - m.x) * 8, ty = m.y + (h.y - m.y) * 8;
+    for (auto&& [x, y] : tcod::BresenhamLine({m.x, m.y}, {tx, ty}).without_start()) {
+      if (!floor->walk(x, y) || cheb(x, y, m.x, m.y) > 8) break;
+      b.cells.push_back({x, y});
+    }
+  } else if (name == "toll") {
+    b.cells.push_back({m.x, m.y});
+  } else if (name == "pyre") {
+    // a little safe ground near each hero, reachable before it lands
+    for (auto* o : active()) {
+      if (cheb(o->x, o->y, m.x, m.y) > 9) continue;
+      std::vector<P> near;
+      PMap<int> dist{{P{o->x, o->y}, 0}};
+      std::deque<P> q{{o->x, o->y}};
+      while (!q.empty()) {
+        P c = q.front(); q.pop_front();
+        int dc = dist[c];
+        if (dc >= 2 && cheb(c.x, c.y, m.x, m.y) >= 3) near.push_back(c);
+        if (dc == bd.turns - 1) continue;
+        for (int dy = -1; dy <= 1; ++dy)
+          for (int dx = -1; dx <= 1; ++dx) {
+            P n{c.x + dx, c.y + dy};
+            if (floor->walk(n.x, n.y) && !dist.count(n)) { dist[n] = dc + 1; q.push_back(n); }
+          }
+      }
+      if (near.empty()) near.push_back({o->x, o->y});
+      P c = rnd.pick(near);
+      for (int dy = 0; dy <= 1; ++dy) for (int dx = 0; dx <= 1; ++dx) add(c.x + dx, c.y + dy);
+    }
+  }
+  if (b.cells.empty()) return false;
+  m.blow = b;
+  std::string says = "rears back for a heavy blow.";
+  auto bs = BLOW_SAYS.find(m.def->key);
+  if (bs != BLOW_SAYS.end() && bs->second.count(name)) says = bs->second.at(name);
+  int col = b.kind == BLOW_RED ? 0xFF7060 : b.kind == BLOW_PURPLE ? 0xD0A0FF : 0xFFD060;
+  say_near(m.x, m.y, cap(the(m)) + " " + says, col);
+  for (auto* o : active()) {
+    if (!o->sees(m.x, m.y)) continue;
+    if (b.kind == BLOW_RED) tip(*o, "red", "Red ground: a heavy blow lands there when the count runs out. Step off it.");
+    if (b.kind == BLOW_PURPLE) tip(*o, "purple", "Purple: it is gathering a spell. Stun it, or hurt it hard, to break it.");
+    if (b.kind == BLOW_GOLD) tip(*o, "gold", "Gold ground: the only safe place from what comes. Stand in it.");
+  }
+  return true;
+}
+
+void Game::land(Mon& m) {
+  Blow b = m.blow;
+  m.blow = {};
+  auto on = [&](Hero* o) { for (auto& c : b.cells) if (c.x == o->x && c.y == o->y) return true; return false; };
+  std::vector<Hero*> hit;
+  for (auto* o : active()) {
+    bool in = b.kind == BLOW_RED ? on(o)
+              : b.kind == BLOW_PURPLE ? o->sees(m.x, m.y)
+                                 : cheb(o->x, o->y, m.x, m.y) <= 9 && !on(o);
+    if (in) hit.push_back(o);
+  }
+  int col = b.kind == BLOW_RED ? 0xDC5A3C : b.kind == BLOW_PURPLE ? 0xB070FF : 0xFFB040;
+  if (b.name == "line") add_fx({{"k", "bolt"}, {"cells", cells_json(b.cells)}, {"col", col}, {"ch", "*"}, {"src", xy(m.x, m.y)}});
+  else if (b.name == "sweep") add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 2}, {"col", col}, {"sign", "*"}});
+  else if (b.kind == BLOW_RED) {
+    int cx = 0, cy = 0;
+    for (auto& c : b.cells) { cx += c.x; cy += c.y; }
+    add_fx({{"k", "burst"}, {"x", rnd_i(double(cx) / b.cells.size())}, {"y", rnd_i(double(cy) / b.cells.size())}, {"r", 1}, {"col", col}});
+  }
+  else add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 6}, {"col", col}, {"hollow", true}});
+  // a seen blow never kills from full life
+  for (auto* o : hit) hero_hurt(*o, &m, std::min(b.dmg, stats(*o).maxhp * 11 / 20), b.elem);
+  if (hit.empty()) say_near(m.x, m.y, cap(the(m)) + " strikes nothing.", 0xA0A0A0);
+  if (b.heavy) {
+    m.spent = 2;
+    say_near(m.x, m.y, cap(the(m)) + " is spent, and stands open.", 0xE0D080);
+    for (auto* o : active()) if (o->sees(m.x, m.y)) tip(*o, "spent", "A spent foe takes half again as much harm. Strike now.");
+  }
+}
+
+void Game::boss_phase(Mon& m) {
+  int ph = m.hp * 3 <= m.maxhp ? 2 : m.hp * 3 <= 2 * m.maxhp ? 1 : 0;
+  if (ph <= m.phase) return;
+  m.phase = ph;
+  m.deck.clear();
+  m.cool = 1;
+  say_near(m.x, m.y, cap(the(m)) + (ph == 1 ? " staggers, and fights harder." : " is badly hurt. Now it holds nothing back."), 0xFFB060);
+  Hero* h = nearest_hero(m, false);
+  if (h) boss_move(m, *h, cheb(h->x, h->y, m.x, m.y), "summon");
 }
 
 void Game::kill(Mon& m, Hero* by) {
@@ -946,6 +1098,17 @@ void Game::monsters() {
   compute_dist();
   auto ms = floor->mons;
   for (auto& m : ms) {
+    if (m->hp <= 0 || m->blow.turns <= 0) continue;
+    if (m->blow.kind == BLOW_PURPLE && (m->stun > 0 || m->frozen > 0)) {
+      m->blow = {};
+      m->spent = 2;
+      say_near(m->x, m->y, "The spell breaks! " + cap(the(*m)) + " reels, open to your blows.", 0xD0A0FF);
+      continue;
+    }
+    if (--m->blow.turns == 0) land(*m);
+    if (state != "play") return;
+  }
+  for (auto& m : ms) {
     if (m->hp <= 0) continue;
     m->energy += m->spd;
     while (m->energy >= 100 && m->hp > 0) {
@@ -971,13 +1134,28 @@ void Game::mon_turn(Mon& m) {
   if (m.stun > 0) { --m.stun; return; }
   if (m.frozen > 0) { --m.frozen; return; }
   if (!m.awake) return;
+  if (m.blow.turns > 0) return;               // winding up: it does nothing else
+  if (m.spent > 0) { --m.spent; return; }     // open after a great blow
   Hero* h = nearest_hero(m, true);
   if (!h) h = nearest_hero(m, false);
   if (!h) return;
   int d = cheb(h->x, h->y, m.x, m.y);
   bool sees = h->sees(m.x, m.y);
-  if (!m.def->moves.empty() && sees) {
-    if (--m.cool <= 0 && boss_move(m, *h, d)) { m.cool = rnd.range(4, 6); return; }
+  if (m.rank == "boss" && !m.def->moves.empty() && sees && --m.cool <= 0) {
+    if (m.deck.empty()) {
+      auto it = BOSS_DECKS.find(m.def->key);
+      if (it != BOSS_DECKS.end()) m.deck = it->second[std::min(m.phase, 2)];
+      else m.deck = m.def->moves;
+      rnd.shuffle(m.deck);
+    }
+    std::string mv = m.deck.back();
+    m.deck.pop_back();
+    bool done = BLOWS.count(mv) ? wind_up(m, *h, mv) : boss_move(m, *h, d, mv);
+    if (done) { m.cool = rnd.range(2, 3); return; }
+    m.deck.insert(m.deck.begin(), mv);        // not now: later in the round
+    m.cool = 1;
+  } else if ((m.rank == "champion" || m.rank == "unique") && sees && d <= 2 && --m.cool <= 0) {
+    if (wind_up(m, *h, "smash")) { m.cool = rnd.range(6, 8); return; }
   }
   if (m.def->ai == "erratic" && rnd.real() < .4) { step_random(m); return; }
   if (m.def->ai == "ranged" && sees && d >= 2 && d <= m.def->rng && rnd.real() < .75) {
@@ -1063,8 +1241,9 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   }
 }
 
-bool Game::boss_move(Mon& m, Hero& h, int d) {
-  const std::string& mv = rnd.pick(m.def->moves);
+bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
+  std::string mv = mv0;
+  if (mv == "summon") for (auto& k : m.def->moves) if (k.rfind("summon:", 0) == 0) mv = k;
   if (mv.rfind("summon:", 0) == 0) {
     int n = 0;
     for (auto& o : floor->mons) if (o->summoned) ++n;

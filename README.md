@@ -33,6 +33,12 @@ On a phone, tap where you want to go, and hold to keep walking until a foe comes
 
 On a watch, tap a side of the dial to step that way. Turn the crown and a ring of actions appears round the edge; the crown chooses, the middle shows what is chosen, and a tap does it.
 
+## Fighting and finding
+
+Every thing you carry or see for sale is marked against what you wear: a green ▲ is better, a red ▼ worse, ~ a trade. Choose it and every number that would change is listed.
+
+Great foes show their heavy blows before they land, as a count on the ground. Red: step off it. Purple: a spell; stun the foe or hurt it hard to break it. Gold: the only safe ground, so stand in it. After its greatest blow a foe is spent for a moment and takes more harm. Each of the four great foes fights harder at two thirds and at one third of its life, and the bar at the top of the screen shows where. Champions and uniques have a heavy blow of their own.
+
 ## Playing together
 
 One player hosts ("Host a game for friends"), the others join with the host's address. On the same network the game finds hosts by itself.

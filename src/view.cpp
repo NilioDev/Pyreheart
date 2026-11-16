@@ -54,7 +54,16 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     if (h.sees(m->x, m->y))
       ents.push_back({{"id", m->id}, {"x", m->x}, {"y", m->y}, {"ch", m->def->ch}, {"col", m->col}, {"name", m->name},
                       {"hp", m->hp}, {"max", m->maxhp}, {"rank", m->rank}, {"frozen", m->frozen > 0}, {"stun", m->stun > 0},
-                      {"about", describe(*m)}});
+                      {"about", describe(*m)}, {"spent", m->spent > 0}});
+  // blows being wound up: where they land and in how many turns
+  json marks = json::array();
+  for (auto& m : f.mons) {
+    if (m->blow.turns <= 0) continue;
+    json cs = json::array();
+    for (auto& c : m->blow.cells) if (h.sees(c.x, c.y)) { cs.push_back(c.x); cs.push_back(c.y); }
+    if (!cs.empty()) marks.push_back({{"k", m->blow.kind}, {"n", m->blow.turns}, {"c", cs}});
+  }
+  out["marks"] = marks;
   if (f.has_merchant)
     ents.push_back({{"id", -1}, {"x", f.merchant.x}, {"y", f.merchant.y}, {"ch", int('@')}, {"col", 0xD2B48C},
                     {"name", "the trader"}, {"rank", "npc"}, {"hp", 1}, {"max", 1}, {"about", "a trader from Charnfen"}});
@@ -114,7 +123,12 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     for (auto& it : h.pack) sell.push_back({it->id, std::max(1, it->value / 3)});
     out["shop"] = {{"items", shop}, {"potion", 25 + 5 * g.depth}, {"sell", sell}};
   }
-  if (f.boss && f.boss_woke && f.boss->hp > 0) out["boss"] = {{"name", f.boss->name}, {"hp", f.boss->hp}, {"max", f.boss->maxhp}};
+  if (f.boss && f.boss_woke && f.boss->hp > 0) {
+    auto& b = *f.boss;
+    std::string doing = b.spent > 0 ? "spent: strike now" : "";
+    if (b.blow.turns > 0) doing = std::string(b.blow.kind == 0 ? "red" : b.blow.kind == 1 ? "purple: break it" : "gold: stand in it") + " in " + std::to_string(b.blow.turns);
+    out["boss"] = {{"name", b.name}, {"hp", b.hp}, {"max", b.maxhp}, {"phase", b.phase}, {"doing", doing}};
+  }
   json log = json::array();
   for (auto& l : h.log) log.push_back({l.text, l.col});
   h.log.clear();

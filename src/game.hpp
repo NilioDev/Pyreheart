@@ -54,6 +54,17 @@ struct Hero {
   bool sees(int x_, int y_) const { return x_ >= 0 && x_ < W && y_ >= 0 && y_ < H && vis[y_ * W + x_]; }
 };
 
+// A blow a foe winds up for a few turns, drawn on the ground so a player can answer it.
+// Red: step off it. Purple: a spell, broken by a stun or a hard hit. Gold: the only safe ground.
+enum BlowKind { BLOW_RED, BLOW_PURPLE, BLOW_GOLD };
+struct Blow {
+  std::string name;
+  int kind = BLOW_RED, turns = 0, dmg = 0, taken = 0;
+  bool heavy = false;
+  std::string elem;
+  std::vector<P> cells;
+};
+
 struct Mon {
   int id = 0;
   const MonDef* def = nullptr;
@@ -64,6 +75,9 @@ struct Mon {
   std::vector<std::string> mods;
   int energy = 0, stun = 0, frozen = 0, cool = 3;
   bool awake = false, summoned = false;
+  Blow blow;                       // turns > 0 while it winds up
+  int spent = 0, phase = 0;        // spent: turns it stands open after a great blow
+  std::vector<std::string> deck;   // a boss's next moves
   bool has(const std::string& m) const { return std::find(mods.begin(), mods.end(), m) != mods.end(); }
 };
 using MonP = std::shared_ptr<Mon>;
@@ -184,7 +198,10 @@ class Game {
   void step_toward(Mon& m);
   void mon_hit(Mon& m, Hero& h, bool ranged);
   void hero_hurt(Hero& h, Mon* m, int dmg, const std::string& kind);
-  bool boss_move(Mon& m, Hero& h, int d);
+  bool boss_move(Mon& m, Hero& h, int d, const std::string& mv);
+  bool wind_up(Mon& m, Hero& h, const std::string& blow);
+  void land(Mon& m);
+  void boss_phase(Mon& m);
   void tick();
   std::vector<std::string> party_kinds();
 };

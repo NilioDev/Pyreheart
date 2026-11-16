@@ -45,6 +45,10 @@ const std::vector<std::pair<std::string, std::string>> HELP = {
     {"", "Every fourth floor a great foe waits by the way down. After it comes a waystation with a fountain and a trader."},
     {"", "The dead wake again at the next waystation, if their friends get there."},
     {"", "Things you find are yours alone; what you put down, anyone may take."},
+    {"", "In your pack and at the trader, a green \u25b2 is better than what you wear, a red \u25bc worse, and ~ a trade."},
+    {"", ""},
+    {"", "Great foes show their heavy blows before they land, as a count on the ground. Red: step off it. Purple: a spell; stun the foe or hurt it hard to break it. Gold: the only safe ground, so stand in it."},
+    {"", "After its greatest blow a foe is spent for a moment and takes more harm. It fights harder at two thirds and at one third of its life."},
 };
 }  // namespace
 
@@ -797,11 +801,25 @@ void Client::draw_game() {
   if (snap_.contains("boss") && layout_ != Layout::Watch) {
     auto& b = snap_["boss"];
     int w = std::min(40, vw_ - 4);
-    bar(vx_ + (vw_ - w) / 2, vy_, w, b["hp"], b["max"], 0xC03030, b["name"].get<std::string>());
+    int bx = vx_ + (vw_ - w) / 2;
+    bar(bx, vy_, w, b["hp"], b["max"], 0xC03030, b["name"].get<std::string>());
+    // the two places where the fight turns
+    for (int k = 1; k <= 2; ++k) {
+      int X = bx + w * k / 3;
+      if (!con_.in_bounds({X, vy_})) continue;
+      auto& t = con_.at({X, vy_});
+      if (t.ch == ' ' || t.ch == 0x2588 || t.ch == 0x2591) { t.ch = 0x2502; t.fg = {255, 220, 150, 255}; }
+      else t.bg = {150, 110, 40, 255};
+    }
+    std::string doing = b.value("doing", "");
+    if (!doing.empty()) {
+      int col = doing.rfind("red", 0) == 0 ? 0xFF7060 : doing.rfind("purple", 0) == 0 ? 0xD0A0FF : doing.rfind("gold", 0) == 0 ? 0xFFD060 : 0xE0D080;
+      text(bx + (w - int(doing.size())) / 2, vy_ + 1, doing, col, 0);
+    }
   }
   auto& me = snap_["me"];
   if (over_ == Over::None && !me["choice"].is_null() && layout_ != Layout::Watch) text(vx_ + 1, vy_ + vh_ - 1, "[p] a new perk", KEY);
-  if (waiting_ && snap_["heroes"].size() > 1) text(vx_ + 1, vy_ + (snap_.contains("boss") ? 1 : 0), "waiting for the others...", GREY);
+  if (waiting_ && snap_["heroes"].size() > 1) text(vx_ + 1, vy_ + (snap_.contains("boss") ? 2 : 0), "waiting for the others...", GREY);
   switch (over_) {
     case Over::Pack: draw_pack(); break;
     case Over::Shop: draw_shop(); break;
@@ -846,6 +864,19 @@ void Client::draw_map() {
       put(X, Y, ch, fg, bg);
     }
   for (auto& w : s["writ"]) { int i = w; put(sx(i % W), sy(i / W), '?', 0xE6D2A0); }
+  // blows being wound up: the count on the ground, tinted by what to do
+  if (s.contains("marks"))
+    for (auto& mk : s["marks"]) {
+      int k = mk["k"], n = mk["n"];
+      static const int BG[] = {0x5A1410, 0x3C1650, 0x5A4610}, FG[] = {0xFF6040, 0xC080FF, 0xFFD040};
+      bool blink = std::fmod(now(), .8) < .4;
+      auto& c = mk["c"];
+      for (size_t i = 0; i + 1 < c.size(); i += 2) {
+        int X = sx(c[i]), Y = sy(c[i + 1]);
+        if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
+        put(X, Y, '0' + std::min(n, 9), n == 1 && blink ? 0xFFFFFF : FG[k], n == 1 && blink ? scale(BG[k], 1.6) : BG[k]);
+      }
+    }
   for (auto& it : s["items"]) {
     std::string ch = it["ch"];
     put(sx(it["x"]), sy(it["y"]), (unsigned char)ch[0], it["col"]);
