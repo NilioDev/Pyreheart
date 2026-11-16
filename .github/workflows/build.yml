@@ -50,6 +50,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          # keep Gradle's downloads between runs: fewer trips to Maven Central, which sometimes says "too many requests"
+          cache: gradle
       - name: NDK and the runner's own CMake
         run: |
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
