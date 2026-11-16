@@ -984,7 +984,7 @@ void Client::draw_map() {
       text(vx_ + 1, ly, what, WHITE, 0);
       if (!about.empty()) text(vx_ + 1, ly + 1, about, GREY, 0);
       std::string hint = aim_ == "look" ? "[Esc]" : "[Tab] [Enter] [Esc]";
-      text(vx_ + vw_ - int(hint.size()) - 1, vy_, hint, KEY, 0);
+      text(vx_ + vw_ - int(hint.size()) - 1, vy_ + (s.contains("boss") ? 2 : 0), hint, KEY, 0);  // below the boss bar
     }
   }
 }
