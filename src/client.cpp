@@ -880,6 +880,28 @@ void Client::draw_map() {
   if (vh_ >= H) camy_ = -(vh_ - H) / 2;
   auto sx = [&](int x) { return x - camx_ + vx_; };
   auto sy = [&](int y) { return y - camy_ + vy_; };
+  // Charnfen at night: light pools around the hero, the windows, the cracks and the altar
+  bool town = s.value("town", false);
+  std::vector<float> light;
+  if (town) {
+    light.assign(W * H, .34f);
+    auto pool = [&](int cx, int cy, int r, float a) {
+      for (int y = std::max(0, cy - r); y <= std::min(H - 1, cy + r); ++y)
+        for (int x = std::max(0, cx - r); x <= std::min(W - 1, cx + r); ++x) {
+          float d = std::sqrt(float((x - cx) * (x - cx) + (y - cy) * (y - cy)));
+          if (d <= r) light[y * W + x] = std::max(light[y * W + x], .34f + (a - .34f) * (1 - d / (r + 1)));
+        }
+    };
+    float fl = .92f + .08f * float(std::sin(now() * 7.0));
+    pool(hx, hy, 7, 1.f);
+    for (int i = 0; i < W * H; ++i) {
+      int t = map[i] - '0';
+      if (t == data::LIT) pool(i % W, i / W, 3, .8f * fl);
+      else if (t == data::CRACK || t == data::EMBER) pool(i % W, i / W, 2, .7f * fl);
+      else if (t == data::ALTAR) pool(i % W, i / W, 4, .75f * fl);
+      else if (t == data::WINDOW) pool(i % W, i / W, 1, .65f * fl);
+    }
+  }
   for (int y = 0; y < H; ++y)
     for (int x = 0; x < W; ++x) {
       int X = sx(x), Y = sy(y);
@@ -891,10 +913,19 @@ void Client::draw_map() {
       int col = td.col >= 0 ? td.col : t == data::WALL ? act.wall : act.floor;
       int ch = td.ch;
       if (t == data::WALL) ch = 0x2593 - 0;  // ▓ the rock
+      if (town && t == data::SNOW) {
+        unsigned h = unsigned(i) * 2654435761u >> 24;  // drifts: mostly bare snow, here and there a mound
+        ch = h < 150 ? ' ' : h < 235 ? '.' : h < 250 ? ',' : '\'';
+      }
       bool lit = vis[i] == '1';
       int fg = lit ? col : mixc(scale(col, .35), 0x202430, .3);
       int bg = 0;
       if (t == data::WALL) { ch = '#'; bg = lit ? scale(col, .25) : 0x0A0A0E; }
+      if (town) {
+        float l = light[i];
+        fg = mixc(scale(col, l), 0x101828, (1 - l) * .35);
+        if (t == data::WALL) bg = scale(col, .22 * l);
+      }
       put(X, Y, ch, fg, bg);
     }
   for (auto& w : s["writ"]) { int i = w; put(sx(i % W), sy(i / W), '?', 0xE6D2A0); }
@@ -926,6 +957,39 @@ void Client::draw_map() {
         put(X, Y, '0' + std::min(n, 9), n == 1 && blink ? 0xFFFFFF : FG[k], n == 1 && blink ? scale(BG[k], 1.6) : BG[k]);
       }
     }
+  // Charnfen: falling snow, embers rising from the warm cracks, candle-lit windows
+  if (s.value("town", false)) {
+    double tt = now();
+    auto inside = [&](int x, int y) { int X = sx(x), Y = sy(y); return X >= vx_ && Y >= vy_ && X < vx_ + vw_ && Y < vy_ + vh_; };
+    for (int y = 0; y < H; ++y)
+      for (int x = 0; x < W; ++x) {
+        int i = y * W + x, t2 = map[i] - '0';
+        if (!seen[i] || !inside(x, y)) continue;
+        if (t2 == data::LIT) {
+          double f = .75 + .25 * std::sin(tt * 5 + x * 1.7 + y);
+          put(sx(x), sy(y), data::TILES[t2].ch, scale(0xFFB040, f), scale(0x4A2808, f));
+        }
+        if (t2 == data::CRACK || t2 == data::EMBER) {
+          // a spark drifts up a few cells and fades
+          double ph = std::fmod(tt * .7 + (x * 13 + y * 7) % 10 * .1, 1.0);
+          int up = int(ph * 4), ex = x + (((x + y) & 1) ? (up > 2) : -(up > 2));
+          int ey = y - 1 - up;
+          if (ey >= 0 && inside(ex, ey) && seen[ey * W + ex] && !data::blocks(map[ey * W + ex] - '0'))
+            put(sx(ex), sy(ey), ph < .5 ? 0x2022 : 0x00B7, scale(0xFF8030, 1 - ph * .8));
+        }
+      }
+    // snow: about one flake in forty cells, falling and drifting
+    for (int k = 0; k < W * H / 40; ++k) {
+      unsigned hsh = k * 2654435761u;
+      double speed = 1.5 + (hsh >> 8) % 100 / 60.0;
+      int x = int(hsh % W + std::sin(tt * .8 + k) * 1.5 + tt * .6) % W;
+      int y = int((hsh >> 16) % H + tt * speed) % H;
+      if (x < 0 || !inside(x, y) || !seen[y * W + x]) continue;
+      int t2 = map[y * W + x] - '0';
+      if (data::blocks(t2) && t2 != data::GRAVE && t2 != data::CROSS && t2 != data::TREE) continue;
+      put(sx(x), sy(y), (k % 7) ? 0x00B7 : '*', (k % 7) ? 0xB8C0D4 : 0x7A8498);
+    }
+  }
   for (auto& it : s["items"]) {
     std::string ch = it["ch"];
     put(sx(it["x"]), sy(it["y"]), (unsigned char)ch[0], it["col"]);
@@ -1008,9 +1072,9 @@ void Client::draw_side(int x, int y, int w, int h) {
   if (me.value("shield", false)) st += "shielded ";
   if (!st.empty()) text(x + 1, r, st, 0x96E65A);
   ++r;
-  std::string where = snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
+  std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
   text(x + 1, r++, where, GOLD);
-  text(x + 1, r++, data::ACTS[snap_["act"].get<int>()].name, GREY);
+  text(x + 1, r++, snap_.value("town", false) ? "the last village" : data::ACTS[snap_["act"].get<int>()].name, GREY);
   text(x + 1, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
   ++r;
   text(x + 1, r, "[q]", KEY); text(x + 5, r++, "heal x" + std::to_string(me["heal"].get<int>()), 0xFF7070);
@@ -1064,7 +1128,7 @@ void Client::draw_status_tall(int y) {
   int cw = con_.get_width();
   bar(0, y, cw / 2 - 1, me["hp"], me["maxhp"], RED, std::to_string(me["hp"].get<int>()) + "/" + std::to_string(me["maxhp"].get<int>()));
   bar(cw / 2, y, cw - cw / 2, me["mana"], me["maxmana"], me.value("pool", "mana") == "fury" ? 0xC05020 : BLUE, std::to_string(me["mana"].get<int>()) + "/" + std::to_string(me["maxmana"].get<int>()));
-  std::string where = snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
+  std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
   text(0, y + 1, where + "  lvl " + std::to_string(me["lvl"].get<int>()) + "  " + std::to_string(me["gold"].get<int>()) + "g", GOLD);
 }
 

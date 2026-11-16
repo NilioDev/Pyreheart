@@ -40,6 +40,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["depth"] = g.depth;
   out["act"] = f.act;
   out["rest"] = f.rest;
+  out["town"] = f.depth == 0;
   out["floor"] = f.id;
   if (with_map) {
     std::string m(W * H, '0');
@@ -50,7 +51,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     out["seen"] = seen;
   }
   std::string vis(W * H, '0');
-  for (int i = 0; i < W * H; ++i) if (h.vis[i]) vis[i] = '1';
+  for (int i = 0; i < W * H; ++i) if (h.vis[i] || f.depth == 0) vis[i] = '1';
   out["vis"] = vis;
   json ents = json::array();
   for (auto& m : f.mons)

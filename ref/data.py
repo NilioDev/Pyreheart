@@ -3,7 +3,8 @@ affixes and uniques. No rules live here."""
 
 # ------------------------------------------------------------------ tiles
 # (sign, colour, walkable, see-through, name)
-WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED = range(15)
+WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
+    SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK = range(29)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -20,8 +21,24 @@ TILES = [
     ('□', (110, 90, 60), False, True, 'open chest'),
     ('Ω', (190, 160, 255), False, True, 'shrine'),
     ('Ω', (80, 70, 100), False, True, 'spent shrine'),
+    # Charnfen
+    ('.', (120, 128, 148), True, True, 'snow'),
+    ('·', (130, 105, 80), True, True, 'trodden mud'),
+    ('∩', (120, 120, 130), False, True, 'a gravestone'),
+    ('†', (140, 140, 150), False, True, 'a grave cross'),
+    ('♣', (80, 65, 55), False, True, 'a dead tree'),
+    ('≡', (110, 80, 50), False, True, 'a pew'),
+    ('‡', (220, 200, 140), False, True, 'the altar of the cathedral'),
+    ('&', (130, 60, 40), False, True, 'the Ember Altar, cold'),
+    ('O', (150, 170, 190), False, True, 'the warm well'),
+    ('?', (200, 170, 110), False, True, 'the notice board'),
+    ('▒', (110, 60, 160), False, False, 'stained glass'),
+    ('▒', (230, 180, 90), False, False, 'a lit window'),
+    ('≈', (150, 190, 220), True, True, 'a frozen pond'),
+    (',', (230, 110, 40), True, True, 'a warm crack in the ground'),
 ]
-BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED}
+BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD,
+               WINDOW, LIT}
 
 # ------------------------------------------------------------------ the four acts
 ACTS = [

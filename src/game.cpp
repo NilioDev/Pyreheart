@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <deque>
+#include <fstream>
 
 #include "k5.hpp"
 #include "lore.hpp"
@@ -60,6 +61,32 @@ Game::Game(uint64_t seed) : rnd(seed) {
   // for screenshots and tests: PYREHEART_BOSS=4 starts on that boss's floor, next to it
   if (const char* b = std::getenv("PYREHEART_BOSS")) depth = std::clamp(std::atoi(b), 1, FLOORS);
   floor = make_floor(depth, false);
+  // a first look at Charnfen, drawn by hand: PYREHEART_TOWN=ref/charnfen.txt
+  if (const char* town = std::getenv("PYREHEART_TOWN")) {
+    std::ifstream in(town);
+    std::string line;
+    auto f = std::make_unique<Floor>();
+    f->depth = 0; f->act = 0; f->rest = true; f->id = floor_ids_++;
+    static const std::map<std::string, int> KEY = {
+        {"#", WALL}, {".", SNOW}, {":", PATH}, {"+", DOOR}, {"n", GRAVE}, {"t", CROSS}, {"\u2663", TREE}, {"\u2261", PEW},
+        {"\u2021", ALTAR}, {"E", EMBER}, {"O", WELL}, {"?", BOARD}, {"w", WINDOW}, {"L", LIT}, {"\u2248", ICE}, {"%", CRACK},
+        {">", STAIRS}, {"$", PATH}, {"@", PATH}};
+    for (int y = 0; y < H && std::getline(in, line); ++y) {
+      int x = 0;
+      for (size_t i = 0; i < line.size() && x < W; ++x) {
+        size_t n = (line[i] & 0x80) == 0 ? 1 : (line[i] & 0xE0) == 0xC0 ? 2 : (line[i] & 0xF0) == 0xE0 ? 3 : 4;
+        std::string c = line.substr(i, n);
+        i += n;
+        auto k = KEY.find(c);
+        f->t[y * W + x] = k == KEY.end() ? SNOW : k->second;
+        if (c == "$") { f->has_merchant = true; f->merchant = {x, y}; }
+        if (c == "@") f->up = {x, y};
+        if (c == ">") f->down = {x, y};
+      }
+    }
+    floor = std::move(f);
+    depth = 0;
+  }
 }
 
 // ------------------------------------------------------------------ players
@@ -93,9 +120,14 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   heroes[pid] = std::move(h);
   rescale();
   place(r);
-  if (depth == 1) r.say("Charnfen, at the edge of ruin. The way down is through the graveyard.", 0xD2B48C);
-  auto& open = lore::ACT_OPEN[floor->act];
-  r.say(open[0] + ": " + open[1], 0xFFD27F);
+  if (floor->depth == 0) {
+    r.say("Charnfen. Snow falls on the graves of the many who went down before you.", 0xD2B48C);
+    r.say("Beneath the cathedral the crypts wait. Their gate stands in the old mausoleum.", 0xFFD27F);
+  } else {
+    if (depth == 1) r.say("Charnfen, at the edge of ruin. The way down is through the graveyard.", 0xD2B48C);
+    auto& open = lore::ACT_OPEN[floor->act];
+    r.say(open[0] + ": " + open[1], 0xFFD27F);
+  }
   r.say("Walk with the arrow keys or the number pad. Bump a foe to fight it. Help: [?].", 0x9CC89C);
   if (heroes.size() > 1) say_all(r.name + " the " + r.cls->name + " joins the dive.", 0xB4DCB4);
   look();
@@ -112,6 +144,7 @@ void Game::leave(int pid) {
 
 void Game::place(Hero& h) {
   P s;
+  if (floor->depth == 0) { h.x = floor->up.x; h.y = floor->up.y; h.seen.assign(W * H, 1); return; }
   if (std::getenv("PYREHEART_BOSS") && floor->boss) {
     auto& b = *floor->boss;
     if (free_near(b.x, b.y, 8, s, [&](int x, int y) { return floor->walk(x, y) && cheb(x, y, b.x, b.y) >= 4; })) { h.x = s.x; h.y = s.y; return; }

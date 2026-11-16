@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -20,8 +20,22 @@ inline const TileDef TILES[] = {
     {0x25A1, 0x6E5A3C, false, true, "open chest"},
     {0x3A9, 0xBEA0FF, false, true, "shrine"},
     {0x3A9, 0x504664, false, true, "spent shrine"},
+    {0x2E, 0x788094, true, true, "snow"},
+    {0xB7, 0x826950, true, true, "trodden mud"},
+    {0x2229, 0x787882, false, true, "a gravestone"},
+    {0x2020, 0x8C8C96, false, true, "a grave cross"},
+    {0x2663, 0x504137, false, true, "a dead tree"},
+    {0x2261, 0x6E5032, false, true, "a pew"},
+    {0x2021, 0xDCC88C, false, true, "the altar of the cathedral"},
+    {0x26, 0x823C28, false, true, "the Ember Altar, cold"},
+    {0x4F, 0x96AABE, false, true, "the warm well"},
+    {0x3F, 0xC8AA6E, false, true, "the notice board"},
+    {0x2592, 0x6E3CA0, false, false, "stained glass"},
+    {0x2592, 0xE6B45A, false, false, "a lit window"},
+    {0x2248, 0x96BEDC, true, true, "a frozen pond"},
+    {0x2C, 0xE66E28, true, true, "a warm crack in the ground"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case GRAVE: case CROSS: case TREE: case PEW: case ALTAR: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: return true; default: return false; } }
 constexpr int FLOORS = 16;
 inline bool rest_after(int d) { return d == 4 || d == 8 || d == 12; }
 inline const ActDef ACTS[] = {
