@@ -4,7 +4,7 @@ affixes and uniques. No rules live here."""
 # ------------------------------------------------------------------ tiles
 # (sign, colour, walkable, see-through, name)
 WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
-    SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK = range(29)
+    SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS = range(31)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -36,9 +36,11 @@ TILES = [
     ('▒', (230, 180, 90), False, False, 'a lit window'),
     ('≈', (150, 190, 220), True, True, 'a frozen pond'),
     (',', (230, 110, 40), True, True, 'a warm crack in the ground'),
+    ('○', (150, 140, 125), False, True, 'a pillar'),
+    ('.', (75, 70, 66), True, True, 'worn flagstones'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD,
-               WINDOW, LIT}
+               WINDOW, LIT, PILLAR}
 
 # ------------------------------------------------------------------ the four acts
 ACTS = [

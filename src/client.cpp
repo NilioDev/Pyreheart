@@ -798,10 +798,12 @@ void Client::draw_game() {
   }
   int cw = con_.get_width(), chh = con_.get_height();
   if (layout_ == Layout::Wide) {
-    vx_ = 0; vy_ = 0; vw_ = W; vh_ = H;
+    // the map window stays 76 by 42; a larger map (Charnfen) scrolls under it
+    constexpr int VW = 76, VH = 42;
+    vx_ = 0; vy_ = 0; vw_ = VW; vh_ = VH;
     draw_map();
-    draw_side(W, 0, cw - W, chh);
-    draw_log(0, H, W, chh - H);
+    draw_side(VW, 0, cw - VW, chh);
+    draw_log(0, VH, VW, chh - VH);
   } else if (layout_ == Layout::Tall) {
     vx_ = 0; vy_ = 2; vw_ = cw; vh_ = chh - 2 - 5 - 6;
     draw_status_tall(0);
@@ -986,7 +988,7 @@ void Client::draw_map() {
       int y = int((hsh >> 16) % H + tt * speed) % H;
       if (x < 0 || !inside(x, y) || !seen[y * W + x]) continue;
       int t2 = map[y * W + x] - '0';
-      if (data::blocks(t2) && t2 != data::GRAVE && t2 != data::CROSS && t2 != data::TREE) continue;
+      if (t2 == data::FLAGS || (data::blocks(t2) && t2 != data::GRAVE && t2 != data::CROSS && t2 != data::TREE)) continue;
       put(sx(x), sy(y), (k % 7) ? 0x00B7 : '*', (k % 7) ? 0xB8C0D4 : 0x7A8498);
     }
   }

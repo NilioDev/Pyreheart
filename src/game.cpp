@@ -70,7 +70,7 @@ Game::Game(uint64_t seed) : rnd(seed) {
     static const std::map<std::string, int> KEY = {
         {"#", WALL}, {".", SNOW}, {":", PATH}, {"+", DOOR}, {"n", GRAVE}, {"t", CROSS}, {"\u2663", TREE}, {"\u2261", PEW},
         {"\u2021", ALTAR}, {"E", EMBER}, {"O", WELL}, {"?", BOARD}, {"w", WINDOW}, {"L", LIT}, {"\u2248", ICE}, {"%", CRACK},
-        {">", STAIRS}, {"$", PATH}, {"@", PATH}};
+        {">", STAIRS}, {"<", UPSTAIRS}, {"o", PILLAR}, {"_", FLAGS}, {"$", PATH}, {"@", PATH}};
     for (int y = 0; y < H && std::getline(in, line); ++y) {
       int x = 0;
       for (size_t i = 0; i < line.size() && x < W; ++x) {
@@ -122,7 +122,7 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   place(r);
   if (floor->depth == 0) {
     r.say("Charnfen. Snow falls on the graves of the many who went down before you.", 0xD2B48C);
-    r.say("Beneath the cathedral the crypts wait. Their gate stands in the old mausoleum.", 0xFFD27F);
+    r.say("The cathedral stands open. Before its high altar a stair goes down to the crypts.", 0xFFD27F);
   } else {
     if (depth == 1) r.say("Charnfen, at the edge of ruin. The way down is through the graveyard.", 0xD2B48C);
     auto& open = lore::ACT_OPEN[floor->act];

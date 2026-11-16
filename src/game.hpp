@@ -8,8 +8,8 @@
 
 using json = nlohmann::json;
 
-constexpr int W = 76;
-constexpr int H = 42;
+constexpr int W = 120;
+constexpr int H = 64;
 constexpr int SIGHT = 9;
 
 struct Item {
