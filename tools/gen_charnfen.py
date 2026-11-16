@@ -90,20 +90,7 @@ for y in range(48,53):                      # the fire, 1-3-1, in a ring of hear
 put(53,49,'h'); put(67,49,'b'); put(55,54,'g'); put(65,54,'$')
 for x in (56,57,58): put(x,46,'≡')
 for x in (62,63,64): put(x,46,'≡')
-# the inn on the west side of the square
-for y in range(44,55):
-    for x in range(36,48):
-        if x in(36,47) or y in(44,54): put(x,y,'#')
-        else: floor(x,y)
-for y in range(45,54): put(41,y,'#')
-put(41,49,'+'); put(47,49,'+')
-for y in (46,52): put(47,y,'L')
-put(36,47,'L'); put(36,51,'L')
-put(39,44,'C'); put(44,44,'C')
-for x in range(43,47): put(x,46,'≡')
-for x in range(43,47): put(x,52,'≡')
-put(38,46,'■') if False else None
-put(48,47,'?')                                   # the board by the inn door
+put(48,47,'?')                                   # the notice board on the square
 put(48,51,'T')
 # the Ember Altar on the east side, cold, warm cracks round it
 put(78,50,'E')
