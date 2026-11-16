@@ -892,7 +892,7 @@ void Client::draw_map() {
     warm.assign(W * H, 0.f);
     double tt = now();
     auto flick = [&](int seed) {
-      return float(.86 + .08 * std::sin(tt * 9.1 + seed * 1.7) + .06 * std::sin(tt * 23.3 + seed * 3.1));
+      return float(.86 + .08 * std::sin(tt * 4.1 + seed * 1.7) + .06 * std::sin(tt * 9.7 + seed * 3.1));
     };
     auto pool = [&](int cx, int cy, float r, float a, float w) {
       int R = int(r) + 1;
@@ -996,12 +996,12 @@ void Client::draw_map() {
         if (t2 == data::FIRE) {
           // the core is hot and white, the edge red; every cell dances on its own beat
           double core = std::hypot((x - fcx) / 1.6, double(y - fcy));
-          int step = int(tt * 11 + noise(i) * 6);
+          int step = int(tt * 4.5 + noise(i) * 6);
           int c = std::clamp(int(core * 2.2) + int(noise(i * 31 + step) * 2.4), 0, 5);
           int ch = (step + i) % 3 == 0 ? '^' : (step + i) % 3 == 1 ? 0x25B2 : '*';
           put(sx(x), sy(y), ch, FIREC[c], mixc(0x5A1804, 0xA04008, float(noise(i * 7 + step))));
         } else if (t2 == data::TORCH || t2 == data::CANDLE) {
-          int step = int(tt * 8 + noise(i) * 5);
+          int step = int(tt * 3.5 + noise(i) * 5);
           int fg = mixc(t2 == data::TORCH ? 0xFFB040 : 0xFFE6A0, 0xFF6020, float(noise(i + step * 13)) * .6f);
           put(sx(x), sy(y), data::TILES[t2].ch, fg, scale(0x3A1A06, .6 + .4 * noise(step + i)));
           if (t2 == data::TORCH && inside(x, y - 1) && !data::blocks(map[i - W] - '0') && noise(step * 3 + i) < .45)
