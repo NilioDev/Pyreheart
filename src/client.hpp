@@ -7,6 +7,7 @@
 #include <libtcod.hpp>
 #include <memory>
 
+#include "music.hpp"
 #include "net.hpp"
 
 enum class Layout { Wide, Tall, Watch };
@@ -28,7 +29,9 @@ class Client {
   double intro_start_ = 0;
   Over over_ = Over::None;
   int menu_ = 0, sel_ = 0, cls_ = 0;
-  bool hosting_ = false, open_ = false;
+  bool hosting_ = false, open_ = false, music_on_ = true;
+  music::Player music_;
+  void update_music();
   std::string name_ = "Hero", addr_, message_;
   std::vector<std::string> found_;
 

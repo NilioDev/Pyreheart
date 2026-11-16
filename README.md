@@ -9,6 +9,7 @@ Long ago a forgotten dwarven clan unearthed the Pyreheart, the molten crystal co
 - Three callings: the warrior, the ranger and the adept. Each has two skills and a handful of perks to choose from as it levels.
 - Loot in the old way: magic, rare and unique things, with blue champions and gold uniques that carry the better ones.
 - Co-op over the network for up to four heroes. Loot can be given to each other, or put down for anyone to take.
+- Music that writes itself: slow dungeon synth, made sample by sample while you play, with its own mood for each act and never the same twice. Turn it off on the title screen or in the [Esc] menu.
 - Plays on Windows, Linux, macOS, Android phones and Wear OS watches.
 
 ## Keys
@@ -58,6 +59,8 @@ cd android
 GitHub Actions builds all of these on every push; the desktop games are attached to each run, and the newest APKs are always on the [Latest build](https://github.com/NilioDev/Pyreheart/releases/tag/latest) release.
 
 To put the watch app on a Wear OS watch without a computer: turn on developer options and wireless debugging on the watch, download `pyreheart-wear.apk` on the paired phone, and send it over with a sideloading app such as Wear Installer 2.
+
+`build/music_preview <folder> [seconds]` renders each mood of the music to a WAV file.
 
 To see another layout on the desktop, set `PYREHEART_LAYOUT=tall` (a phone) or `PYREHEART_LAYOUT=watch`.
 
