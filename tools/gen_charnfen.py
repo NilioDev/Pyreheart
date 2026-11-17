@@ -131,11 +131,11 @@ put(53,49,'h'); put(67,49,'b'); put(55,54,'g'); put(65,54,'$')
 for x in (56,57,58): put(x,46,'≡')
 for x in (62,63,64): put(x,46,'≡')
 put(48,47,'?')                                   # the notice board on the square
-put(48,51,'T')
 # the Ember Altar on the east side, cold, warm cracks round it
 put(78,50,'E')
 for x,y in ((76,48),(80,52),(77,53),(79,47)): put(x,y,'%')
-for x,y in ((74,46),(74,54),(52,57),(68,57),(50,43),(70,43)): put(x,y,'T')
+# torches round the square, mirrored about the fire
+for x,y in ((46,46),(46,54),(48,51),(50,43),(52,57)): put(x,y,'T'); put(2*cx-x,y,'T')
 # the watch at the churchyard gate: a barricade of carts, two crossbows, two torches
 for x in (55,56,57,63,64,65): put(x,43,'X')
 put(58,44,'G'); put(62,44,'G'); put(57,44,'T'); put(63,44,'T')
