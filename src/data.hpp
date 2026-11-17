@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE, OPENGRAVE, GUARD, BARRICADE, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -44,8 +44,11 @@ inline const TileDef TILES[] = {
     {0x40, 0x9696AA, false, true, "old Ebb, the gravedigger"},
     {0xA1, 0xFFBE50, false, true, "a torch on a post"},
     {0x131, 0xFFE6A0, false, true, "a row of candles"},
+    {0x2584, 0x6E503C, true, true, "an open grave, its earth thrown out"},
+    {0x40, 0x96AFD2, false, true, "a guard of Charnfen with a crossbow"},
+    {0x256A, 0x785A3C, false, true, "a barricade of overturned carts"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case GRAVE: case CROSS: case TREE: case PEW: case ALTAR: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case PILLAR: case FIRE: case STONES: case CHIMNEY: case HEALER: case SMITH: case DIGGER: case TORCH: case CANDLE: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case GRAVE: case CROSS: case TREE: case PEW: case ALTAR: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case PILLAR: case FIRE: case STONES: case CHIMNEY: case HEALER: case SMITH: case DIGGER: case TORCH: case CANDLE: case GUARD: case BARRICADE: return true; default: return false; } }
 constexpr int FLOORS = 16;
 inline bool rest_after(int d) { return d == 4 || d == 8 || d == 12; }
 inline const ActDef ACTS[] = {

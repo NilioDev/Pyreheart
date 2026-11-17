@@ -59,12 +59,37 @@ for x in (48,72): put(x,15,'w'); put(x,21,'w')
 for y in range(H):
     for x in range(44,77):
         if y<9 and g[y][x]=='#' and (x+y)%3==0: put(x,y,'w')
+# ---- the ruin: the roof fell in long ago; snow lies in the nave, the walls are breached, the portal is a heap
+def rubble_near(x,y,r):
+    for yy in range(y-r,y+r+1):
+        for xx in range(x-r,x+r+1):
+            if 0<xx<W-1 and 0<yy<H-1 and g[yy][xx] in '._' and random.random()<.5: put(xx,yy,',')
+for y in range(1,41):
+    for x in range(44,77):
+        c=g[y][x]
+        if c=='i' or c=='w': put(x,y,'#')
+        if c=='_': put(x,y,'.' if random.random()<.7 else (',' if random.random()<.5 else '_'))
+        if c=='o' and random.random()<.4: put(x,y,',')
+        if c=='≡' and random.random()<.5: put(x,y,',' if random.random()<.5 else '.')
+for bx,by,r in ((52,26,1.6),(68,12,1.6),(47,21,1.2),(73,15,1.2),(60,3,1.4),(68,29,1.5),(52,11,1.2)):
+    for y in range(int(by-r)-1,int(by+r)+2):
+        for x in range(int(bx-r)-1,int(bx+r)+2):
+            if math.hypot(x-bx,y-by)<=r and g[y][x]=='#': put(x,y,',' if random.random()<.6 else '.')
+for y in range(33,41):                       # the east tower has slumped into a heap
+    for x in range(65,74):
+        if x+y>104 and g[y][x] in '#_.': put(x,y,',' if random.random()<.7 else '#')
+for x in (59,60,61):                          # the great portal fell in: closed
+    put(x,40,'#'); put(x,39,'#')
+rubble_near(60,41,1)
+put(45,18,'.'); put(75,18,'.')                 # the transept doors are long gone
+for dx,dy in ((-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,1)):
+    if random.random()<.6: put(60+dx,12+dy,',')
 # ---- churchyard: walled, full of the dead
 X0,X1,YW=30,90,42
 for y in range(1,YW):
     put(X0,y,'#'); put(X1,y,'#')
 for x in range(X0,X1+1):
-    if not 52<=x<=68: put(x,YW,'#')
+    if not 59<=x<=61: put(x,YW,'#')
 def busy(x,y): return any(g[yy][xx]!='.' for yy in range(y-1,y+2) for xx in range(x-1,x+2))
 def mausoleum(x0,y0):
     for y in range(y0,y0+4):
@@ -76,7 +101,22 @@ for y in range(1,YW):
         if g[y][x]!='.' or busy(x,y): continue
         if y%2==1 and (x+(y//2)%2)%3==0 and random.random()<.75: put(x,y,'t' if random.random()<.3 else 'n')
         elif random.random()<.02: put(x,y,'♣')
-for x,y in ((52,41),(68,41),(X0,YW),(X1,YW)): put(x,y,'T')    # torches at the churchyard gate
+for x,y in ((X0,YW),(X1,YW)): put(x,y,'T')
+# the way in: round the ruin through the graves to the broken transept
+for x in range(42,61): put(x,41,':')
+for y in range(18,42): put(42,y,':')
+for x in range(42,46): put(x,18,':')
+for x,y in ((42,17),(43,17),(42,19),(43,19),(41,18)): put(x,y,'.')
+for y in range(18,42):
+    for x in (41,43):
+        if g[y][x] in 'nt♣': put(x,y,'.')
+for x in range(42,61):
+    if g[40][x] in 'nt♣': put(x,40,'.')
+    if g[42][x]=='.': pass
+# open graves where the dead climb out, away from the guards' bows
+for x,y in ((40,37),(44,33),(40,28),(44,23),(39,20)):
+    put(x,y,'U')
+for x,y in ((44,39),(40,32),(44,26)): put(x,y,'i')      # grave candles the village set out
 # ---- the square with the great fire
 SX0,SX1,SY0,SY1=38,82,43,57
 for y in range(SY0,SY1+1):
@@ -96,6 +136,9 @@ put(48,51,'T')
 put(78,50,'E')
 for x,y in ((76,48),(80,52),(77,53),(79,47)): put(x,y,'%')
 for x,y in ((74,46),(74,54),(52,57),(68,57),(50,43),(70,43)): put(x,y,'T')
+# the watch at the churchyard gate: a barricade of carts, two crossbows, two torches
+for x in (55,56,57,63,64,65): put(x,43,'X')
+put(58,44,'G'); put(62,44,'G'); put(57,44,'T'); put(63,44,'T')
 # the road out, south, into the dead wood
 for y in range(57,H-1):
     for x in (59,60,61): put(x,y,':')

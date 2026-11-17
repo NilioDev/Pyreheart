@@ -115,7 +115,8 @@ int main(int argc, char** argv) {
           }
         }
       }
-      if (at >= script.size() && shot && frames > int(script.size()) * 4 + 20) {
+      const char* from = SDL_getenv("PYREHEART_SHOTS_FROM");  // start saving frames once this many keys are pressed
+      if (shot && (from ? at >= size_t(std::atoi(from)) : (at >= script.size() && frames > int(script.size()) * 4 + 20))) {
         // PYREHEART_SHOTS=n with a %d in the name saves n frames in a row, for an animation
         const char* many = SDL_getenv("PYREHEART_SHOTS");
         int n = many ? std::atoi(many) : 1;

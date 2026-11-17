@@ -4,7 +4,7 @@ affixes and uniques. No rules live here."""
 # ------------------------------------------------------------------ tiles
 # (sign, colour, walkable, see-through, name)
 WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
-    SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE = range(39)
+    SNOW, PATH, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, PILLAR, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE, OPENGRAVE, GUARD, BARRICADE = range(42)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -46,9 +46,12 @@ TILES = [
     ('@', (150, 150, 170), False, True, 'old Ebb, the gravedigger'),
     ('¡', (255, 190, 80), False, True, 'a torch on a post'),
     ('ı', (255, 230, 160), False, True, 'a row of candles'),
+    ('▄', (110, 80, 60), True, True, 'an open grave, its earth thrown out'),
+    ('@', (150, 175, 210), False, True, 'a guard of Charnfen with a crossbow'),
+    ('╪', (120, 90, 60), False, True, 'a barricade of overturned carts'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, GRAVE, CROSS, TREE, PEW, ALTAR, EMBER, WELL, BOARD,
-               WINDOW, LIT, PILLAR, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE}
+               WINDOW, LIT, PILLAR, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, TORCH, CANDLE, GUARD, BARRICADE}
 
 # ------------------------------------------------------------------ the four acts
 ACTS = [

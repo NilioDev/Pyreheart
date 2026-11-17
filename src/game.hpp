@@ -101,6 +101,9 @@ struct Floor {
   std::vector<MonP> mons;
   P up, down;
   bool has_merchant = false;
+  std::vector<P> open_graves;  // Charnfen: where the dead climb out
+  int risen = 0;
+  bool warned = false;
   P merchant;
   std::vector<ItemP> shop;
   MonP boss;
@@ -192,6 +195,7 @@ class Game {
   void melee(Hero& h, Mon& m);
   void hurt(Mon& m, int dmg, Hero* by, const std::string& text = "");
   void kill(Mon& m, Hero* by);
+  void town_tick();
   void gain_xp(Hero& h, int xp);
   void choose_perk(Hero& h, const std::string& k);
   void drops(const Mon& m);

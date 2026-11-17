@@ -70,7 +70,7 @@ Game::Game(uint64_t seed) : rnd(seed) {
     static const std::map<std::string, int> KEY = {
         {"#", WALL}, {".", SNOW}, {":", PATH}, {"+", DOOR}, {"n", GRAVE}, {"t", CROSS}, {"\u2663", TREE}, {"\u2261", PEW},
         {"\u2021", ALTAR}, {"E", EMBER}, {"O", WELL}, {"?", BOARD}, {"w", WINDOW}, {"L", LIT}, {"\u2248", ICE}, {"%", CRACK},
-        {">", STAIRS}, {"<", UPSTAIRS}, {"o", PILLAR}, {"_", FLAGS}, {"F", FIRE}, {"r", STONES}, {"C", CHIMNEY}, {"h", HEALER}, {"b", SMITH}, {"g", DIGGER}, {"T", TORCH}, {"i", CANDLE}, {"$", PATH}, {"@", PATH}};
+        {">", STAIRS}, {"<", UPSTAIRS}, {"o", PILLAR}, {"_", FLAGS}, {"F", FIRE}, {"r", STONES}, {"C", CHIMNEY}, {"h", HEALER}, {"b", SMITH}, {"g", DIGGER}, {"T", TORCH}, {"i", CANDLE}, {"U", OPENGRAVE}, {"G", GUARD}, {"X", BARRICADE}, {",", RUBBLE}, {"$", PATH}, {"@", PATH}};
     for (int y = 0; y < H && std::getline(in, line); ++y) {
       int x = 0;
       for (size_t i = 0; i < line.size() && x < W; ++x) {
@@ -82,6 +82,7 @@ Game::Game(uint64_t seed) : rnd(seed) {
         if (c == "$") { f->has_merchant = true; f->merchant = {x, y}; }
         if (c == "@") f->up = {x, y};
         if (c == ">") f->down = {x, y};
+        if (c == "U") f->open_graves.push_back({x, y});
       }
     }
     floor = std::move(f);
@@ -122,7 +123,7 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   place(r);
   if (floor->depth == 0) {
     r.say("Charnfen. The great fire burns on the square; beyond it snow falls on the graves of the many who went down.", 0xD2B48C);
-    r.say("The cathedral stands open. Before its high altar a stair goes down to the crypts.", 0xFFD27F);
+    r.say("The cathedral is a ruin; its portal fell in. Go round through the graves to the broken transept. Under the choir a hole leads down.", 0xFFD27F);
   } else {
     if (depth == 1) r.say("Charnfen, at the edge of ruin. The way down is through the graveyard.", 0xD2B48C);
     auto& open = lore::ACT_OPEN[floor->act];
@@ -528,7 +529,7 @@ void Game::step(const std::map<int, json>& actions) {
     if (state != "play") return;
   }
   check_stairs();
-  if (!floor->rest) monsters();
+  if (!floor->rest || floor->depth == 0) monsters();
   tick();
   look();
   if (living().empty() && !heroes.empty() && state == "play") {
@@ -687,6 +688,45 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
 void Game::melee(Hero& h, Mon& m) {
   add_fx({{"k", "swing"}, {"src", xy(h.x, h.y)}, {"cells", json::array({xy(m.x, m.y)})}});
   strike(h, m, stats(h).bow ? .5 : 1.0);
+}
+
+// Charnfen: the dead climb from the open graves as heroes pass, and the guards at the gate shoot what comes near
+void Game::town_tick() {
+  Floor& f = *floor;
+  int most = 1 + int(living().size());  // one or two alone, one more for each friend
+  for (auto& h : living()) {
+    if (!f.warned)
+      for (int i = 0; i < W * H; ++i)
+        if (f.t[i] == GUARD && cheb(i % W, i / W, h->x, h->y) <= 3) {
+          f.warned = true;
+          say_all("A guard calls out: \"They rise every night now. Mind the open graves.\"", 0xA8C0E0);
+          break;
+        }
+    for (auto& g : f.open_graves) {
+      if (f.risen >= most || cheb(g.x, g.y, h->x, h->y) > 5 || mon_at(g.x, g.y) || rnd.below(100) >= 35) continue;
+      if (auto m = spawn("shambler", g.x, g.y)) {
+        m->awake = true;
+        ++f.risen;
+        add_fx({{"k", "rise"}, {"x", g.x}, {"y", g.y}, {"col", 0x8CA070}});
+        say_all("The earth of an open grave heaves. A bloated corpse claws its way out.", 0xC0B090);
+      }
+    }
+  }
+  // the guards hold the gate: anything dead that comes within a few steps of them takes a bolt
+  for (int i = 0; i < W * H; ++i) {
+    if (f.t[i] != GUARD) continue;
+    int gx = i % W, gy = i / W;
+    for (auto& m : std::vector<MonP>(f.mons)) {
+      if (m->hp <= 0 || cheb(m->x, m->y, gx, gy) > 4) continue;
+      std::vector<P> cells;
+      int n = std::max(std::abs(m->x - gx), std::abs(m->y - gy));
+      for (int k = 1; k <= n; ++k) cells.push_back({gx + (m->x - gx) * k / n, gy + (m->y - gy) * k / n});
+      add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xDCDCC8}, {"ch", "-"}, {"src", xy(gx, gy)}});
+      say_near(m->x, m->y, "A guard's bolt strikes " + the(*m) + ".", 0xA8C0E0);
+      hurt(*m, 6 + int(rnd.below(5)), nullptr, "");
+      break;
+    }
+  }
 }
 
 void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
@@ -1504,6 +1544,7 @@ void Game::compute_dist() {
 
 void Game::monsters() {
   if (active().empty()) return;
+  if (floor->depth == 0) town_tick();
   compute_dist();
   auto ms = floor->mons;
   for (auto& m : ms) {
