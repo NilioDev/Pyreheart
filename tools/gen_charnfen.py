@@ -147,6 +147,20 @@ for y in range(1,H-1):
         if g[y][x]=='.' and not (X0<=x<=X1 and y<=YW) and random.random()<.06 and not busy(x,y): put(x,y,'♣')
 for x in range(W): put(x,0,'#'); put(x,H-1,'#')
 for y in range(H): put(0,y,'#'); put(W-1,y,'#')
-hx,hy=(int(sys.argv[1]),int(sys.argv[2])) if len(sys.argv)>2 else (60,59)
+def y_ok(x): return x not in (41,42,43)
+# room before the fallen portal: four rows between the ruin and the gate instead of one
+GAP=4
+extra=[]
+for k in range(GAP-1):
+    row=['.']*W
+    for x in range(W):
+        if x in (0,W-1,X0,X1): row[x]='#'
+        elif X0<x<X1 and abs(x-cx)<=6 and random.random()<.25: row[x]=','       # fallen masonry
+        elif k==1 and X0+1<x<X1-1 and abs(x-cx)>8 and y_ok(x) and x%3==0 and random.random()<.7: row[x]='t' if random.random()<.3 else 'n'
+    for x in (59,60,61): row[x]=':'
+    extra.append(row)
+g[42:42]=extra
+del g[H-1-(GAP-1):H-1]
+hx,hy=(int(sys.argv[1]),int(sys.argv[2])) if len(sys.argv)>2 else (60,61)
 put(hx,hy,'@')
 print('\n'.join(''.join(r) for r in g))
