@@ -90,6 +90,9 @@ using MonP = std::shared_ptr<Mon>;
 struct Rune { P p; int owner; };
 struct Ground { P p; int kind, turns, dmg, owner; };
 
+// the dead in a cracked tomb or on an embalming table: stage 0 asleep, 1-3 stirring, -1 risen or smashed
+struct Sleeper { P at; std::vector<P> cells; std::string kind; int stage = 0; };
+
 struct FloorItem { int x, y; ItemP item; int gold = 0; std::string pot; int owner = 0; };  // owner 0: anyone
 
 struct Floor {
@@ -107,6 +110,7 @@ struct Floor {
   bool boss_woke = false;
   std::vector<Rune> runes;
   std::vector<Ground> ground;
+  std::vector<Sleeper> sleepers;
   bool burning(int x, int y) const { for (auto& g : ground) if (g.kind == 0 && g.p == P{x, y}) return true; return false; }
   int tile(int x, int y) const { return x >= 0 && x < W && y >= 0 && y < H ? t[y * W + x] : data::WALL; }
   void set(int x, int y, int v) { t[y * W + x] = v; ++version; }
@@ -122,6 +126,10 @@ struct Stats {
   int maxhp, maxmana, lo, hi, pct, acc, crit, armour, res_f, res_c, res_p, leech, spell, fire, regen, thorns;
   bool bow;
 };
+
+namespace k5 { struct Plan; }
+// can every open cell still be walked to from the stairs up?
+bool whole(const Floor& f);
 
 const ClassDef& class_def(const std::string& key);
 const MonDef& mon_def(const std::string& key);
@@ -161,6 +169,9 @@ class Game {
 
   std::unique_ptr<Floor> make_floor(int depth, bool rest);
   void build_waystation(Floor& f);
+  void dress(Floor& fl, const k5::Plan& plan);  // dress.cpp
+  void wake_dead();
+  bool smash_dead(Hero& h, int x, int y);
   MonP spawn(const std::string& key, int x, int y);
   MonP spawn_near(const std::string& key, P c);
   void apply_mods(Mon& m);

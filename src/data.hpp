@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -20,8 +20,21 @@ inline const TileDef TILES[] = {
     {0x25A1, 0x6E5A3C, false, true, "open chest"},
     {0x3A9, 0xBEA0FF, false, true, "shrine"},
     {0x3A9, 0x504664, false, true, "spent shrine"},
+    {0xA1, 0xFFB040, false, false, "torch"},
+    {0x131, 0xFFE6A0, false, true, "candles"},
+    {0x2021, 0xDCC88C, false, true, "altar"},
+    {0x2261, 0x6E5032, false, true, "pew"},
+    {0x25CB, 0xB4ACA0, false, false, "pillar"},
+    {0x2020, 0x8A8478, false, true, "stone tomb"},
+    {0x2F, 0x8A8478, false, true, "cracked tomb"},
+    {0x20, 0x8A8478, false, true, "open tomb"},
+    {0x2550, 0x8A6A3C, false, true, "embalming table"},
+    {0x25, 0x9A8C74, false, true, "corpse on a table"},
+    {0x25, 0xB8A890, false, true, "twitching corpse"},
+    {0x3A9, 0xC8BCA0, false, false, "wall of bones"},
+    {0x2C, 0xC8BCA0, true, true, "scattered bones"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: return true; default: return false; } }
 constexpr int FLOORS = 16;
 inline bool rest_after(int d) { return d == 4 || d == 8 || d == 12; }
 inline const ActDef ACTS[] = {

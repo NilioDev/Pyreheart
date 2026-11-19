@@ -3,7 +3,8 @@ affixes and uniques. No rules live here."""
 
 # ------------------------------------------------------------------ tiles
 # (sign, colour, walkable, see-through, name)
-WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED = range(15)
+WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
+    TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES = range(28)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -20,8 +21,23 @@ TILES = [
     ('□', (110, 90, 60), False, True, 'open chest'),
     ('Ω', (190, 160, 255), False, True, 'shrine'),
     ('Ω', (80, 70, 100), False, True, 'spent shrine'),
+    # the dressing of the rooms; the client draws the shapes (a tomb's box, a table's legs) from the tiles around
+    ('¡', (255, 176, 64), False, False, 'torch'),
+    ('ı', (255, 230, 160), False, True, 'candles'),
+    ('‡', (220, 200, 140), False, True, 'altar'),
+    ('≡', (110, 80, 50), False, True, 'pew'),
+    ('○', (180, 172, 160), False, False, 'pillar'),
+    ('†', (138, 132, 120), False, True, 'stone tomb'),
+    ('/', (138, 132, 120), False, True, 'cracked tomb'),
+    (' ', (138, 132, 120), False, True, 'open tomb'),
+    ('═', (138, 106, 60), False, True, 'embalming table'),
+    ('%', (154, 140, 116), False, True, 'corpse on a table'),
+    ('%', (184, 168, 144), False, True, 'twitching corpse'),
+    ('Ω', (200, 188, 160), False, False, 'wall of bones'),
+    (',', (200, 188, 160), True, True, 'scattered bones'),
 ]
-BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED}
+BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
+               OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL}
 
 # ------------------------------------------------------------------ the four acts
 ACTS = [

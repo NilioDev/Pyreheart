@@ -28,7 +28,6 @@ const SkillDef& skill_def(const std::string& key) {
   return SKILLS[0];
 }
 
-namespace {
 // Can every open cell still be walked to from the stairs up? (Chests and shrines must never close a way.)
 bool whole(const Floor& f) {
   std::vector<char> seen(W * H, 0);
@@ -49,6 +48,7 @@ bool whole(const Floor& f) {
   for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x) if (open(x, y)) ++all;
   return n == all;
 }
+namespace {
 int rnd_i(double v) { return int(std::lround(v)); }
 std::string cap(std::string s) { if (!s.empty() && s[0] >= 'a' && s[0] <= 'z') s[0] = char(s[0] - 32); return s; }
 std::string the(const Mon& m) { return m.rank == "unique" ? m.name : m.name.rfind("the ", 0) == 0 ? m.name : "the " + m.name; }
@@ -56,7 +56,7 @@ json xy(int x, int y) { return json::array({x, y}); }
 json cells_json(const std::vector<P>& cs) { json a = json::array(); for (auto c : cs) a.push_back(xy(c.x, c.y)); return a; }
 }  // namespace
 
-Game::Game(uint64_t seed) : rnd(seed) {
+Game::Game(uint64_t seed) : rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
   // for screenshots and tests: PYREHEART_BOSS=4 starts on that boss's floor, next to it
   if (const char* b = std::getenv("PYREHEART_BOSS")) depth = std::clamp(std::atoi(b), 1, FLOORS);
   floor = make_floor(depth, false);
@@ -115,6 +115,12 @@ void Game::place(Hero& h) {
   if (std::getenv("PYREHEART_BOSS") && floor->boss) {
     auto& b = *floor->boss;
     if (free_near(b.x, b.y, 8, s, [&](int x, int y) { return floor->walk(x, y) && cheb(x, y, b.x, b.y) >= 4; })) { h.x = s.x; h.y = s.y; return; }
+  }
+  // for screenshots: PYREHEART_NEAR=20 starts next to the first tile of that kind (20 a stone tomb)
+  if (const char* n = std::getenv("PYREHEART_NEAR")) {
+    int want = std::atoi(n), skip = std::getenv("PYREHEART_NEAR_SKIP") ? std::atoi(std::getenv("PYREHEART_NEAR_SKIP")) : 0;
+    for (int i = 0; i < W * H; ++i)
+      if (floor->t[i] == want && skip-- <= 0 && free_near(i % W, i / W, 4, s)) { h.x = s.x; h.y = s.y; return; }
   }
   if (free_near(floor->up.x, floor->up.y, 4, s)) { h.x = s.x; h.y = s.y; }
   else { h.x = floor->up.x; h.y = floor->up.y; }
@@ -276,6 +282,7 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   fl.t[plan.up.y * W + plan.up.x] = UPSTAIRS;
   bool boss_floor = d % 4 == 0;
   if (!boss_floor) fl.t[plan.down.y * W + plan.down.x] = STAIRS;
+  dress(fl, plan);
   auto up_dist = k5::walk(plan.floor, plan.up);
   std::vector<const k5::Room*> rooms;
   for (auto& r : plan.rooms)
@@ -328,7 +335,7 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
     if (it != up_dist.end() && it->second > 12 && fl.tile(c.x, c.y) == FLOOR) far.push_back(c);
   }
   std::sort(far.begin(), far.end(), [](P a, P b) { return a.y != b.y ? a.y < b.y : a.x < b.x; });
-  int budget = 14 + int(d * 1.5);
+  int budget = 14 + int(d * 1.5) - int(fl.sleepers.size());
   auto& spawns = SPAWNS[act];
   auto pick_kind = [&]() {
     int sum = 0;
@@ -498,6 +505,7 @@ void Game::step(const std::map<int, json>& actions) {
   if (!floor->rest) monsters();
   tick();
   look();
+  if (!floor->rest) { wake_dead(); look(); }
   if (living().empty() && !heroes.empty() && state == "play") {
     state = "over";
     say_all("The dark takes the last of you. Charnfen waits in vain.", 0xFF6060);
@@ -532,6 +540,7 @@ void Game::move(Hero& h, int dx, int dy) {
     case DOOR: floor->set(nx, ny, OPEN); return;
     case CHEST: open_chest(h, nx, ny); return;
     case SHRINE: shrine(h, nx, ny); return;
+    case TOMB: case CRACKED: case BIER: case RESTLESS: smash_dead(h, nx, ny); return;
     default: break;
   }
   if (!floor->walk(nx, ny)) return;

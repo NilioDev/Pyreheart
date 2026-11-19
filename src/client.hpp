@@ -19,6 +19,7 @@ class Client {
   void event(SDL_Event& ev);
   void frame();
   void remember_window();  // the window's size and fullscreen, for the next start
+  void shot(const std::string& path) { shot_ = path; frame(); }  // the screen as shown, particles too, as a PNG
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Game };
@@ -89,6 +90,12 @@ class Client {
   int menu_top() const;
   void draw_game();
   void draw_map();
+  void draw_tiles();  // scene.cpp: stone, light and the dressing of the rooms
+  struct Emit { float x, y; char kind; int seed; };
+  std::vector<Emit> emits_;  // where particles rise this frame
+  std::string shot_;
+  void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
+  void present(const TCOD_ViewportOptions& vp);
   void draw_side(int x, int y, int w, int h);
   void draw_status_tall(int y);
   void draw_log(int x, int y, int w, int h);

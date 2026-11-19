@@ -87,6 +87,8 @@ To put the watch app on a Wear OS watch without a computer: turn on developer op
 `build/music_preview <folder> [seconds]` renders each mood of the music to a WAV file.
 
 To see another layout on the desktop, set `PYREHEART_LAYOUT=tall` (a phone) or `PYREHEART_LAYOUT=watch`.
+For screenshots, `PYREHEART_SEED=n` fixes the dive, `PYREHEART_NEAR=t` starts next to the first tile of kind `t`
+(20 a stone tomb, 17 an altar), and `PYREHEART_FILM=frame%03d.png` saves every frame, particles included.
 
 ## Credits
 

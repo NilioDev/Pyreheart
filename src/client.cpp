@@ -669,7 +669,7 @@ void Client::frame() {
   vp.integer_scaling = layout_ == Layout::Wide;
   vp.clear_color = {0, 0, 0, 255};
   vp.align_x = .5f; vp.align_y = .5f;
-  ctx_.present(con_, vp);
+  present(vp);
 }
 
 int Client::menu_top() const {
@@ -871,8 +871,6 @@ void Client::draw_map() {
   const std::string& map = maps_[fl];
   if (map.size() != size_t(W * H)) return;
   auto& seen = seen_[fl];
-  const std::string& vis = s["vis"].get_ref<const std::string&>();
-  auto& act = data::ACTS[s["act"].get<int>()];
   int hx = s["me"]["x"], hy = s["me"]["y"];
   camx_ = std::clamp(hx - vw_ / 2, 0, std::max(0, W - vw_));
   camy_ = std::clamp(hy - vh_ / 2, 0, std::max(0, H - vh_));
@@ -880,23 +878,7 @@ void Client::draw_map() {
   if (vh_ >= H) camy_ = -(vh_ - H) / 2;
   auto sx = [&](int x) { return x - camx_ + vx_; };
   auto sy = [&](int y) { return y - camy_ + vy_; };
-  for (int y = 0; y < H; ++y)
-    for (int x = 0; x < W; ++x) {
-      int X = sx(x), Y = sy(y);
-      if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
-      int i = y * W + x;
-      if (!seen[i]) continue;
-      int t = map[i] - '0';
-      auto& td = data::TILES[t];
-      int col = td.col >= 0 ? td.col : t == data::WALL ? act.wall : act.floor;
-      int ch = td.ch;
-      if (t == data::WALL) ch = 0x2593 - 0;  // ▓ the rock
-      bool lit = vis[i] == '1';
-      int fg = lit ? col : mixc(scale(col, .35), 0x202430, .3);
-      int bg = 0;
-      if (t == data::WALL) { ch = '#'; bg = lit ? scale(col, .25) : 0x0A0A0E; }
-      put(X, Y, ch, fg, bg);
-    }
+  draw_tiles();
   for (auto& w : s["writ"]) { int i = w; put(sx(i % W), sy(i / W), '?', 0xE6D2A0); }
   // runes and burning or hallowed ground
   if (s.contains("ground"))
