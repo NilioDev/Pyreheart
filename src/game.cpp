@@ -1108,7 +1108,10 @@ void Game::kill(Mon& m, Hero* by) {
 }
 
 void Game::gain_xp(Hero& h, int xp) {
-  h.xp += xp;
+  // the zones are short and a boss waits at the end of each, so a hero behind the level the map is made for learns
+  // faster, and one far ahead slower: the fights stay fights
+  double target = 3 + 1.7 * lvl, gap = target - h.lvl;
+  h.xp += std::max(1, rnd_i(xp * std::clamp(std::pow(2.0, gap / 3), .25, 4.0)));
   while (h.xp >= need(h.lvl)) {
     ++h.lvl;
     Stats st = stats(h);
