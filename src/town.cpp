@@ -30,9 +30,12 @@ double vnoise(double x, double y) {
   double a = h(x0, y0) + (h(x0 + 1, y0) - h(x0, y0)) * fx, b = h(x0, y0 + 1) + (h(x0 + 1, y0 + 1) - h(x0, y0 + 1)) * fx;
   return a + (b - a) * fy;
 }
-// for the mock-ups: PYREHEART_TOWNFX=mist (banks of ground mist) or all (mist and finer particles)
+// mist and the finer particles are always on; PYREHEART_TOWNFX=off or =mist leaves some out, to compare
 int town_fx() {
-  static int m = [] { const char* e = std::getenv("PYREHEART_TOWNFX"); return !e ? 0 : std::string(e) == "all" ? 2 : 1; }();
+  static int m = [] {
+    const char* e = std::getenv("PYREHEART_TOWNFX");
+    return !e ? 2 : std::string(e) == "off" ? 0 : std::string(e) == "mist" ? 1 : 2;
+  }();
   return m;
 }
 }  // namespace
