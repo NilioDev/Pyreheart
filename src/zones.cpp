@@ -71,6 +71,126 @@ struct Map {
 
 }  // namespace
 
+// The Caves' themed places, laid into the grown cave: a straight tunnel the dwarves cut through the rock, held up by
+// timber frames (one of them broken), a shaft that fell in
+// with daylight far above, veins of copper and gold in the walls, and on the boss's map the Webmother's nest.
+static void dress_caves(Map& m, Floor& fl, const std::vector<int>& cave, P up, P down, bool boss_floor) {
+  Rng& rnd = m.rnd;
+  int w = m.w, h = m.h;
+  auto open = [&](int x, int y) { return m.at(x, y) == FLOOR; };
+  auto near_stairs = [&](int x, int y, int r) { return cheb(x, y, up.x, up.y) <= r || cheb(x, y, down.x, down.y) <= r; };
+  // a straight cut, three wide, between two open cells on one row (or column) with rock between them
+  auto find_cut = [&](bool across, int lo, int hi, P& a, P& b) {
+    for (int tries = 0; tries < 400; ++tries) {
+      int j = cave[rnd.below(int(cave.size()))];
+      a = {j % W, j / W};
+      if (across ? (a.y < 3 || a.y > h - 4) : (a.x < 3 || a.x > w - 4)) continue;
+      int len = rnd.range(lo, hi), dir = rnd.coin() ? 1 : -1;
+      b = across ? P{a.x + dir * len, a.y} : P{a.x, a.y + dir * len};
+      if (!m.in(b.x, b.y) || (across ? (b.x < 2 || b.x > w - 3) : (b.y < 2 || b.y > h - 3)) || !open(b.x, b.y)) continue;
+      int rock = 0;
+      for (int k = 1; k < len; ++k) {
+        int x = across ? a.x + dir * k : a.x, y = across ? a.y : a.y + dir * k;
+        rock += m.at(x, y) == WALL;
+      }
+      if (rock * 10 < len * 4) continue;
+      if (b.x < a.x || b.y < a.y) std::swap(a, b);
+      return true;
+    }
+    return false;
+  };
+  auto carve = [&](P a, P b, bool across) {
+    for (int k = 0; k <= (across ? b.x - a.x : b.y - a.y); ++k)
+      for (int o = -1; o <= 1; ++o) {
+        int x = across ? a.x + k : a.x + o, y = across ? a.y + o : a.y + k;
+        if (m.at(x, y) == WALL) m.put(x, y, FLOOR);
+      }
+  };
+  // the propped tunnel: timber frames every four steps, one of them broken and the ceiling come down a little
+  {
+    P a, b;
+    bool across = rnd.coin();
+    if (find_cut(across, 14, 22, a, b)) {
+      carve(a, b, across);
+      int n = across ? b.x - a.x : b.y - a.y, broken = rnd.range(1, std::max(1, n / 4 - 1));
+      for (int k = 2, f = 0; k <= n - 2; k += 4, ++f) {
+        auto cell = [&](int o) { return across ? P{a.x + k, a.y + o} : P{a.x + o, a.y + k}; };
+        for (int o : {-2, 2}) { P c = cell(o); if (m.at(c.x, c.y) == WALL) m.put(c.x, c.y, TIMBER); }
+        if (f == broken) {
+          P c = cell(rnd.coin() ? -1 : 1);
+          m.place(c.x, c.y, BEAM);
+          for (int r = 0; r < 4; ++r) {
+            P q = cell(rnd.range(-1, 1));
+            q.x += across ? rnd.range(-1, 1) : 0; q.y += across ? 0 : rnd.range(-1, 1);
+            if (m.at(q.x, q.y) == FLOOR) m.put(q.x, q.y, RUBBLE);
+          }
+        } else {
+          for (int o : {-1, 1}) { P c = cell(o); if (!near_stairs(c.x, c.y, 1)) m.place(c.x, c.y, PROP); }
+        }
+      }
+    }
+  }
+  // a shaft that fell in: a heap of rock and beams in an open part of the cave, daylight from far above
+  for (int s = 0, made = 0; s < 60 && made < (rnd.coin() ? 1 : 2); ++s) {
+    int j = cave[rnd.below(int(cave.size()))];
+    P c{j % W, j / W};
+    if (!open(c.x, c.y) || near_stairs(c.x, c.y, 8)) continue;
+    int room = 0;
+    for (int y = c.y - 3; y <= c.y + 3; ++y) for (int x = c.x - 4; x <= c.x + 4; ++x) room += open(x, y);
+    if (room < 50) continue;
+    for (P d : {P{0, 0}, P{-1, 0}, P{1, 0}, P{0, -1}}) m.place(c.x + d.x, c.y + d.y, HEAP);
+    for (int k = 0; k < 2; ++k) {
+      P d{rnd.range(-2, 2), rnd.range(-1, 1)};
+      m.place(c.x + d.x, c.y + d.y, BEAM);
+    }
+    for (int k = 0; k < 12; ++k) {
+      int x = c.x + rnd.range(-3, 3), y = c.y + rnd.range(-2, 2);
+      if (open(x, y)) m.put(x, y, RUBBLE);
+    }
+    ++made;
+  }
+  // veins of copper and gold in the walls, a pick left by one of them
+  for (int v = 0, made = 0; v < 80 && made < 3; ++v) {
+    int j = cave[rnd.below(int(cave.size()))];
+    P c{j % W, j / W};
+    P wall{-1, -1};
+    for (P d : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) if (m.at(c.x + d.x, c.y + d.y) == WALL && m.in(c.x + d.x, c.y + d.y)) wall = {c.x + d.x, c.y + d.y};
+    if (wall.x < 0 || !open(c.x, c.y)) continue;
+    std::vector<P> vein{wall};
+    int want = rnd.range(5, 9);
+    for (size_t k = 0; k < vein.size() && int(vein.size()) < want; ++k)
+      for (P d : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}, P{1, 1}, P{-1, -1}}) {
+        P q{vein[k].x + d.x, vein[k].y + d.y};
+        if (!m.in(q.x, q.y) || m.at(q.x, q.y) != WALL || int(vein.size()) >= want) continue;
+        bool face = false;
+        for (P e : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) face |= open(q.x + e.x, q.y + e.y) || m.at(q.x + e.x, q.y + e.y) == ORE;
+        if (face && std::find(vein.begin(), vein.end(), q) == vein.end()) vein.push_back(q);
+      }
+    for (P q : vein) m.put(q.x, q.y, ORE);
+    if (!near_stairs(c.x, c.y, 1)) m.put(c.x, c.y, PICK);
+    ++made;
+  }
+  // the Webmother's nest round the way down, where she waits: egg sacs, the bodies she spun, bones; along the walls,
+  // so the middle stays free to fight in
+  if (boss_floor) {
+    std::vector<P> hug;
+    for (int y = down.y - 10; y <= down.y + 10; ++y)
+      for (int x = down.x - 12; x <= down.x + 12; ++x) {
+        if (!open(x, y) || cheb(x, y, down.x, down.y) < 3) continue;
+        int walls = 0;
+        for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) walls += m.at(x + dx, y + dy) == WALL;
+        if (walls >= 3) hug.push_back({x, y});
+      }
+    rnd.shuffle(hug);
+    int eggs = 0, bodies = 0, bones = 0;
+    for (P c : hug) {
+      if (eggs < 14 && m.place(c.x, c.y, EGG)) { ++eggs; continue; }
+      if (bodies < 5 && m.place(c.x, c.y, COCOON)) { ++bodies; continue; }
+      if (bones < 16 && open(c.x, c.y)) { m.put(c.x, c.y, BONES); ++bones; }
+    }
+  }
+}
+
 bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>>& treasure) {
   int act = fl.act;
   if (act != 1 && act != 2 && act < CITY) return false;
@@ -153,6 +273,7 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
         bool wall_l = m.at(x - 1, y) == WALL, wall_r = m.at(x + 1, y) == WALL;
         if ((wall_l || wall_r) && rnd.real() < .012 && cheb(x, y, up.x, up.y) > 2 && cheb(x, y, down.x, down.y) > 2) m.place(x, y, PROP);
       }
+      dress_caves(m, fl, best, up, down, boss_floor);
 
     } else if (act == 2) {
       // ---------------------------------------------------------------- the Forge: halls of cut granite

@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT, SNOW, PATH, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, OPENGRAVE, GUARD, BARRICADE, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT, SNOW, PATH, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, OPENGRAVE, GUARD, BARRICADE, HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -114,8 +114,15 @@ inline const TileDef TILES[] = {
     {0x2584, 0x6E503C, true, true, "an open grave, its earth thrown out"},
     {0x40, 0x96AFD2, false, true, "a guard of Charnfen with a crossbow"},
     {0x256A, 0x785A3C, false, true, "a barricade of overturned carts"},
+    {0x25B2, 0x7E6E5C, false, true, "a heap of fallen rock"},
+    {0x2F, 0x80562E, false, true, "a fallen beam"},
+    {0x2666, 0xCE703A, false, false, "a vein of copper and gold"},
+    {0x221A, 0x96928C, true, true, "a miner's pick"},
+    {0x25CB, 0x968C78, true, true, "a rail turntable"},
+    {0x2550, 0x6E4C2A, false, false, "a timber beam"},
+    {0xA7, 0xC8C4BA, false, true, "a body spun in web"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: case SLUDGE: case FLOODGATE: case GEAR: case WHEEL: case HUB: case MOSSWALL: case PIPE: case PUMP: case LEVER: case FLOATER: case EGG: case TIDESTATUE: case BASIN: case CHASM: case SHAFT: case SPOUT: case LAMP: case PROP: case BARS: case VAULTDOOR: case BUNK: case TABLE: case RACK: case DUMMY: case STALL: case CRATE: case BOOKS: case DRYFOUNT: case GRAVE: case CROSS: case TREE: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case FIRE: case STONES: case CHIMNEY: case HEALER: case SMITH: case DIGGER: case GUARD: case BARRICADE: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: case SLUDGE: case FLOODGATE: case GEAR: case WHEEL: case HUB: case MOSSWALL: case PIPE: case PUMP: case LEVER: case FLOATER: case EGG: case TIDESTATUE: case BASIN: case CHASM: case SHAFT: case SPOUT: case LAMP: case PROP: case BARS: case VAULTDOOR: case BUNK: case TABLE: case RACK: case DUMMY: case STALL: case CRATE: case BOOKS: case DRYFOUNT: case GRAVE: case CROSS: case TREE: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case FIRE: case STONES: case CHIMNEY: case HEALER: case SMITH: case DIGGER: case GUARD: case BARRICADE: case HEAP: case BEAM: case ORE: case TIMBER: case COCOON: return true; default: return false; } }
 constexpr int STEPS = 6;
 constexpr int ZONES = 10;
 inline const ActDef ACTS[] = {

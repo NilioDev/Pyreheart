@@ -154,6 +154,7 @@ void Client::draw_tiles() {
   static const bool whole_view = SDL_getenv("PYREHEART_WHOLE") != nullptr;  // a screenshot of the whole map
   double base = rest ? .9 : whole_view ? .8 : .6;
   std::vector<float> L(W * H, float(base)), warm(W * H, 0.f), cold(W * H, 0.f);
+  std::vector<P> heaps;  // the Caves' fallen shafts, with grey daylight on them
   auto pool = [&](double cx, double cy, double r, double a, double w, bool cool = false) {
     int ax = std::max(x0, int(cx - r - 1)), bx = std::min(x1 - 1, int(cx + r + 1));
     int ay = std::max(y0, int(cy - r - 1)), by = std::min(y1 - 1, int(cy + r + 1));
@@ -210,7 +211,18 @@ void Client::draw_tiles() {
         pool(x, y, 5 * (.95 + .05 * std::sin(tt * .7 + sd)), 1.0, .9, true);
         if (vis[i] == '1') emits_.push_back({float(x), float(y), 'p', sd});
       } else if (t == EGG) {
-        pool(x, y, 2.5, .85, .5, true);
+        if (actn != 1) pool(x, y, 2.5, .85, .5, true);
+      } else if (t == HEAP) {
+        // grey daylight down the fallen shaft, onto the heap and round it
+        pool(x + .5, y + .5, 3.8, 1.05, 0);
+        heaps.push_back({x, y});
+        if (vis[i] == '1' && tile(x, y - 1) != HEAP) emits_.push_back({float(x), float(y), 'G', sd});
+      } else if (t == ORE && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'o', sd});
+      } else if (t == BEAM && actn == 1 && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'x', sd});
+      } else if (actn == 1 && t == FLOOR && vis[i] == '1' && hash(x, y, 23) % 83 == 0) {
+        emits_.push_back({float(x), float(y), 'r', sd});
       } else if (t == LAMP) {
         pool(x, y, 5.5 * f, 1.15 * f, 1.);
         if (vis[i] == '1') emits_.push_back({float(x), float(y), 'c', sd});
@@ -440,6 +452,11 @@ void Client::draw_tiles() {
         case STONEWORK: bg = 0x2A1E18; fg = 0x5A4A40; break;
         case CHAIN: case WRECK: case SHIELD: case RAIL: case ASH:
           bg = mixc(0x16100C, 0x2A1A12, noise(x, y, 5, 3));
+          if (t == RAIL) {
+            auto railish = [&](int a, int b) { int u = tile(a, b); return u == RAIL || u == TURNTABLE || u == CART; };
+            if (!railish(x - 1, y) && !railish(x + 1, y) && (railish(x, y - 1) || railish(x, y + 1))) ch = 0x2551;
+            if (actn == 1) bg = floor_bg();
+          }
           if (t == ASH) bg = mixc(bg, 0x3A3632, .5);
           break;
         case ANVIL: case SLAG: case CART: case BANNER: case FALLEN: case STATUE: {
@@ -545,6 +562,12 @@ void Client::draw_tiles() {
         case LEVER: bg = floor_bg(); keep = true; break;
         case EGG: {
           double gi = .5 + .5 * std::sin(tt * 2 + hh % 9);
+          if (actn == 1) {
+            // the Webmother's egg sacs: pale, swelling and slackening, now and then something moves inside
+            double k = std::pow(std::max(0.0, std::sin(tt * 1.6 + hh % 13)), 4);
+            ch = k > .5 ? 'O' : 'o'; fg = mixc(0xB8A880, 0xF4E6B8, k); bg = mixc(floor_bg(), 0x3A3020, .3 + .4 * k);
+            break;
+          }
           ch = hh % 3 ? 'o' : 'O'; fg = mixc(0x9A9A80, 0xE0E8C0, gi); bg = mixc(0x1A1C14, 0x3A4430, gi);
           if (shudder(x, y) && int(tt * 14) % 2) fg = 0xFFFFFF;
           bright = true;
@@ -582,6 +605,23 @@ void Client::draw_tiles() {
         case DOOR: case OPEN: bg = floor_bg(); keep = true; break;
         case STAIRS: case UPSTAIRS: case CHEST: case OPENCHEST: case SHRINE: case USED: case FOUNTAIN:
           bg = floor_bg(); keep = true; break;
+        case ORE: {
+          // copper and gold in the rock, catching the light now and then
+          bg = scale(act.wall, .24);
+          bool gold = hash(x, y, 24) % 3 == 0;
+          ch = hash(x, y, 25) % 2 ? 0x2666 : 0x2022;
+          fg = gold ? 0xE8C050 : 0xCE703A;
+          break;
+        }
+        case TIMBER: {
+          // the beam of a timber frame, laid in the rock across the tunnel
+          bg = scale(act.wall, .22);
+          bool side = !blocks(tile(x - 1, y)) || !blocks(tile(x + 1, y)) || tile(x - 1, y) == PROP || tile(x + 1, y) == PROP;
+          ch = side ? 0x2551 : 0x2550;
+          break;
+        }
+        case HEAP: bg = mixc(floor_bg(), 0x2A2420, .6); ch = hash(x, y, 26) % 3 ? 0x25B2 : '%'; break;
+        case BEAM: case PICK: case TURNTABLE: case COCOON: bg = floor_bg(); break;
         default: bg = floor_bg(); break;
       }
       if (vis[i] == '1') {
@@ -592,6 +632,16 @@ void Client::draw_tiles() {
         if (double c = cold[i]; c > 0) {
           if (!bright) fg = mixc(fg, scale(0x5AE0B0, l), c * .35);
           bg = mixc(bg, 0x0E3A30, c * .45 * std::min(l, 1.2));
+        }
+        if (!heaps.empty()) {
+          // daylight from far up the fallen shaft: grey and cold on the heap and round it
+          double k = 0;
+          for (P hp : heaps) k = std::max(k, 1 - std::hypot(x - hp.x, (y - hp.y) * 1.25) / 3.6);
+          if (k > 0) {
+            k *= .85 + .15 * std::sin(tt * .7);
+            bg = mixc(bg, 0x5A6274, k * .5);
+            if (!bright) fg = mixc(fg, 0xC8CEDA, k * .3);
+          }
         }
         if (cfx) {
           // the grave chill: low cold mist, in drifting banks, thinning round a hero who walks through it
@@ -852,6 +902,47 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           dot(x, y, mixc(0xB0E880, 0x2A3A1A, ph), .8 * (1 - ph), ph < .3 ? 1 : 2);
         }
         break;
+      case 'G':
+        // grit trickling down the fallen shaft onto the heap, and dust turning in the daylight
+        for (int j = 0; j < 12; ++j) {
+          double ph = std::fmod(tt * .35 + nz(sd + j), 1.0);
+          double x = ex - 1 + nz(sd * 3 + j * 7) * 3 + std::sin(tt + j) * .1, y = ey - 3 + ph * 3.5;
+          if (!open_at(x, y)) continue;
+          dot(x, y, j % 3 ? 0xB4A896 : 0x786C5E, .8 * (1 - ph * .5), j % 4 ? 1 : 2);
+        }
+        for (int j = 0; j < 14; ++j) {
+          double ph = std::fmod(tt * .05 + nz(sd * 7 + j), 1.0);
+          double x = ex + .5 + (nz(sd + j * 11) - .5) * 6 + std::sin(tt * .4 + j) * .3, y = ey + .5 + (nz(sd + j * 5) - .5) * 4 - ph;
+          if (!open_at(x, y)) continue;
+          dot(x, y, 0xDCE0EA, .55 * std::sin(ph * PI));
+        }
+        break;
+      case 'o': {
+        // a glint off the ore
+        double ph = std::fmod(tt * .35 + nz(sd * 13), 1.0);
+        if (ph < .18) {
+          double k = std::sin(ph / .18 * PI), cx = ex + .3 + nz(sd) * .4, cy = ey + .3 + nz(sd + 1) * .4;
+          dot(cx, cy, 0xFFF8D2, k);
+          for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) dot(cx + d4.x * .14, cy + d4.y * .14, 0xFFF8D2, k * .7);
+        }
+        break;
+      }
+      case 'x': {
+        // the broken frame: grit trickling where the ceiling sags, and now and then a puff of dust
+        for (int j = 0; j < 6; ++j) {
+          double ph = std::fmod(tt * .5 + j / 6.0, 1.0);
+          dot(ex + .1 + nz(sd + j) * .8, ey - .8 + ph * 1.6, 0xAAA08C, .7 * (1 - ph));
+        }
+        double ph = std::fmod(tt * .17 + nz(sd), 1.0);
+        if (ph < .2) {
+          double k = ph / .2;
+          for (int j = 0; j < 14; ++j) {
+            double a = nz(j * 3 + sd) * PI;
+            dot(ex + .5 + std::cos(a) * k * 1.6, ey + .4 + std::sin(a) * k * .6 + k * .5, 0xBEB4A0, (1 - k) * .8);
+          }
+        }
+        break;
+      }
       case 's':
         // dust trickling from the crack in a lid
         for (int j = 0; j < 3; ++j) {
@@ -896,6 +987,27 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
       int hx = snap_["heroes"][0]["x"], hy = snap_["heroes"][0]["y"];
       fx_.push_back({json{{"k", soul ? "soul" : "quake"}, {"x", hx + 3}, {"y", hy - 2}, {"dur", 2.2}}, tt});
       ++n;
+    }
+  }
+  if (snap_.value("act", 0) == 1 && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+    // now and then a few bats flit through the light, from one side of it to the other
+    double period = 7.5, cyc = std::floor(tt / period), ph = tt / period - cyc;
+    if (ph < .3) {
+      int seed = int(cyc) * 7919;
+      int hx = snap_["heroes"][0]["x"], hy = snap_["heroes"][0]["y"];
+      double a = nz(seed) * 2 * PI;
+      double sx = hx + .5 + std::cos(a) * 8, sy = hy + .5 + std::sin(a) * 5, mx = hx + .5 + (nz(seed + 1) - .5) * 4, my = hy + .5 + (nz(seed + 2) - .5) * 3;
+      double ex2 = hx + .5 - std::cos(a) * 8, ey2 = hy + .5 - std::sin(a) * 5;
+      for (int j = 0; j < 5; ++j) {
+        double k = std::clamp(ph / .3 - j * .04, 0.0, 1.0), u = 1 - k;
+        double x = u * u * sx + 2 * u * k * mx + k * k * ex2 + std::sin(tt * 30 + j * 2) * .25;
+        double y = u * u * sy + 2 * u * k * my + k * k * ey2 + std::sin(tt * 23 + j) * .3 + (j - 2) * .25;
+        if (!open_at(x, y)) continue;
+        bool wing = std::sin(tt * 40 + j * 3) > 0;
+        dot(x, y, 0x141012, 1);
+        dot(x - .14, y - (wing ? .1 : -.05), 0x2A2224, 1);
+        dot(x + .14, y - (wing ? .1 : -.05), 0x2A2224, 1);
+      }
     }
   }
   if (snap_.value("act", 0) == 0 && crypt_fx() && !snap_.value("rest", false)) {
