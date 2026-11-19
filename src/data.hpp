@@ -119,16 +119,16 @@ inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case 
 constexpr int STEPS = 6;
 constexpr int ZONES = 10;
 inline const ActDef ACTS[] = {
-    {"The Crypt", 0x786E64, 0x46403C, "halls and corridors", "gravewarden", "crypt", 0, {1, 4}, 2, 120, 66},
-    {"The Caves", 0x6E5A46, 0x483C2E, "mixed", "webmother", "caves", 1, {2, 5}, 1, 120, 66},
-    {"The Forge", 0x8C503C, 0x50342A, "close-packed", "furnace", "forge", 2, {7}, 1, 120, 66},
-    {"The Deep", 0x5A5082, 0x302C46, "mixed", "ashenking", "deep", 5, {}, 2, 120, 66},
-    {"The Cistern", 0x465458, 0x2C3432, "mixed", "sluicekeeper", "cistern", 1, {5, 6}, 1, 120, 66},
-    {"The City", 0x787369, 0x423E3A, "halls and corridors", "ashmayor", "city", 2, {7, 8}, 1, 120, 66},
-    {"The Vaults", 0x7D6E50, 0x3E382C, "halls and corridors", "hoardwarden", "vaults", 2, {8}, 1, 120, 66},
-    {"The Barracks", 0x735F55, 0x403630, "halls and corridors", "ironcaptain", "barracks", 3, {9}, 1, 120, 66},
-    {"The Prison", 0x55555F, 0x302E34, "close-packed", "headgaoler", "prison", 3, {9}, 1, 120, 66},
-    {"The Sanctum", 0x463E48, 0x28242A, "halls and corridors", "prelate", "sanctum", 4, {3}, 1, 120, 66},
+    {"The Crypt", 0x786E64, 0x46403C, "halls and corridors", "gravewarden", "crypt", 0, {1, 4}, 3, 120, 66},
+    {"The Caves", 0x6E5A46, 0x483C2E, "mixed", "webmother", "caves", 1, {2, 5}, 3, 120, 66},
+    {"The Forge", 0x8C503C, 0x50342A, "close-packed", "furnace", "forge", 2, {7}, 3, 120, 66},
+    {"The Deep", 0x5A5082, 0x302C46, "mixed", "ashenking", "deep", 5, {}, 3, 120, 66},
+    {"The Cistern", 0x465458, 0x2C3432, "mixed", "sluicekeeper", "cistern", 1, {5, 6}, 3, 120, 66},
+    {"The City", 0x787369, 0x423E3A, "halls and corridors", "ashmayor", "city", 2, {7, 8}, 3, 120, 66},
+    {"The Vaults", 0x7D6E50, 0x3E382C, "halls and corridors", "hoardwarden", "vaults", 2, {8}, 3, 120, 66},
+    {"The Barracks", 0x735F55, 0x403630, "halls and corridors", "ironcaptain", "barracks", 3, {9}, 3, 120, 66},
+    {"The Prison", 0x55555F, 0x302E34, "close-packed", "headgaoler", "prison", 3, {9}, 3, 120, 66},
+    {"The Sanctum", 0x463E48, 0x28242A, "halls and corridors", "prelate", "sanctum", 4, {3}, 3, 120, 66},
 };
 inline const std::vector<MonDef> MONSTERS = {
     {"rat", "grave rat", 0x72, 0xA0826E, 6, 1, 3, 60, 0, 120, 2, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false, {}},

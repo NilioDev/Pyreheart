@@ -42,7 +42,7 @@ int sgn(int v) { return (v > 0) - (v < 0); }
 
 // key name like [q], drawn as a gold keycap in the help and tips
 const std::vector<std::pair<std::string, std::string>> HELP = {
-    {"", "Pyreheart. Go down sixteen floors under Charnfen, past the crypt, the caves and the forge, and tear the Pyreheart out of the Ashen King."},
+    {"", "Pyreheart. Go down eighteen floors under Charnfen, past the crypt, the caves and the forge, and tear the Pyreheart out of the Ashen King."},
     {"", ""},
     {"[arrows] [numpad]", "walk; walk into a foe to strike it. Diagonals: numpad, or [Home] [PgUp] [End] [PgDn]."},
     {"[.] [numpad 5]", "wait a moment."},
