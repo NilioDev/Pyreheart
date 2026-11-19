@@ -170,6 +170,142 @@ static void dress_caves(Map& m, Floor& fl, const std::vector<int>& cave, P up, P
     if (!near_stairs(c.x, c.y, 1)) m.put(c.x, c.y, PICK);
     ++made;
   }
+  // somewhere with this much open ground round it in a box of (2rx+1) x (2ry+1)
+  auto roomy = [&](int rx, int ry, int need, int far, P& c) {
+    for (int tries = 0; tries < 120; ++tries) {
+      int j = cave[rnd.below(int(cave.size()))];
+      c = {j % W, j / W};
+      if (!open(c.x, c.y) || near_stairs(c.x, c.y, far)) continue;
+      int n = 0;
+      for (int y = c.y - ry; y <= c.y + ry; ++y) for (int x = c.x - rx; x <= c.x + rx; ++x) n += open(x, y);
+      if (n >= need) return true;
+    }
+    return false;
+  };
+  // an underground stream winding across the cave, too deep to wade except at the fords, with a plank bridge
+  if (rnd.real() < .55) {
+    auto path_to = [&](P a, P b) {
+      std::vector<int> prev(W * H, -1);
+      std::deque<int> q{a.y * W + a.x};
+      prev[q.front()] = q.front();
+      while (!q.empty()) {
+        int i = q.front(); q.pop_front();
+        if (i == b.y * W + b.x) break;
+        for (P d : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) {
+          int x = i % W + d.x, y = i / W + d.y;
+          if (!m.in(x, y) || prev[y * W + x] >= 0 || !open(x, y)) continue;
+          prev[y * W + x] = i;
+          q.push_back(y * W + x);
+        }
+      }
+      std::vector<P> out;
+      if (prev[b.y * W + b.x] < 0) return out;
+      for (int i = b.y * W + b.x; i != a.y * W + a.x; i = prev[i]) out.push_back({i % W, i / W});
+      out.push_back(a);
+      return out;
+    };
+    for (int tries = 0; tries < 20; ++tries) {
+      int ja = cave[rnd.below(int(cave.size()))], jb = cave[rnd.below(int(cave.size()))], jm = cave[rnd.below(int(cave.size()))];
+      P a{ja % W, ja / W}, b{jb % W, jb / W}, mid{jm % W, jm / W};
+      if (cheb(a.x, a.y, b.x, b.y) < 40) continue;
+      auto p1 = path_to(a, mid), p2 = path_to(mid, b);
+      if (p1.empty() || p2.empty()) continue;
+      std::vector<P> path(p1.rbegin(), p1.rend());
+      path.insert(path.end(), p2.rbegin() + 1, p2.rend());
+      std::vector<std::pair<P, int>> laid;
+      int n = int(path.size()), bridge = n / 2;
+      for (int k = 0; k < n; ++k) {
+        P c = path[k];
+        bool ford = k % 9 >= 6, plank = std::abs(k - bridge) <= 0;
+        for (P d : {P{0, 0}, P{1, 0}}) {
+          int x = c.x + d.x, y = c.y + d.y;
+          if (!open(x, y) || near_stairs(x, y, 2)) continue;
+          laid.push_back({{x, y}, FLOOR});
+          // deep only out in the open: where the stream runs down a narrow way it is shallow, or it would close it
+          int room = 0;
+          for (int yy = y - 2; yy <= y + 2; ++yy) for (int xx = x - 2; xx <= x + 2; ++xx) room += open(xx, yy) || m.at(xx, yy) == WATER;
+          m.put(x, y, plank ? PLANK : ford || room < 20 ? SHALLOW : WATER);
+        }
+      }
+      if (getenv("PYREHEART_GENDBG")) {
+        int deep = 0; for (auto& [c, t] : laid) deep += m.at(c.x, c.y) == WATER;
+        fprintf(stderr, "stream %zu cells, %d deep, whole %d\n", laid.size(), deep, int(whole(fl)));
+      }
+      if (!whole(fl))
+        for (auto& [c, t] : laid) if (m.at(c.x, c.y) == WATER) m.put(c.x, c.y, SHALLOW);
+      if (!whole(fl)) for (auto& [c, t] : laid) m.put(c.x, c.y, t);
+      break;
+    }
+  }
+  // a hall of dripstone: stalagmites great and small, with room left to fight among them
+  if (P c; rnd.real() < .6 && roomy(6, 4, 70, 6, c)) {
+    for (int y = c.y - 4; y <= c.y + 4; ++y)
+      for (int x = c.x - 6; x <= c.x + 6; ++x) {
+        if (!open(x, y)) continue;
+        double r = rnd.real();
+        if (r < .11) m.place(x, y, STALAG);
+        else if (r < .19) m.put(x, y, STUB);
+      }
+  }
+  // a chasm across an open part of the cave, a plank bridge over it
+  if (P c; rnd.real() < .45 && roomy(5, 5, 90, 8, c)) {
+    std::vector<P> laid;
+    for (int dy = -5; dy <= 5; ++dy) {
+      int wx = c.x + int(std::lround(std::sin(dy * .7) * 1.2));
+      for (int x = wx - 2; x <= wx + 1 + (std::abs(dy) < 3); ++x)
+        if (open(x, c.y + dy)) { m.put(x, c.y + dy, dy == 0 ? PLANK : CHASM); laid.push_back({x, c.y + dy}); }
+    }
+    if (!whole(fl)) for (P q : laid) m.put(q.x, q.y, FLOOR);
+  }
+  // a rat midden: a heap of gnawed bones and filth with holes in it (the rats come with the foes)
+  if (P c; rnd.real() < .6 && roomy(4, 3, 40, 7, c)) {
+    std::vector<P> heap;
+    for (int y = c.y - 2; y <= c.y + 2; ++y)
+      for (int x = c.x - 3; x <= c.x + 3; ++x)
+        if (open(x, y) && (x - c.x) * (x - c.x) + 2 * (y - c.y) * (y - c.y) <= 9 + rnd.below(3)) { m.put(x, y, MIDDEN); heap.push_back({x, y}); }
+    rnd.shuffle(heap);
+    int holes = 0;
+    for (P q : heap) {
+      if (holes >= 3) break;
+      m.put(q.x, q.y, FLOOR);
+      if (m.place(q.x, q.y, BURROW)) ++holes;
+      else m.put(q.x, q.y, MIDDEN);
+    }
+  }
+  // a trog camp: a fire, hides round it, totems of bone at the edge (the trogs sleep by the fire, with the foes)
+  if (P c; rnd.real() < .5 && roomy(5, 4, 75, 9, c)) {
+    if (m.place(c.x, c.y, CAMPFIRE)) {
+      for (int k = 0; k < 4; ++k) {
+        double a = k * 1.5707963 + rnd.real() * .6;
+        int x = c.x + int(std::lround(std::cos(a) * 3)), y = c.y + int(std::lround(std::sin(a) * 2));
+        for (int o = 0; o < 2; ++o) if (open(x + o, y)) m.put(x + o, y, HIDE);
+      }
+      for (int k = 0; k < 4; ++k) {
+        double a = k * 1.5707963 + .7853982;
+        m.place(c.x + int(std::lround(std::cos(a) * 5)), c.y + int(std::lround(std::sin(a) * 3)), TOTEM);
+      }
+    }
+  }
+  // a crystal geode: a small pocket in the rock, its walls grown with crystals
+  for (int tries = 0; tries < 200; ++tries) {
+    int j = cave[rnd.below(int(cave.size()))];
+    P c{j % W, j / W};
+    if (!open(c.x, c.y) || near_stairs(c.x, c.y, 4)) continue;
+    int n = 0;
+    for (int y = c.y - 2; y <= c.y + 2; ++y) for (int x = c.x - 2; x <= c.x + 2; ++x) n += open(x, y);
+    if (n < 8 || n > 15) continue;
+    std::vector<P> lining;
+    for (int y = c.y - 3; y <= c.y + 3; ++y)
+      for (int x = c.x - 3; x <= c.x + 3; ++x) {
+        if (!m.in(x, y) || m.at(x, y) != WALL) continue;
+        bool face = false;
+        for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) face |= open(x + dx, y + dy) && cheb(x + dx, y + dy, c.x, c.y) <= 2;
+        if (face) lining.push_back({x, y});
+      }
+    if (lining.size() < 6) continue;
+    for (P q : lining) m.put(q.x, q.y, CRYSTAL);
+    break;
+  }
   // the Webmother's nest round the way down, where she waits: egg sacs, the bodies she spun, bones; along the walls,
   // so the middle stays free to fight in
   if (boss_floor) {
@@ -629,6 +765,21 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
 void Game::zone_foes(Floor& fl) {
   int act = fl.act;
   auto open = [&](int x, int y) { return fl.tile(x, y) == FLOOR && !mon_at(x, y) && P{x, y} != fl.up && P{x, y} != fl.down; };
+  if (act == 1) {
+    for (int i = 0; i < W * H; ++i) {
+      P c{i % W, i / W};
+      if (fl.t[i] == BURROW && rnd.real() < .7) {
+        P at;
+        if (free_near(c.x, c.y, 2, at, [&](int x, int y) { return open(x, y) || fl.tile(x, y) == MIDDEN; })) spawn("giantrat", at.x, at.y);
+      }
+      if (fl.t[i] == CAMPFIRE)
+        for (int k = 0; k < 2 + rnd.below(2); ++k) {
+          P at;
+          if (free_near(c.x, c.y, 3, at, [&](int x, int y) { return (open(x, y) || fl.tile(x, y) == HIDE) && cheb(x, y, c.x, c.y) >= 2; }))
+            if (auto mm = spawn("trog", at.x, at.y)) mm->sleep = 1;
+        }
+    }
+  }
   if (act == VAULTS) {
     std::vector<P> doors, coins;
     for (int i = 0; i < W * H; ++i) {

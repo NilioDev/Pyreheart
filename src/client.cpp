@@ -1172,6 +1172,10 @@ void Client::draw_map() {
     if (e.value("hidden", false) && std::fmod(now() * .37 + e["id"].get<int>() * .61, 6.0) < .12) col = 0xB89400;  // a twitch
     put(X, Y, e["ch"].get<int>(), col, bg);
     if (e.value("listen", false) && con_.in_bounds({X, Y - 1})) put(X, Y - 1, '?', 0xE0E0A0);
+    if (e.value("asleep", false) && con_.in_bounds({X + 1, Y - 1})) {  // asleep: a z rising and fading over it
+      double ph = std::fmod(now() * .6 + e["id"].get<int>() * .37, 1.0);
+      put(X + 1, Y - 1, ph < .5 ? 'z' : 'Z', ph < .5 ? 0x9696BE : 0x50506E);
+    }
   }
   for (auto& h : s["heroes"]) {
     if (h.value("gone", false)) continue;

@@ -217,6 +217,13 @@ void Client::draw_tiles() {
         pool(x + .5, y + .5, 3.8, 1.05, 0);
         heaps.push_back({x, y});
         if (vis[i] == '1' && tile(x, y - 1) != HEAP) emits_.push_back({float(x), float(y), 'G', sd});
+      } else if (t == CAMPFIRE) {
+        pool(x, y, 6 * f, 1.2 * f, 1.);
+        if (vis[i] == '1') { emits_.push_back({float(x), float(y), 'k', sd}); emits_.push_back({float(x), float(y), 'c', sd}); }
+      } else if (t == STALAG && vis[i] == '1' && hash(x, y, 27) % 2) {
+        emits_.push_back({float(x), float(y), 'r', sd});
+      } else if (t == CHASM && actn == 1 && vis[i] == '1' && hash(x, y, 28) % 7 == 0 && !blocks(tile(x - 1, y))) {
+        emits_.push_back({float(x), float(y), 'P', sd});
       } else if (t == ORE && vis[i] == '1') {
         emits_.push_back({float(x), float(y), 'o', sd});
       } else if (t == BEAM && actn == 1 && vis[i] == '1') {
@@ -320,15 +327,30 @@ void Client::draw_tiles() {
           }
           break;
         }
-        case SHALLOW:
+        case SHALLOW: case WATER:
+          if (actn == 1) {
+            // the Caves' stream runs: ripples travel along it, white where it rushes past the planks
+            double ph = y * .9 + x * .25 - tt * 2.6, k = .5 + .5 * std::sin(ph);
+            bool past = tile(x, y - 1) == PLANK || tile(x - 1, y) == PLANK || tile(x + 1, y) == PLANK || tile(x, y + 1) == PLANK;
+            if (t == SHALLOW) {
+              bg = mixc(0x1A2C3C, 0x284054, k); fg = mixc(0x5A82AA, 0xAAC8DC, k);
+              ch = k > .6 ? 0x2248 : '.';
+            } else {
+              bg = mixc(0x0A1428, 0x142846, k); fg = mixc(0x28508C, 0x6EA0D2, k);
+              ch = std::sin(ph * 1.7 + x) > -.2 ? '~' : '-';
+            }
+            if (past && std::sin(ph * 2.3) > .1) { ch = std::sin(ph * 3) > 0 ? '~' : 0xB0; fg = mixc(0xB4D2E6, 0xF0F8FF, k); }
+            break;
+          }
+          if (t == WATER) {
+            bg = mixc(0x0C1C38, 0x10244A, noise(x, y, 3, 9));
+            ch = '~'; fg = 0x2E5490;
+            break;
+          }
           // still water: calm blue, a faint ripple now and then
           bg = mixc(0x16304E, 0x1C3A5C, noise(x, y, 3, 9));
           ch = std::fmod(tt * .3 + (hh % 100) / 100.0, 1.0) < .15 ? '~' : ' ';
           fg = 0x4A74A8;
-          break;
-        case WATER:
-          bg = mixc(0x0C1C38, 0x10244A, noise(x, y, 3, 9));
-          ch = '~'; fg = 0x2E5490;
           break;
         case LAVA: {
           double a = tt * .8, d = ldist_[i];
@@ -523,6 +545,13 @@ void Client::draw_tiles() {
         case CHASM: {
           // the floor falls away into the dark; its lip catches the light
           bg = 0x04050A; ch = ' ';
+          if (actn == 1) {
+            // the Caves' chasm: the rock face still shows near the edge, then only dark
+            int near = 0;
+            for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) near += tile(x + dx, y + dy) != CHASM && tile(x + dx, y + dy) != PLANK;
+            if (near) { bg = mixc(0x06060A, 0x2A2018, std::min(1.0, near / 4.0)); if ((x + y) % 2) { ch = 0xB7; fg = 0x4A3C30; } }
+            break;
+          }
           if (tile(x, y - 1) != CHASM && !blocks(tile(x, y - 1))) { ch = 0x2580; fg = 0x3A4446; }
           break;
         }
@@ -622,6 +651,45 @@ void Client::draw_tiles() {
         }
         case HEAP: bg = mixc(floor_bg(), 0x2A2420, .6); ch = hash(x, y, 26) % 3 ? 0x25B2 : '%'; break;
         case BEAM: case PICK: case TURNTABLE: case COCOON: bg = floor_bg(); break;
+        case PLANK: {
+          // planks over the water or the dark, swaying a little
+          bool water = tile(x, y - 1) == WATER || tile(x, y + 1) == WATER || tile(x - 1, y) == WATER || tile(x + 1, y) == WATER ||
+                       tile(x, y - 1) == SHALLOW || tile(x, y + 1) == SHALLOW;
+          bg = water ? 0x0E1A30 : 0x06060A;
+          fg = mixc(0x78542E, 0xA07446, .5 + .5 * std::sin(tt * 1.5 + x * .6));
+          break;
+        }
+        case STALAG: bg = floor_bg(); fg = mixc(0x968C7C, 0xC8BEAA, (hh % 7) / 7.0); break;
+        case MIDDEN: {
+          bg = mixc(floor_bg(), 0x2A2018, .6);
+          ch = hh % 4 == 0 ? '&' : hh % 3 == 0 ? ',' : '%';
+          fg = mixc(0x786450, 0xBEB096, (hh % 9) / 9.0);
+          if ((int(tt * 3) + hh) % 40 == 0) fg = 0xE6DCC8;  // the heap stirs
+          break;
+        }
+        case BURROW: {
+          bg = 0x0A0806;
+          // a rat pokes its nose out now and then and ducks back
+          if (std::fmod(tt * .4 + (hh % 100) / 100.0, 1.0) < .2) { ch = 'r'; fg = 0xAA826E; }
+          break;
+        }
+        case CAMPFIRE: {
+          static const int FL[] = {0x25B2, '^', 0x25B2, '*'};
+          ch = FL[(int(tt * 9) + x) % 4]; fg = mixc(0xFF7814, 0xFFE682, .5 + .5 * std::sin(tt * 13));
+          bg = 0x5A1E06; bright = true;
+          break;
+        }
+        case CRYSTAL: {
+          // crystals in the rock, amber and white, each glinting now and then on its own
+          bg = scale(act.wall, .22);
+          ch = hh % 3 ? 0x2666 : '*';
+          int base = hh % 2 ? 0xF0AA46 : 0xECE8DC;
+          double ph = std::fmod(tt * .45 + (hh % 1000) / 1000.0, 1.0), k = ph < .15 ? std::sin(ph / .15 * PI) : 0;
+          fg = mixc(scale(base, .65), 0xFFFFF0, k); bg = mixc(bg, 0x5A4628, k);
+          if (k > .3) bright = true;
+          break;
+        }
+        case TOTEM: case HIDE: case STUB: bg = floor_bg(); break;
         default: bg = floor_bg(); break;
       }
       if (vis[i] == '1') {
@@ -941,6 +1009,12 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
             dot(ex + .5 + std::cos(a) * k * 1.6, ey + .4 + std::sin(a) * k * .6 + k * .5, 0xBEB4A0, (1 - k) * .8);
           }
         }
+        break;
+      }
+      case 'P': {
+        // now and then a pebble rolls over the lip and drops away into the dark
+        double ph = std::fmod(tt * .3 + nz(sd), 1.0);
+        if (ph < .5) dot(ex + .3 + nz(sd + 1) * .4, ey - .3 + ph * 3, 0x968C78, 1 - ph * 2);
         break;
       }
       case 's':

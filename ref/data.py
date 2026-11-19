@@ -11,7 +11,8 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT, \
     SNOW, PATH, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, \
     DIGGER, OPENGRAVE, GUARD, BARRICADE, \
-    HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON = range(116)
+    HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON, \
+    PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL = range(125)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -138,13 +139,24 @@ TILES = [
     ('○', (150, 140, 120), True, True, 'a rail turntable'),
     ('═', (110, 76, 42), False, False, 'a timber beam'),
     ('§', (200, 196, 186), False, True, 'a body spun in web'),
+    # and more of them: a stream with a plank bridge, a hall of dripstone, a rat midden, a trog camp, a crystal geode
+    ('═', (140, 100, 60), True, True, 'a plank bridge'),
+    ('▲', (170, 160, 140), False, True, 'a stalagmite'),
+    ('^', (140, 130, 116), True, True, 'a stump of dripstone'),
+    ('%', (150, 130, 104), True, True, 'a midden of gnawed bones'),
+    ('o', (40, 32, 26), False, True, 'a rat hole'),
+    ('Ψ', (210, 200, 176), False, True, 'a totem of bones'),
+    ('≡', (140, 100, 70), True, True, 'a hide on the ground'),
+    ('▲', (255, 150, 40), False, True, 'a trog fire'),
+    ('♦', (240, 170, 70), False, False, 'crystals in the rock'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
                OBSIDIAN, STATUE, BANNER, FALLEN, SLUDGE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER,
                EGG, TIDESTATUE, BASIN, CHASM, SHAFT, SPOUT, LAMP, PROP, BARS, VAULTDOOR, BUNK, TABLE, RACK, DUMMY, STALL,
                CRATE, BOOKS, DRYFOUNT, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, FIRE, STONES, CHIMNEY, HEALER,
-               SMITH, DIGGER, GUARD, BARRICADE, HEAP, BEAM, ORE, TIMBER, COCOON}
+               SMITH, DIGGER, GUARD, BARRICADE, HEAP, BEAM, ORE, TIMBER, COCOON,
+               STALAG, BURROW, TOTEM, CAMPFIRE, CRYSTAL}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:
