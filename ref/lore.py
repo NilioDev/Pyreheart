@@ -33,6 +33,9 @@ ACT_OPEN = [
                   "smiths hurl bone and scrap into the relit fires, forging cursed weapons for their master."],
     ['THE DEEP', "The scorched pit of the Cinderfire, among rivers of boiling metal and charred bone. Somewhere below, "
                  "the stolen Pyreheart beats behind blackened ribs."],
+    ['THE CISTERN', "Vast, echoing caverns of stone basins and wide aqueducts, where the dwarves once gathered pure, cold "
+                    "water. Now the channels are choked with grey ash, and the basins hold only black sludge with a greasy, "
+                    "acidic sheen."],
 ]
 
 # writings found on the floors (the sign ?), per act; each is read once by whoever steps on it
@@ -57,18 +60,29 @@ WRITINGS = [
      "Ash shaped into letters: 'THE HEART IS MINE. COME AND TAKE IT.'",
      "A dwarven altar, cracked in two. Something large was torn out of it.",
      "A last prayer, half burnt: 'Sun-Breath, Deep-Tide, Cinderfire: forgive us. We only wanted to be warm.'"],
+    ["Chiseled into a mossy keystone: 'Before the theft, the Deep-Tide sang through these aqueducts, pure and cold as "
+     "glacier melt.'",
+     "In white chalk across a rusted floodgate: 'Do not kneel to drink from the pools. The water remembers every corpse "
+     "that drowned within it.'",
+     "A sluice-keeper's log, the last entry: 'We dropped the heavy grates to keep the swell from the lower halls. The water "
+     "rose anyway, thick as tar and warm to the touch.'",
+     "Chalked on the wall of a pump house, in big letters: 'DO NOT DRINK'",
+     "A dwarven water-gauge, its needle rusted fast at a mark labelled in the old tongue: 'never'."],
 ]
 
 BOSS_WAKE = {
     'gravewarden': "The Gravewarden rises from the sexton's chair. 'Charnfen's dead are mine to keep.'",
     'webmother': "Something huge unfolds from the ceiling, blistered and greasy. The Webmother has grown fat on the heat.",
     'furnace': "The great furnace opens like an eye. The Furnace Lord steps out, dripping slag.",
+    'sluicekeeper': "A floodgate wheel groans and turns by itself. The Sluice-Keeper drags himself up out of the black, "
+                    "chained to it still.",
     'ashenking': "On a throne of black stone the Ashen King stands up. Behind his ribs the Pyreheart beats, faster.",
 }
 BOSS_DIES = {
     'gravewarden': "The Gravewarden falls apart into old bones and older dust. The way down opens.",
     'webmother': "The Webmother curls up and is still. The webs go slack across the cave.",
     'furnace': "The Furnace Lord cools to black iron and cracks. The anvils of the dwarves fall silent again.",
+    'sluicekeeper': "The Sluice-Keeper sinks back into the sludge, and the great wheel finally stops.",
     'ashenking': "The Ashen King breaks like a coal under a hammer. You tear the Pyreheart from his chest, and it beats in your hands.",
 }
 WAYSTATION = "A dwarven waystation, empty for an age. A fountain still runs clear here, and someone from Charnfen has set up shop."

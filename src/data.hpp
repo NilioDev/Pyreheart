@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -57,8 +57,29 @@ inline const TileDef TILES[] = {
     {0x25AC, 0x5A5650, false, true, "toppled statue"},
     {0xB6, 0x7A2A1A, false, true, "scorched banner"},
     {0x25, 0x9A8A74, false, true, "fallen dwarf"},
+    {0x7E, 0x283224, false, true, "black sludge"},
+    {0x7E, 0x3C4A38, true, true, "shallow sludge"},
+    {0x23, 0x64646C, true, true, "iron grate"},
+    {0x2551, 0x96562E, false, false, "rusted floodgate"},
+    {0x263C, 0x9A5A30, false, true, "rusted gear"},
+    {0x25A0, 0x8A6A44, false, true, "broken waterwheel"},
+    {0x25D8, 0x8A8E96, false, true, "waterwheel hub"},
+    {0x2A, 0x7AE0C0, false, false, "glowing moss"},
+    {0x2551, 0x7A5A3A, false, false, "old pipe"},
+    {0x2593, 0x5A5450, false, true, "pump"},
+    {0x2F, 0xBEA06E, false, true, "sluice lever"},
+    {0x25, 0x7A8A6A, false, true, "floating corpse"},
+    {0x6F, 0xDCE0BE, false, true, "pale eggs"},
+    {0x3A9, 0xA0A8A6, false, true, "statue of the Deep-Tide"},
+    {0x2550, 0x6A7270, false, true, "basin wall"},
+    {0x20, 0x14181A, false, true, "chasm"},
+    {0x2219, 0xD8B040, true, true, "old coins"},
+    {0x4F, 0xFF963C, false, true, "shaft to the dead city"},
+    {0x25BC, 0x7A5A3A, false, false, "broken pipe"},
+    {0xA1, 0xFFC060, false, true, "dwarf lamp"},
+    {0x2219, 0x5A6A4A, true, true, "slime trail"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: case SLUDGE: case FLOODGATE: case GEAR: case WHEEL: case HUB: case MOSSWALL: case PIPE: case PUMP: case LEVER: case FLOATER: case EGG: case TIDESTATUE: case BASIN: case CHASM: case SHAFT: case SPOUT: case LAMP: return true; default: return false; } }
 constexpr int FLOORS = 16;
 inline bool rest_after(int d) { return d == 4 || d == 8 || d == 12; }
 inline const ActDef ACTS[] = {
@@ -66,6 +87,7 @@ inline const ActDef ACTS[] = {
     {"The Caves", 0x6E5A46, 0x483C2E, "mixed", "webmother"},
     {"The Forge", 0x8C503C, 0x50342A, "close-packed", "furnace"},
     {"The Deep", 0x5A5082, 0x302C46, "mixed", "ashenking"},
+    {"The Cistern", 0x465458, 0x2C3432, "mixed", "sluicekeeper"},
 };
 inline const std::vector<MonDef> MONSTERS = {
     {"rat", "grave rat", 0x72, 0xA0826E, 6, 1, 3, 60, 0, 120, 2, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false},
@@ -90,6 +112,12 @@ inline const std::vector<MonDef> MONSTERS = {
     {"deepknight", "charred knight", 0x4B, 0x8C8CC8, 75, 9, 16, 80, 10, 100, 42, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, true},
     {"caller", "ash caller", 0x76, 0xC878E6, 40, 8, 14, 75, 3, 100, 40, "ranged", 7, 0x2A, 0xC878FF, false, false, 0, false, true, {"summon:wraith"}, false},
     {"horror", "bone horror", 0x48, 0xBE5A96, 95, 10, 18, 75, 6, 110, 50, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, true},
+    {"leech", "sludge leech", 0x6C, 0xD2CDAF, 14, 2, 5, 70, 1, 90, 8, "melee", 1, 0x2A, 0xFFFFFF, false, false, 3, false, false, {}, false},
+    {"drowned", "bloated drowned", 0x64, 0x788C69, 28, 4, 7, 60, 2, 80, 12, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, true},
+    {"newt", "ash-gill newt", 0x6E, 0xD7CDC3, 12, 2, 5, 70, 0, 140, 7, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false},
+    {"acidspitter", "acid spitter", 0x6A, 0xE1D750, 16, 3, 6, 65, 1, 100, 12, "ranged", 6, 0x2A, 0xEBE15A, false, false, 3, false, false, {}, false},
+    {"crab", "rust-shell crab", 0x6B, 0xAA5F3C, 34, 4, 8, 65, 6, 80, 15, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false},
+    {"sluicekeeper", "the Sluice-Keeper", 0x4C, 0x82A073, 280, 6, 13, 80, 6, 100, 280, "melee", 1, 0x2A, 0xFFFFFF, true, false, 4, false, false, {"summon:leech", "spit"}, true},
     {"ashenking", "the Ashen King", 0x26, 0xFF7828, 750, 12, 22, 90, 12, 110, 0, "melee", 1, 0x2A, 0xFFFFFF, true, false, 0, false, true, {"nova", "summon:wraith", "blink"}, false},
 };
 inline const std::vector<std::vector<std::pair<std::string, int>>> SPAWNS = {
@@ -97,6 +125,7 @@ inline const std::vector<std::vector<std::pair<std::string, int>>> SPAWNS = {
     {{"spider", 4}, {"giantrat", 4}, {"hound", 3}, {"trog", 3}, {"spitter", 3}},
     {{"imp", 4}, {"cinderhound", 4}, {"thrall", 3}, {"golem", 2}, {"slag", 2}},
     {{"wraith", 4}, {"deepknight", 3}, {"caller", 2}, {"horror", 2}},
+    {{"leech", 4}, {"drowned", 4}, {"newt", 3}, {"acidspitter", 3}, {"crab", 2}},
 };
 inline const std::vector<std::pair<std::string, std::string>> AFFIXES = {{"Swift", "it is quick"}, {"Brutal", "it hits very hard"}, {"Stone Skin", "it is hard to hurt"}, {"Vampiric", "its blows heal it"}, {"Fire-blooded", "it burns, and bursts into flame when slain"}, {"Regenerating", "its wounds close"}, {"Venomous", "its blows poison"}, {"Frost-touched", "its cold touch numbs your arm"}};
 inline const std::vector<std::string> UNIQUE_FIRST = {"Gorrath", "Vesk", "Old Murl", "Ashka", "Brannoc", "Thessaly", "Grimwald", "Ulvane", "Skarn", "Morrow"};

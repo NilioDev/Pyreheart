@@ -335,7 +335,8 @@ void Game::dress(Floor& fl, const k5::Plan& plan) {
 void Game::wake_dead() {
   for (auto& s : floor->sleepers) {
     if (s.stage < 0) continue;
-    bool tomb = floor->tile(s.at.x, s.at.y) == CRACKED, dwarf = floor->tile(s.at.x, s.at.y) == FALLEN;
+    int t0 = floor->tile(s.at.x, s.at.y);
+    bool tomb = t0 == CRACKED, dwarf = t0 == FALLEN, floater = t0 == FLOATER, egg = t0 == EGG;
     if (s.stage == 0) {
       for (auto* h : active()) {
         if (!h->present()) continue;
@@ -343,7 +344,9 @@ void Game::wake_dead() {
         for (auto c : s.cells) if (cheb(c.x, c.y, h->x, h->y) <= 2 && h->sees(c.x, c.y)) near = true;
         if (!near) continue;
         s.stage = 1;
-        say_near(s.at.x, s.at.y, tomb ? "The lid of a tomb grinds against stone..." : dwarf ? "A charred dwarf stirs among the bones..." : "The corpse on the table twitches...", 0xC8BCA0);
+        say_near(s.at.x, s.at.y, tomb ? "The lid of a tomb grinds against stone..." : dwarf ? "A charred dwarf stirs among the bones..."
+                                 : floater ? "The black sludge begins to bubble..." : egg ? "One of the pale eggs bulges and splits..."
+                                           : "The corpse on the table twitches...", 0xC8BCA0);
         tip(*h, "rising", "Something is stirring. Hit it now and it will not get up.");
         break;
       }
@@ -356,7 +359,7 @@ void Game::wake_dead() {
     if (tomb) {
       for (auto c : s.cells)
         if (c.y == s.at.y && std::abs(c.x - s.at.x) <= 1) floor->set(c.x, c.y, OPENTOMB);
-    } else floor->set(s.at.x, s.at.y, dwarf ? BONES : BIER);
+    } else floor->set(s.at.x, s.at.y, dwarf ? BONES : floater ? SLUDGE : egg ? SLIME : BIER);
     P at;
     if (!free_near(s.at.x, s.at.y, 3, at)) continue;
     auto m = spawn(s.kind, at.x, at.y);
@@ -364,6 +367,8 @@ void Game::wake_dead() {
     m->energy = 0;
     say_near(at.x, at.y, tomb ? "The lid crashes down. " + a_name(m->name) + " climbs out of the tomb!"
                          : dwarf ? "The fallen dwarf rises! " + a_name(m->name) + " comes for you."
+                         : floater ? "The floating corpse rolls over and drags itself out: " + a_name(m->name) + "!"
+                         : egg ? "The egg bursts! " + a_name(m->name) + " slithers out."
                                  : "The corpse sits up! " + a_name(m->name) + " crawls off the table.", 0xFF9060);
     add_fx({{"k", "dust"}, {"x", s.at.x}, {"y", s.at.y}, {"tomb", tomb}, {"fall", true}, {"dur", 1.6}});
   }
@@ -374,15 +379,24 @@ bool Game::smash_dead(Hero& h, int x, int y) {
   for (auto& s : floor->sleepers) {
     if (s.stage <= 0) continue;
     if (std::find(s.cells.begin(), s.cells.end(), P{x, y}) == s.cells.end()) continue;
-    bool tomb = floor->tile(s.at.x, s.at.y) == CRACKED, dwarf = floor->tile(s.at.x, s.at.y) == FALLEN;
+    int t0 = floor->tile(s.at.x, s.at.y);
+    bool tomb = t0 == CRACKED, dwarf = t0 == FALLEN, floater = t0 == FLOATER, egg = t0 == EGG;
     s.stage = -1;
     if (tomb) {
       for (auto c : s.cells)
         if (c.y == s.at.y && std::abs(c.x - s.at.x) <= 1) floor->set(c.x, c.y, OPENTOMB);
-    } else floor->set(s.at.x, s.at.y, dwarf ? BONES : BIER);
+    } else floor->set(s.at.x, s.at.y, dwarf ? BONES : floater ? SLUDGE : egg ? SLIME : BIER);
     gain_xp(h, mon_def(s.kind).xp);
-    h.say(tomb ? "You slam the lid in. Whatever was in there lies still." : "You strike the corpse down before it can rise.", 0xE6D2A0);
+    h.say(tomb ? "You slam the lid in. Whatever was in there lies still."
+               : egg ? "You crush the egg before it can hatch." : floater ? "You push the corpse under. It does not come up again."
+                     : "You strike the corpse down before it can rise.", 0xE6D2A0);
     add_fx({{"k", "dust"}, {"x", s.at.x}, {"y", s.at.y}, {"tomb", tomb}, {"fall", true}, {"dur", 1.6}});
+    return true;
+  }
+  // an egg that is not about to hatch: crush it anyway
+  if (floor->tile(x, y) == EGG) {
+    floor->set(x, y, SLIME);
+    h.say("You crush a pale egg. It pops wetly.", 0xC8D0A0);
     return true;
   }
   return false;

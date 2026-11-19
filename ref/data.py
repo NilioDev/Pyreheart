@@ -6,7 +6,8 @@ affixes and uniques. No rules live here."""
 WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
     TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, \
     EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, \
-    BANNER, FALLEN = range(52)
+    BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, \
+    TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME = range(73)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -63,10 +64,33 @@ TILES = [
     ('▬', (90, 86, 80), False, True, 'toppled statue'),
     ('¶', (122, 42, 26), False, True, 'scorched banner'),
     ('%', (154, 138, 116), False, True, 'fallen dwarf'),
+    # the Cistern: black sludge in the old dwarven waterworks
+    ('~', (40, 50, 36), False, True, 'black sludge'),
+    ('~', (60, 74, 56), True, True, 'shallow sludge'),
+    ('#', (100, 100, 108), True, True, 'iron grate'),
+    ('║', (150, 86, 46), False, False, 'rusted floodgate'),
+    ('☼', (154, 90, 48), False, True, 'rusted gear'),
+    ('■', (138, 106, 68), False, True, 'broken waterwheel'),
+    ('◘', (138, 142, 150), False, True, 'waterwheel hub'),
+    ('*', (122, 224, 192), False, False, 'glowing moss'),
+    ('║', (122, 90, 58), False, False, 'old pipe'),
+    ('▓', (90, 84, 80), False, True, 'pump'),
+    ('/', (190, 160, 110), False, True, 'sluice lever'),
+    ('%', (122, 138, 106), False, True, 'floating corpse'),
+    ('o', (220, 224, 190), False, True, 'pale eggs'),
+    ('Ω', (160, 168, 166), False, True, 'statue of the Deep-Tide'),
+    ('═', (106, 114, 112), False, True, 'basin wall'),
+    (' ', (20, 24, 26), False, True, 'chasm'),
+    ('∙', (216, 176, 64), True, True, 'old coins'),
+    ('O', (255, 150, 60), False, True, 'shaft to the dead city'),
+    ('▼', (122, 90, 58), False, False, 'broken pipe'),
+    ('¡', (255, 192, 96), False, True, 'dwarf lamp'),
+    ('∙', (90, 106, 74), True, True, 'slime trail'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
-               OBSIDIAN, STATUE, BANNER, FALLEN}
+               OBSIDIAN, STATUE, BANNER, FALLEN, SLUDGE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER,
+               EGG, TIDESTATUE, BASIN, CHASM, SHAFT, SPOUT, LAMP}
 
 # ------------------------------------------------------------------ the four acts
 ACTS = [
@@ -75,6 +99,8 @@ ACTS = [
     {'name': 'The Caves', 'wall': (110, 90, 70), 'floor': (72, 60, 46), 'mood': 'mixed', 'boss': 'webmother'},
     {'name': 'The Forge', 'wall': (140, 80, 60), 'floor': (80, 52, 42), 'mood': 'close-packed', 'boss': 'furnace'},
     {'name': 'The Deep', 'wall': (90, 80, 130), 'floor': (48, 44, 70), 'mood': 'mixed', 'boss': 'ashenking'},
+    # the other way after the Crypt: some dives go down through the Cistern instead of the Caves
+    {'name': 'The Cistern', 'wall': (70, 84, 88), 'floor': (44, 52, 50), 'mood': 'mixed', 'boss': 'sluicekeeper'},
 ]
 FLOORS = 16
 REST_AFTER = (4, 8, 12)          # a waystation follows these floors
@@ -126,6 +152,17 @@ M = {
                    ai='ranged', rng=7, shot=('*', (200, 120, 255)), cold=True, moves=('summon:wraith',)),
     'horror': dict(undead=True, name='bone horror', ch='H', col=(190, 90, 150), hp=95, dmg=(10, 18), acc=75, ar=6, spd=110, xp=50,
                    ai='melee'),
+    # act 2, the other way: the Cistern
+    'leech': dict(name='sludge leech', ch='l', col=(210, 205, 175), hp=14, dmg=(2, 5), acc=70, ar=1, spd=90, xp=8, ai='melee',
+                  poison=3),
+    'drowned': dict(undead=True, name='bloated drowned', ch='d', col=(120, 140, 105), hp=28, dmg=(4, 7), acc=60, ar=2, spd=80, xp=12,
+                    ai='melee', gear=True),
+    'newt': dict(name='ash-gill newt', ch='n', col=(215, 205, 195), hp=12, dmg=(2, 5), acc=70, ar=0, spd=140, xp=7, ai='melee'),
+    'acidspitter': dict(name='acid spitter', ch='j', col=(225, 215, 80), hp=16, dmg=(3, 6), acc=65, ar=1, spd=100, xp=12,
+                        ai='ranged', rng=6, shot=('*', (235, 225, 90)), poison=3),
+    'crab': dict(name='rust-shell crab', ch='k', col=(170, 95, 60), hp=34, dmg=(4, 8), acc=65, ar=6, spd=80, xp=15, ai='melee'),
+    'sluicekeeper': dict(undead=True, name='the Sluice-Keeper', ch='L', col=(130, 160, 115), hp=280, dmg=(6, 13), acc=80, ar=6,
+                         spd=100, xp=280, ai='melee', boss=True, poison=4, moves=('summon:leech', 'spit')),
     'ashenking': dict(name='the Ashen King', ch='&', col=(255, 120, 40), hp=750, dmg=(12, 22), acc=90, ar=12, spd=110,
                     xp=0, ai='melee', boss=True, cold=True, moves=('nova', 'summon:wraith', 'blink')),
 }
@@ -134,6 +171,7 @@ SPAWNS = [   # per act: (creature, weight)
     [('spider', 4), ('giantrat', 4), ('hound', 3), ('trog', 3), ('spitter', 3)],
     [('imp', 4), ('cinderhound', 4), ('thrall', 3), ('golem', 2), ('slag', 2)],
     [('wraith', 4), ('deepknight', 3), ('caller', 2), ('horror', 2)],
+    [('leech', 4), ('drowned', 4), ('newt', 3), ('acidspitter', 3), ('crab', 2)],
 ]
 
 # champions (blue) carry one of these, uniques (gold) two or three; a pack of champions shares one

@@ -642,7 +642,9 @@ void Client::update_music() {
   music_.volume(music_on_ ? .7f : 0);
   if (screen_ != Screen::Game || !snap_.is_object()) { music_.mood(music::TITLE); return; }
   if (snap_.value("rest", false)) { music_.mood(music::REST); return; }
-  int act = std::clamp(snap_.value("act", 0), 0, 3);
+  int act = snap_.value("act", 0);
+  if (act == CISTERN) act = 1;  // the Cistern has no music of its own yet: the Caves'
+  act = std::clamp(act, 0, 3);
   music_.mood(music::Mood(music::CRYPT + act), snap_.contains("boss"));
 }
 

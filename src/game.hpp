@@ -8,6 +8,7 @@
 
 using json = nlohmann::json;
 
+constexpr int CISTERN = 4;  // the act index of the Cistern, the other way after the Crypt
 constexpr int W = 120;  // the largest map (the Deep); floors of rooms use the top left ZONE_W x ZONE_H
 constexpr int H = 66;
 constexpr int ZONE_W = 76;
@@ -177,8 +178,12 @@ class Game {
   void build_rooms(Floor& fl, int d, bool boss_floor);
   bool build_deep(Floor& fl, char entry, bool last, char& exit_side);  // deep.cpp
   char deep_exit_ = 'N';
+  bool cistern_ = false;  // this dive goes down through the Cistern instead of the Caves
   void dress(Floor& fl, const k5::Plan& plan);  // dress.cpp
   void dress_deep(Floor& fl, std::vector<std::vector<P>> plates);
+  void dress_cistern(Floor& fl, const k5::Plan& plan);  // cistern.cpp
+  void pull_lever(Hero& h, int x, int y);
+  void under_grate(Hero& h);
   void wake_dead();
   bool smash_dead(Hero& h, int x, int y);
   MonP spawn(const std::string& key, int x, int y);

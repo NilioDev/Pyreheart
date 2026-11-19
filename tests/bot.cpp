@@ -180,7 +180,11 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
     std::map<int, json> acts;
     for (auto& [id, h] : g.heroes) if (h->present()) acts[id] = choose(g, *h);
     if (std::getenv("BOTACT")) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%5d %d,%d hp%d mp%d %s\n", g.turn + 1, h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
-    if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%d,%d hp%d mana%d %s\n", h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
+    if (std::getenv("BOTDBG") && steps == 19995) for (auto& [id, h] : g.heroes) {
+      for (int y = h->y - 6; y <= h->y + 6; ++y) { for (int x = h->x - 10; x <= h->x + 10; ++x) std::printf("%c", x == h->x && y == h->y ? '@' : char('0' + g.floor->tile(x, y))); std::printf("\n"); }
+      std::printf("up %d,%d down %d,%d whole %d\n", g.floor->up.x, g.floor->up.y, g.floor->down.x, g.floor->down.y, int(whole(*g.floor)));
+    }
+    if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; int tx = h.x + a.value("dx", 0), ty = h.y + a.value("dy", 0); std::printf("%d,%d hp%d mana%d %s tile %d mon %d\n", h.x, h.y, h.hp, h.mana, a.dump().c_str(), g.floor->tile(tx, ty), g.mon_at(tx, ty) ? 1 : 0); }
     g.step(acts);
     if (std::getenv("BOTLOG")) for (auto& [id, h] : g.heroes) { for (auto& l : h->log) std::printf("%5d hp%3d mp%2d %s\n", g.turn, h->hp, h->mana, l.text.c_str()); h->log.clear(); }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, h] : g.heroes) for (auto& l : h->log) std::printf("  %s\n", l.text.c_str());

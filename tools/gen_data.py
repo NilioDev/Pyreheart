@@ -16,7 +16,8 @@ names = ['WALL', 'FLOOR', 'DOOR', 'OPEN', 'STAIRS', 'WATER', 'SHALLOW', 'RUBBLE'
          'TORCH', 'CANDLE', 'ALTAR', 'PEW', 'PILLAR', 'TOMB', 'CRACKED', 'OPENTOMB', 'BIER', 'CORPSE', 'RESTLESS', 'BONEWALL', 'BONES',
          'CRUST', 'NECK', 'BASALT', 'DAIS', 'RUNE', 'THRONE', 'EDGE',
          'HEARTH', 'STONEWORK', 'ANVIL', 'SLAG', 'RAIL', 'CART', 'CHAIN', 'BRAZIER', 'OBELISK', 'ASH', 'VENT', 'OBSIDIAN', 'WRECK',
-         'SHIELD', 'STATUE', 'BANNER', 'FALLEN']
+         'SHIELD', 'STATUE', 'BANNER', 'FALLEN', 'SLUDGE', 'MIRE', 'GRATE', 'FLOODGATE', 'GEAR', 'WHEEL', 'HUB', 'MOSSWALL', 'PIPE',
+         'PUMP', 'LEVER', 'FLOATER', 'EGG', 'TIDESTATUE', 'BASIN', 'CHASM', 'COIN', 'SHAFT', 'SPOUT', 'LAMP', 'SLIME']
 o.append('enum Tile { ' + ', '.join(names) + ', TILE_COUNT };')
 o.append('inline const TileDef TILES[] = {')
 for t in D.TILES: o.append('    {%s, %s, %s, %s, %s},' % (cp(t[0]), col(t[1]), b(t[2]), b(t[3]), s(t[4])))

@@ -54,7 +54,7 @@ void Client::draw_tiles() {
   const std::string& map = maps_[fl];
   auto& seen = seen_[fl];
   const std::string& vis = s["vis"].get_ref<const std::string&>();
-  auto& act = ACTS[std::clamp(s["act"].get<int>(), 0, 3)];
+  auto& act = ACTS[std::clamp(s["act"].get<int>(), 0, CISTERN)];
   int actn = s["act"].get<int>();
   bool rest = s.value("rest", false);
   double tt = now();
@@ -86,8 +86,8 @@ void Client::draw_tiles() {
   // the light: a dim base, pools round every flame, and each hero's own light
   static const bool whole_view = SDL_getenv("PYREHEART_WHOLE") != nullptr;  // a screenshot of the whole map
   double base = rest ? .9 : whole_view ? .8 : .6;
-  std::vector<float> L(W * H, float(base)), warm(W * H, 0.f);
-  auto pool = [&](double cx, double cy, double r, double a, double w) {
+  std::vector<float> L(W * H, float(base)), warm(W * H, 0.f), cold(W * H, 0.f);
+  auto pool = [&](double cx, double cy, double r, double a, double w, bool cool = false) {
     int ax = std::max(x0, int(cx - r - 1)), bx = std::min(x1 - 1, int(cx + r + 1));
     int ay = std::max(y0, int(cy - r - 1)), by = std::min(y1 - 1, int(cy + r + 1));
     for (int y = ay; y <= by; ++y)
@@ -97,7 +97,8 @@ void Client::draw_tiles() {
         double k = 1 - d / (r + 1), sm = k * k * (3 - 2 * k);
         int i = y * W + x;
         L[i] = std::max(L[i], float(base + (a - base) * sm));
-        warm[i] = std::max(warm[i], float(w * k));
+        if (cool) cold[i] = std::max(cold[i], float(w * k));
+        else warm[i] = std::max(warm[i], float(w * k));
       }
   };
   for (int y = std::max(0, y0 - 6); y < std::min(H, y1 + 6); ++y)
@@ -130,6 +131,27 @@ void Client::draw_tiles() {
         if (vis[i] == '1' && t == HEARTH && hash(x, y, 4) % 2) emits_.push_back({float(x), float(y), 'k', sd});
       } else if (t == VENT && vis[i] == '1') {
         emits_.push_back({float(x), float(y), 'v', sd});
+      } else if (t == MOSSWALL) {
+        // the moss glows cold, and breathes out pale spores
+        pool(x, y, 5 * (.95 + .05 * std::sin(tt * .7 + sd)), 1.0, .9, true);
+        if (vis[i] == '1') emits_.push_back({float(x), float(y), 'p', sd});
+      } else if (t == EGG) {
+        pool(x, y, 2.5, .85, .5, true);
+      } else if (t == LAMP) {
+        pool(x, y, 5.5 * f, 1.15 * f, 1.);
+        if (vis[i] == '1') emits_.push_back({float(x), float(y), 'c', sd});
+      } else if (t == SHAFT) {
+        // the heat of the dead city below, and ash rising out of the dark
+        pool(x + .5, y + .5, 4.5 * f, 1.1 * f, 1.);
+        if (vis[i] == '1' && hash(x, y, 3) % 2) emits_.push_back({float(x), float(y), 'h', sd});
+      } else if (t == SPOUT && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'z', sd});
+      } else if (t == FLOATER && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'u', sd});
+      } else if ((t == SLUDGE || t == MIRE) && vis[i] == '1') {
+        if (hash(x, y, 15) % 11 == 0) emits_.push_back({float(x), float(y), 'm', sd});
+      } else if (actn == CISTERN && (t == FLOOR || t == GRATE) && vis[i] == '1') {
+        if (hash(x, y, 16) % 47 == 0) emits_.push_back({float(x), float(y), 'r', sd});
       } else if ((t == CRUST || t == NECK) && vis[i] == '1') {
         // smoke seeping out of the crust, red embers drifting in loops, ash falling
         if (hash(x, y, 12) % 37 == 0) emits_.push_back({float(x), float(y), 'g', sd});
@@ -145,7 +167,11 @@ void Client::draw_tiles() {
         if (vis[gy * W + gx] == '1') emits_.push_back({float(gx), float(gy), 'f', gx * 7 + gy});
       }
   for (auto& h : s["heroes"])
-    if (!h.value("gone", false) && !h.value("dead", false)) pool(h["x"].get<int>(), h["y"].get<int>(), 6, 1.25, 0);
+    if (!h.value("gone", false) && !h.value("dead", false)) {
+      int hx = h["x"].get<int>(), hy = h["y"].get<int>();
+      pool(hx, hy, 6, 1.25, 0);
+      if (tile(hx, hy) == GRATE) emits_.push_back({float(hx), float(hy), 'q', hx * 31 + hy});  // something follows below
+    }
 
   // a tomb or corpse that is grinding open: its lid or body shudders
   std::vector<P> grinding;
@@ -178,6 +204,10 @@ void Client::draw_tiles() {
           bg = scale(col, .22 + .08 * ((hash(course, y, 2) % 7) / 7.0));
           if ((x + (y % 2) * 2) % 4) { ch = 0x2593; fg = scale(col, .4 + .1 * noise(x, y, 3, 4)); }
           else { ch = 0x2502; fg = scale(col, .16); }
+          if (actn == CISTERN) {
+            fg = scale(fg, .75);
+            if (noise(x, y, 2.5, 4) > .66) fg = mixc(fg, 0x2E4A30, .45);  // slime running down the wet stone
+          }
           if (actn == 0 && hh % 41 == 0 && !blocks(tile(x, y + 1)) && blocks(tile(x - 1, y)) && blocks(tile(x + 1, y))) {
             ch = 0x3A9; fg = 0xC8BCA0; bg = 0x14120F;
           } else if (hh % 23 == 0) { ch = '/'; fg = scale(col, .18); }  // a crack
@@ -193,7 +223,11 @@ void Client::draw_tiles() {
             bool by_wall = false;
             for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) if (tile(x + d4.x, y + d4.y) == WALL) by_wall = true;
             double n = noise(x, y, 4, 7);
-            if (actn <= 1 && by_wall && n > .58) {
+            auto wet = [&](int tt2) { return tt2 == SLUDGE || tt2 == FLOATER; };
+            if (actn == CISTERN && wet(tile(x, y + 1)) && !wet(tile(x, y - 1))) { ch = 0x2584; fg = 0x4A5450; bg = 0x1C2224; }  // the curb of a channel
+            else if (actn == CISTERN && wet(tile(x, y - 1)) && !wet(tile(x, y + 1))) { ch = 0x2580; fg = 0x4A5450; bg = 0x1C2224; }
+            else if (actn == CISTERN && noise(x, y, 4, 9) > .64) { bg = mixc(bg, 0x10202A, .7); ch = ' '; }  // a puddle
+            else if ((actn <= 1 && by_wall && n > .58) || (actn == CISTERN && by_wall && n > .7)) {
               ch = hh % 3 ? '"' : ',';
               fg = mixc(0x3E5A2A, 0x5E7A36, (hh % 5) / 5.0);
             }
@@ -352,6 +386,125 @@ void Client::draw_tiles() {
           break;
         }
         case VENT: bg = 0x1A0E0A; break;
+        case SLUDGE: case FLOATER: {
+          // black sludge with a greasy sheen sliding over it, bubbles, floating ash, and now and then driftwood or a pale fish
+          double a = tt * .8;
+          double v = .5 + .5 * std::sin(x * .5 + y * .7 + a) * std::sin(x * .23 - y * .3 - a * .5);
+          bg = mixc(0x0C120A, 0x1C2414, v);
+          double sh = std::sin(x * .35 + y * .9 - a * 1.2);
+          if (sh > .75) bg = mixc(bg, (x + y) % 2 ? 0x3A2E58 : 0x264A34, (sh - .75) * 3.2);
+          ch = ' '; fg = 0;
+          int kk = int((int(tt * 3) + hh) % 26);
+          bool across = tile(x - 1, y) == SLUDGE && tile(x + 1, y) == SLUDGE, down = tile(x, y - 1) == SLUDGE && tile(x, y + 1) == SLUDGE;
+          if (t == FLOATER) {
+            ch = '%'; fg = (std::fmod(tt * .4 + (hh % 100) / 100.0, 1.0) < .05 || (shudder(x, y) && int(tt * 14) % 2)) ? 0xD8E0C0 : 0x7A8A6A;
+          } else if (across && (x + int(tt * .5) + int(hash(y, 1, 9) % 40)) % 40 == 0) { ch = '='; fg = 0x6A5034; }
+          else if (down && !across && (y + int(tt * .5) + int(hash(x, 1, 9) % 30)) % 30 == 0) { ch = 0x2551; fg = 0x6A5034; }
+          else if (hash(x, y, 3) % 6 == 0 && kk < 4) { static const int BB[] = {'.', 'o', 'O', 0x00B0}; ch = BB[kk]; fg = kk < 3 ? 0x8AA040 : 0x3A4A20; }
+          else if (std::fmod(tt * .35 + (hash(x, y, 7) % 1000) / 1000.0, 1.0) < .012) { ch = '-'; fg = 0xC8D0C0; }  // a blind fish
+          else if (hash(x, y, 5) % 13 == 0) { ch = 0x2219; fg = 0x5A5A54; }
+          // inside the rim of a waterwheel: its spokes, rocking back and forth where it is stuck
+          for (int dy = -3; dy <= 3 && ch == ' '; ++dy)
+            for (int dx = -4; dx <= 4; ++dx) {
+              if (tile(x + dx, y + dy) != HUB) continue;
+              double hx = x + dx + (tile(x + dx + 1, y + dy) == HUB ? .5 : 0), hy = y + dy;
+              double ang = std::atan2((y - hy) / .68, x - hx), rock = .3 * std::sin(tt * .7);
+              for (int k = 0; k < 4; ++k) {
+                double sp = k * PI / 4 + rock, dd = std::remainder(ang - sp, PI);
+                if (std::abs(dd) < .22) {
+                  double deg = std::fmod(std::fmod(sp * 180 / PI, 180) + 180, 180);
+                  ch = deg < 22 || deg >= 158 ? 0x2500 : deg < 68 ? '\\' : deg < 112 ? 0x2502 : '/';
+                  fg = 0x6A5034;
+                }
+              }
+              break;
+            }
+          break;
+        }
+        case MIRE: {
+          bg = mixc(0x0E1416, 0x16201E, .5 + .5 * std::sin(x * .4 + y * .6 + tt * .8));
+          if (tile(x, y - 1) == PILLAR) bg = mixc(bg, 0x3A403E, .45);  // a pillar's reflection
+          ch = std::fmod(tt * .3 + (hh % 100) / 100.0, 1.0) < .08 ? '~' : ' ';
+          fg = 0x3A4A48;
+          break;
+        }
+        case GRATE: bg = 0x0E100E; ch = '#'; fg = 0x5A5A60; break;
+        case CHASM: {
+          // the floor falls away into the dark; its lip catches the light
+          bg = 0x04050A; ch = ' ';
+          if (tile(x, y - 1) != CHASM && !blocks(tile(x, y - 1))) { ch = 0x2580; fg = 0x3A4446; }
+          break;
+        }
+        case FLOODGATE: {
+          bg = 0x2A1A10; fg = mixc(0x8A4A28, 0xA0602E, nz(int(y)));
+          ch = tile(x, y - 1) == FLOODGATE && tile(x, y + 1) == FLOODGATE ? (y % 2 ? 0x256C : 0x2551) : 0x2593;
+          break;
+        }
+        case GEAR: bg = 0x1C1410; break;
+        case WHEEL: {
+          // the rim of the wheel follows the circle round its hub
+          ch = 0x25A0; fg = 0x7A5A3A; bg = 0x2A1A0C;
+          for (int dy = -4; dy <= 4; ++dy)
+            for (int dx = -6; dx <= 6; ++dx)
+              if (tile(x + dx, y + dy) == HUB) {
+                double ang = std::atan2(-dy / .68, -dx) + PI / 2, deg = std::fmod(std::fmod(ang * 180 / PI, 180) + 180, 180);
+                ch = deg < 22 || deg >= 158 ? 0x2500 : deg < 68 ? '\\' : deg < 112 ? 0x2502 : '/';
+                dy = 9; break;
+              }
+          break;
+        }
+        case HUB: bg = 0x1A1A1C; break;
+        case MOSSWALL: {
+          int course = (x + (y % 2) * 2) / 4;
+          bg = mixc(scale(act.wall, .22 + .08 * ((hash(course, y, 2) % 7) / 7.0)), 0x0E3A30, .5);
+          ch = hh % 2 ? '"' : '*'; fg = mixc(0x5AC0A0, 0xA0FFE0, .5 + .5 * std::sin(tt * .7 + hh % 7)); bright = true;
+          break;
+        }
+        case PIPE: case SPOUT: {
+          int course = (x + (y % 2) * 2) / 4;
+          bg = scale(act.wall, .22 + .08 * ((hash(course, y, 2) % 7) / 7.0));
+          if (t == PIPE) ch = (tile(x - 1, y) == PIPE || tile(x + 1, y) == PIPE) ? 0x2550 : 0x2551;
+          if (t == PIPE && hh % 9 == 0) ch = 0x256C;
+          break;
+        }
+        case PUMP: bg = 0x1E1A18; fg = 0x4A4440; break;
+        case LEVER: bg = floor_bg(); keep = true; break;
+        case EGG: {
+          double gi = .5 + .5 * std::sin(tt * 2 + hh % 9);
+          ch = hh % 3 ? 'o' : 'O'; fg = mixc(0x9A9A80, 0xE0E8C0, gi); bg = mixc(0x1A1C14, 0x3A4430, gi);
+          if (shudder(x, y) && int(tt * 14) % 2) fg = 0xFFFFFF;
+          bright = true;
+          break;
+        }
+        case TIDESTATUE: bg = 0x2A3032; break;
+        case BASIN: {
+          bool up = tile(x, y - 1) == BASIN, dn = tile(x, y + 1) == BASIN, lf = tile(x - 1, y) == BASIN, rt = tile(x + 1, y) == BASIN;
+          bool inU = tile(x, y + 1) == SLUDGE || tile(x, y + 1) == FLOATER || tile(x, y + 1) == TIDESTATUE;
+          bool inD = tile(x, y - 1) == SLUDGE || tile(x, y - 1) == FLOATER || tile(x, y - 1) == TIDESTATUE;
+          fg = 0x6A7270; bg = 0x22282A;
+          if (rt && dn && !up && !lf) ch = 0x2554;
+          else if (lf && dn && !up && !rt) ch = 0x2557;
+          else if (rt && up && !dn && !lf) ch = 0x255A;
+          else if (lf && up && !dn && !rt) ch = 0x255D;
+          else if ((lf || rt) && (inU || inD || !(up || dn))) ch = 0x2550;
+          else if (up || dn) ch = 0x2551;
+          else ch = 0x2550;
+          break;
+        }
+        case COIN: bg = floor_bg(); keep = true; break;
+        case SHAFT: {
+          bg = mixc(0x3A1404, 0x8A3408, .5 + .3 * std::sin(tt * 1.3 + hh % 5));
+          ch = 0x2591; fg = mixc(0xC85A14, 0xFFA040, .5 + .5 * std::sin(tt * 2 + hh % 7)); bright = true;
+          break;
+        }
+        case LAMP: {
+          bg = floor_bg();
+          int st = int(tt * 5 + hh % 7);
+          fg = mixc(0xFFC060, 0xFF8030, nz(int(hh % 11) + st * 7) * .5);
+          bright = true;
+          break;
+        }
+        case SLIME: bg = mixc(floor_bg(), 0x1A2416, .5); break;
         case DOOR: case OPEN: bg = floor_bg(); keep = true; break;
         case STAIRS: case UPSTAIRS: case CHEST: case OPENCHEST: case SHRINE: case USED: case FOUNTAIN:
           bg = floor_bg(); keep = true; break;
@@ -362,6 +515,10 @@ void Client::draw_tiles() {
         if (keep) l = std::max(l, 1.0);
         if (!bright) fg = mixc(mixc(scale(fg, l), 0x101828, std::max(0.0, 1 - l) * .35), scale(0xFF9A48, l), w * .35);
         bg = mixc(scale(bg, l), 0x5A2A0A, w * .5 * std::min(l, 1.2));
+        if (double c = cold[i]; c > 0) {
+          if (!bright) fg = mixc(fg, scale(0x5AE0B0, l), c * .35);
+          bg = mixc(bg, 0x0E3A30, c * .45 * std::min(l, 1.2));
+        }
       } else {
         // remembered, not seen: cold and dim
         fg = mixc(scale(fg, .35), 0x202430, .3);
@@ -449,6 +606,73 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           double k = ph / .35;
           for (int j = 0; j < 3; ++j)
             dot(ex + .5 + (nz(sd + j) - .5) * k * 1.2, ey + .4 - k * 1.4 + k * k * .8, mixc(0xFFF0B0, 0xB0300A, k), 1 - k);
+        }
+        break;
+      }
+      case 'p':
+        // pale spores drifting up and out from the glowing moss
+        for (int j = 0; j < 5; ++j) {
+          double ph = std::fmod(tt * .12 + j / 5.0 + nz(sd + j) * .4, 1.0);
+          int fx = 0, fy = 0;
+          for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) if (!blocks(map[(int(ey) + d4.y) * W + int(ex) + d4.x] - '0')) { fx = d4.x; fy = d4.y; break; }
+          double x = ex + .5 + fx * ph * 1.8 + std::sin(tt * 1.5 + j) * .3, y = ey + .5 + fy * ph * 1.8 - ph * 1.6 + (nz(sd * 3 + j) - .5) * 1.5;
+          dot(x, y, mixc(0xB0FFE0, 0x2A5A4A, ph), .9 * (1 - ph));
+        }
+        break;
+      case 'm':
+        // low mist creeping over the sludge
+        for (int j = 0; j < 3; ++j) {
+          double ph = std::fmod(tt * .05 + j / 3.0 + nz(sd + j), 1.0);
+          double x = ex - 1 + ph * 3 + std::sin(tt * .3 + j) * .4, y = ey + (nz(sd * 7 + j) - .3) + std::sin(tt * .5 + j) * .2;
+          dot(x, y, mixc(0x4A5A5A, 0x8A9A98, std::sin(ph * PI) * .6), .5 * std::sin(ph * PI), j == 0 ? 2 : 1);
+        }
+        break;
+      case 'r': {
+        // a drop from the ceiling into a puddle, and one ring
+        double ph = std::fmod(tt * .25 + nz(sd), 1.0);
+        if (ph < .3) dot(ex + .45, ey - 2.5 + ph / .3 * 3, 0x9AB8D0, .8);
+        else if (ph < .7) {
+          double q = (ph - .3) / .4, rr = .15 + q * .6;
+          for (int j = 0; j < 10; ++j) {
+            double an = j * PI / 5;
+            dot(ex + .5 + std::cos(an) * rr * 1.3, ey + .5 + std::sin(an) * rr * .7, 0x8AB0E0, (1 - q) * .7);
+          }
+        }
+        break;
+      }
+      case 'z':
+        // sludge pouring out of a broken pipe into the pool below, spattering where it lands
+        for (int j = 0; j < 10; ++j) {
+          double ph = std::fmod(tt * .9 + j / 10.0, 1.0);
+          dot(ex + .3 + nz(sd + j) * .4, ey + .7 + ph * 1.2, mixc(0x5A6A3A, 0x1A2014, ph), .9, j % 3 ? 1 : 2);
+        }
+        for (int j = 0; j < 4; ++j) {
+          double ph = std::fmod(tt * 1.3 + j / 4.0, 1.0);
+          dot(ex + .5 + (j % 2 ? 1 : -1) * ph * .9, ey + 1.6 - std::sin(ph * PI) * .5, 0x6A7A44, 1 - ph);
+        }
+        break;
+      case 'h':
+        // ash and embers rising out of the shaft from the dead city
+        for (int j = 0; j < 7; ++j) {
+          double ph = std::fmod(tt * .22 + j / 7.0 + nz(sd + j) * .3, 1.0);
+          double x = ex + .5 + (nz(sd * 5 + j) - .3) * 1.6 + std::sin(tt + j) * .4, y = ey + .8 - ph * 4;
+          dot(x, y, j % 3 ? mixc(0x9A9488, 0x2A2826, ph) : mixc(0xFFB050, 0x6A1A04, ph), 1 - ph);
+        }
+        break;
+      case 'u':
+        // bubbles round a floating corpse
+        for (int j = 0; j < 3; ++j) {
+          double ph = std::fmod(tt * .5 + j / 3.0 + nz(sd + j), 1.0);
+          double an = nz(sd * 3 + j) * 2 * PI, rr = .3 + ph * .9;
+          dot(ex + .5 + std::cos(an) * rr * 1.3, ey + .5 + std::sin(an) * rr * .7, mixc(0xA0C050, 0x2A3418, ph), 1 - ph);
+        }
+        break;
+      case 'q': {
+        // a ripple in the sludge under the grate, following the one on it
+        double ph = std::fmod(tt * .6, 1.0), rr = .3 + ph * 1.2;
+        for (int j = 0; j < 12; ++j) {
+          double an = j * PI / 6;
+          dot(ex + .5 + std::cos(an) * rr * 1.4 - .6, ey + .5 + std::sin(an) * rr * .8 + .4, 0x5A7A4A, (1 - ph) * .6);
         }
         break;
       }

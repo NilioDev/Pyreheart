@@ -42,7 +42,7 @@ if(MSVC)
 endif()
 
 # the rules of the game: no window, no libtcod drawing; also used by the headless tests
-add_library(pyrecore STATIC src/k5.cpp src/loot.cpp src/game.cpp src/dress.cpp src/deep.cpp src/view.cpp)
+add_library(pyrecore STATIC src/k5.cpp src/loot.cpp src/game.cpp src/dress.cpp src/deep.cpp src/cistern.cpp src/view.cpp)
 target_include_directories(pyrecore PUBLIC src)
 target_link_libraries(pyrecore PUBLIC libtcod::libtcod nlohmann_json::nlohmann_json)
 

@@ -59,6 +59,9 @@ json cells_json(const std::vector<P>& cs) { json a = json::array(); for (auto c 
 Game::Game(uint64_t seed) : rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
   // for screenshots and tests: PYREHEART_BOSS=4 starts on that boss's floor, next to it
   if (const char* b = std::getenv("PYREHEART_BOSS")) depth = std::clamp(std::atoi(b), 1, FLOORS);
+  // after the Crypt a dive goes down through the Caves or through the Cistern; PYREHEART_CISTERN=1 or 0 picks one
+  const char* cs = std::getenv("PYREHEART_CISTERN");
+  cistern_ = cs ? cs[0] == '1' : rnd.coin();
   floor = make_floor(depth, false);
 }
 
@@ -258,6 +261,7 @@ void Game::rescale() {
 std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   auto f = std::make_unique<Floor>();
   f->depth = d; f->act = std::clamp((d - 1) / 4, 0, 3); f->rest = rest; f->id = floor_ids_++;
+  if (f->act == 1 && cistern_) f->act = CISTERN;
   Floor* old = floor.release();
   floor.reset(f.release());
   delete old;
@@ -336,8 +340,9 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   }
   while (budget > 0 && !far.empty()) {
     std::string kind = pick_kind();
-    int n = (kind == "rat" || kind == "bat" || kind == "spider") ? rnd.range(2, 4)
-          : (kind == "bonearcher" || kind == "spitter" || kind == "imp" || kind == "caller") ? rnd.range(1, 2) : rnd.range(1, 3);
+    int n = (kind == "rat" || kind == "bat" || kind == "spider" || kind == "leech" || kind == "newt") ? rnd.range(2, 4)
+          : (kind == "bonearcher" || kind == "spitter" || kind == "imp" || kind == "caller" || kind == "acidspitter") ? rnd.range(1, 2)
+                                                                                                                    : rnd.range(1, 3);
     P c = rnd.pick(far);
     for (int i = 0; i < n; ++i) spawn_near(kind, c);
     budget -= n;
@@ -359,13 +364,24 @@ void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
     if (!have || p.floor.size() > plan.floor.size()) { plan = std::move(p); have = true; }
   }
   for (auto& [c, k] : plan.floor)
-    fl.t[c.y * W + c.x] = k == "water" ? (act == 2 ? LAVA : WATER) : k == "shallow" ? (act == 2 ? RUBBLE : SHALLOW)
+    fl.t[c.y * W + c.x] = k == "water" ? (act == 2 ? LAVA : act == CISTERN ? SLUDGE : WATER)
+                        : k == "shallow" ? (act == 2 ? RUBBLE : act == CISTERN ? MIRE : SHALLOW)
                         : k == "rubble" ? RUBBLE : FLOOR;
   for (auto d2 : plan.doors) fl.t[d2.y * W + d2.x] = DOOR;
   fl.up = plan.up; fl.down = plan.down;
+  // deep water, lava or sludge must never shut in the stairs or cut the level in two: the pools by the stairs go
+  // shallow, and if that is not enough, all of them do
+  auto shallow_of = [&](int t) { return t == WATER ? int(SHALLOW) : t == LAVA ? int(RUBBLE) : t == SLUDGE ? int(MIRE) : -1; };
+  for (P e : {plan.up, plan.down})
+    for (int dy = -2; dy <= 2; ++dy)
+      for (int dx = -2; dx <= 2; ++dx)
+        if (int s2 = shallow_of(fl.tile(e.x + dx, e.y + dy)); s2 >= 0) fl.set(e.x + dx, e.y + dy, s2);
+  if (!whole(fl))
+    for (int i = 0; i < W * H; ++i) if (int s2 = shallow_of(fl.t[i]); s2 >= 0) fl.t[i] = s2;
   fl.t[plan.up.y * W + plan.up.x] = UPSTAIRS;
   if (!boss_floor) fl.t[plan.down.y * W + plan.down.x] = STAIRS;
   dress(fl, plan);
+  if (act == CISTERN) dress_cistern(fl, plan);
   std::vector<const k5::Room*> rooms;
   for (auto& r : plan.rooms)
     if (r.kind != "hall" && !r.cells.empty() && !r.cells.count(plan.up)) rooms.push_back(&r);
@@ -577,7 +593,8 @@ void Game::move(Hero& h, int dx, int dy) {
     case DOOR: floor->set(nx, ny, OPEN); return;
     case CHEST: open_chest(h, nx, ny); return;
     case SHRINE: shrine(h, nx, ny); return;
-    case TOMB: case CRACKED: case BIER: case RESTLESS: case FALLEN: smash_dead(h, nx, ny); return;
+    case TOMB: case CRACKED: case BIER: case RESTLESS: case FALLEN: case FLOATER: case EGG: smash_dead(h, nx, ny); return;
+    case LEVER: pull_lever(h, nx, ny); return;
     default: break;
   }
   if (!floor->walk(nx, ny)) return;
@@ -588,6 +605,7 @@ void Game::move(Hero& h, int dx, int dy) {
 
 void Game::arrive(Hero& h) {
   int i = h.y * W + h.x;
+  if (floor->tile(h.x, h.y) == GRATE) under_grate(h);
   auto w = floor->writings.find(i);
   if (w != floor->writings.end()) { h.say(w->second, 0xE6D2A0); floor->writings.erase(w); }
   for (size_t k = 0; k < floor->items.size();) {
