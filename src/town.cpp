@@ -215,32 +215,20 @@ void Client::draw_town_particles(SDL_Renderer* r, double ox, double oy, double c
     int t = tile_of(map[iy * W + ix]);
     return t != data::WALL && t != data::CHIMNEY && t != data::WINDOW && t != data::LIT;
   };
-  // snow in three layers, falling slowly and swaying as it goes: the near flakes soft and star-shaped, the middle ones
-  // small, the far ones fine and dim; now and then a grey flake of ash among the far ones
-  const double u = 1.0 / 8;  // one pixel of the font, in cells
+  // snow in three layers: the near flakes big and quick, the far ones fine and slow; all of them white
   for (int layer = 0; layer < 3; ++layer) {
-    int n = layer == 0 ? 110 : layer == 1 ? 280 : 380;
-    double sp = layer == 0 ? 1.1 : layer == 1 ? .75 : .45;
+    int n = layer == 0 ? 120 : layer == 1 ? 220 : 340;
+    double sp = layer == 0 ? 2.6 : layer == 1 ? 1.7 : 1.0, size = layer == 0 ? 2 : 1;
     for (int k = 0; k < n; ++k) {
       int id = layer * 1000 + k;
-      bool ash = layer == 2 && k % 12 == 0;
-      double fall = sp * (.8 + nz(id * 3) * .45);
-      double sway = std::sin(tt * (.5 + nz(id * 5) * .5) + k * 1.3) * (.4 + layer * .15 + nz(id * 9) * .4);
-      double x = camx_ + std::fmod(nz(id) * 140 + tt * .25 * sp, 140.0) - 10 + sway;
-      double y = camy_ + std::fmod(nz(id * 7) * 80 + tt * fall, 80.0) - 10;
+      double s2 = sp * (.8 + nz(id * 3) * .5);
+      double x = camx_ + std::fmod(nz(id) * 140 + tt * .5 * sp + std::sin(tt * (.6 + nz(id * 5)) + k) * (1.2 + layer * .3), 140.0) - 10;
+      double y = camy_ + std::fmod(nz(id * 7) * 80 + tt * s2, 80.0) - 10;
       double fd = std::hypot((x - fcx) / 1.6, y - fcy);
-      if (fd < 9 || !open(x, y)) continue;  // melted in the heat, or behind a wall
-      double a = std::clamp((fd - 9) / 3, 0.0, 1.0);
-      if (ash) { dot(x, y, 0x8A8478, .5 * a); continue; }
-      if (layer == 0) {  // a soft flake: a bright heart and four faint points
-        dot(x - u, y - u, 0xDCE4F2, .35 * a, 5);  // a soft glow round it
-        dot(x, y, 0xF8FAFF, .95 * a, 3);
-        dot(x - 2 * u, y + u, 0xE0E8F4, .55 * a);
-        dot(x + 4 * u, y + u, 0xE0E8F4, .55 * a);
-        dot(x + u, y - 2 * u, 0xE0E8F4, .55 * a);
-        dot(x + u, y + 4 * u, 0xE0E8F4, .55 * a);
-      } else if (layer == 1) dot(x, y, 0xE8EEF8, .85 * a, 2);
-      else dot(x, y, 0xA8B2C8, .5 * a);
+      if (fd < 9) continue;  // melted in the heat
+      if (!open(x, y)) continue;
+      double a = (layer == 0 ? 1.0 : layer == 1 ? .9 : .75) * std::clamp((fd - 9) / 3, 0.0, 1.0);
+      dot(x, y, 0xFFFFFF, a, size);
     }
   }
   if (fcx >= 0) {
