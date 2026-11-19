@@ -217,6 +217,7 @@ Stats Game::stats(const Hero& h) const {
   st.acc = h.cls->acc + h.lvl + 8 * h.perk("eye") + s("acc");
   st.crit = 5 + 4 * h.perk("eye") + s("crit") + (bow ? 10 * (h.perk("sniper") + h.perk("sharpshooter")) : 0);
   st.armour = ar + s("armour") + 3 * h.perk("hide") + 4 * h.perk("guardian");
+  if (h.sunder > 0) st.armour /= 2;  // split by acid or a smith's hammer
   st.res_f = res("res_fire"); st.res_c = res("res_cold"); st.res_p = res("res_poison");
   st.leech = s("leech"); st.spell = s("spell"); st.fire = s("fire_dmg");
   st.regen = 1 + h.perk("well") + s("regen"); st.thorns = s("thorns");
@@ -498,6 +499,8 @@ MonP Game::spawn(const std::string& key, int x, int y) {
   double k = 1 + .6 * (std::max<size_t>(1, living().size()) - 1);
   m->maxhp = rnd_i(d.hp * k); m->hp = m->maxhp;
   m->energy = rnd.below(100);
+  if (d.has("sleeper")) m->dormant = 1;
+  if (d.has("disguise")) m->hidden = 1;
   floor->mons.push_back(m);
   return m;
 }
@@ -599,7 +602,9 @@ void Game::step(const std::map<int, json>& actions) {
     auto it = heroes.find(id);
     if (it == heroes.end() || !it->second->present()) continue;
     auto a = actions.find(id);
-    act(*it->second, a == actions.end() ? json{{"t", "wait"}} : a->second);
+    Hero& hh = *it->second;
+    if (hh.dazed > 0) { --hh.dazed; hh.say("You reel, and lose the turn.", 0xC0A0E0); continue; }
+    act(hh, a == actions.end() ? json{{"t", "wait"}} : a->second);
     if (state != "play") return;
   }
   check_stairs();
@@ -646,7 +651,9 @@ void Game::move(Hero& h, int dx, int dy) {
     default: break;
   }
   if (!floor->walk(nx, ny)) return;
+  if (h.held > 0) { h.say("You are held fast.", 0xE0C060); return; }
   h.x = nx; h.y = ny;
+  h.moved = turn;
   h.focus = h.perk("skirmisher") ? std::max(0, h.focus - 1) : 0;
   arrive(h);
 }
@@ -742,6 +749,7 @@ void Game::focus_up(Hero& h) {
 }
 
 void Game::bleed(Hero& h, Mon& m, int dmg) {
+  if (m.can("stone")) return;
   bool poison = h.perk("poisoner") > 0;
   m.bleed = poison ? 5 : 3;
   m.bleed_dmg = std::max(m.bleed_dmg, std::max(1, poison ? dmg / 3 : dmg / 4));
@@ -767,6 +775,7 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   bool crit = opening || rnd.below(100) < st.crit;
   if (crit) { d *= opening ? 2.5 : 2; add_fx({{"k", "crit"}, {"x", m.x}, {"y", m.y}}); }
   int dmg = std::max(1, rnd_i(d - m.ar / 2.0));
+  if (ranged && m.can("wall")) { dmg = std::max(1, dmg / 2); tip(h, "wall", "A shield-bearer stops arrows and spells, for itself and whoever stands behind it. Close in."); }
   if (st.fire > 0) dmg += m.def->fire ? st.fire / 2 : st.fire;
   add_fx({{"k", "blood"}, {"x", m.x}, {"y", m.y}, {"src", xy(h.x, h.y)}});
   if (st.leech > 0) h.hp = std::min(st.maxhp, h.hp + std::max(1, dmg * st.leech / 100));
@@ -786,6 +795,7 @@ void Game::melee(Hero& h, Mon& m) {
 }
 
 void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
+  dmg = trait_hurt(m, dmg);
   if (m.spent > 0) dmg = dmg * 3 / 2;
   m.hp -= dmg;
   m.awake = true;
@@ -821,6 +831,15 @@ struct BlowDef { int kind, turns; double mult; bool heavy; };
 const std::map<std::string, BlowDef> BLOWS = {
     {"smash", {BLOW_RED, 2, 1.6, false}}, {"line", {BLOW_RED, 2, 1.6, false}}, {"sweep", {BLOW_RED, 2, 2.0, true}},
     {"toll", {BLOW_PURPLE, 3, 1.5, true}}, {"pyre", {BLOW_GOLD, 3, 2.2, true}},
+    // the tricks of the common foes (traits.cpp): mostly one turn to step out of the way
+    {"lob", {BLOW_RED, 1, 1.0, false}}, {"jar", {BLOW_RED, 2, 1.1, false}}, {"leap", {BLOW_RED, 1, 1.3, false}},
+    {"hook", {BLOW_RED, 1, .6, false}}, {"reach", {BLOW_RED, 1, 1.3, false}}, {"swing", {BLOW_RED, 1, 1.4, false}},
+    {"grab", {BLOW_RED, 1, .8, false}}, {"shriek", {BLOW_RED, 2, .6, false}}, {"bolt", {BLOW_RED, 1, 1.5, false}},
+};
+const std::map<std::string, std::string> TRICK_SAYS = {
+    {"lob", "throws something high over the others."}, {"jar", "hurls a sealed jar."}, {"leap", "crouches to spring."},
+    {"hook", "swings a hooked chain."}, {"reach", "levels its long weapon."}, {"swing", "draws back for a wide swing."},
+    {"grab", "opens its iron door to you."}, {"shriek", "opens all its mouths."}, {"bolt", "takes aim along a line."},
 };
 // what the players read when it starts, by foe; "" for anyone else
 const std::map<std::string, std::map<std::string, std::string>> BLOW_SAYS = {
@@ -877,12 +896,13 @@ bool Game::wind_up(Mon& m, Hero& h, const std::string& name) {
       P c = rnd.pick(near);
       for (int dy = 0; dy <= 1; ++dy) for (int dx = 0; dx <= 1; ++dx) add(c.x + dx, c.y + dy);
     }
-  }
+  } else if (!trait_cells(m, h, name, b)) return false;
   if (b.cells.empty()) return false;
   m.blow = b;
   std::string says = "rears back for a heavy blow.";
   auto bs = BLOW_SAYS.find(m.def->key);
   if (bs != BLOW_SAYS.end() && bs->second.count(name)) says = bs->second.at(name);
+  else if (TRICK_SAYS.count(name)) says = TRICK_SAYS.at(name);
   int col = b.kind == BLOW_RED ? 0xFF7060 : b.kind == BLOW_PURPLE ? 0xD0A0FF : 0xFFD060;
   say_near(m.x, m.y, cap(the(m)) + " " + says, col);
   for (auto* o : active()) {
@@ -915,8 +935,9 @@ void Game::land(Mon& m) {
   }
   else add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 6}, {"col", col}, {"hollow", true}});
   // a seen blow never kills from full life
-  for (auto* o : hit) hero_hurt(*o, &m, std::min(b.dmg, stats(*o).maxhp * 11 / 20), b.elem);
-  if (hit.empty()) say_near(m.x, m.y, cap(the(m)) + " strikes nothing.", 0xA0A0A0);
+  if (TRICK_SAYS.count(b.name)) trait_land(m, b, hit);
+  else for (auto* o : hit) hero_hurt(*o, &m, std::min(b.dmg, stats(*o).maxhp * 11 / 20), b.elem);
+  if (hit.empty() && !TRICK_SAYS.count(b.name)) say_near(m.x, m.y, cap(the(m)) + " strikes nothing.", 0xA0A0A0);
   if (b.heavy) {
     m.spent = 2;
     say_near(m.x, m.y, cap(the(m)) + " is spent, and stands open.", 0xE0D080);
@@ -951,6 +972,7 @@ void Game::kill(Mon& m, Hero* by) {
     for (auto* h : active()) if (cheb(h->x, h->y, m.x, m.y) <= 1) hero_hurt(*h, nullptr, 4 + lvl, "fire");
   }
   for (auto* h : living()) gain_xp(*h, m.xp);
+  trait_death(m);
   drops(m);
   if (floor->boss.get() == &m) {
     say_all(lore::BOSS_DIES.at(m.def->key), 0xFFD27F);
@@ -1086,7 +1108,7 @@ void Game::path(const Hero& h, int tx, int ty, int range, bool through, std::vec
     if (cheb(x, y, h.x, h.y) > range) break;
     if (floor->opaque(x, y)) break;
     cells.push_back({x, y});
-    if (auto m = mon_at(x, y)) { hit.push_back(m); if (!through) return; }
+    if (auto m = mon_at(x, y)) { hit.push_back(m); if (!through || m->can("wall")) return; }
     if (!through && x == tx && y == ty) break;
   }
 }
@@ -1156,6 +1178,7 @@ void Game::skill(Hero& h, int n, int x, int y) {
     add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xFF8C28}, {"ch", "*"}});
     if (hit.empty()) return;
     MonP m = hit[0];
+    ignite({m->x, m->y});
     int dmg = rnd_i((rnd.range(4, 9) + 1.3 * h.lvl) * sp * (h.perk("pyromancer") ? 1.3 : 1.0));
     if (m->def->fire) dmg /= 2;
     if (m->frozen > 0) {
@@ -1242,6 +1265,8 @@ void Game::classes_tick() {
     }
   }
   for (auto& g : floor->ground) {
+    if (g.owner == 0) continue;  // the foes' ground: see traits_tick
+    if (g.kind == G_EMBER) ignite(g.p);
     auto ms = floor->mons;
     for (auto& m : ms) {
       if (m->hp <= 0 || m->x != g.p.x || m->y != g.p.y) continue;
@@ -1252,7 +1277,7 @@ void Game::classes_tick() {
     }
     --g.turns;
   }
-  floor->ground.erase(std::remove_if(floor->ground.begin(), floor->ground.end(), [](const Ground& g) { return g.turns <= 0; }), floor->ground.end());
+  floor->ground.erase(std::remove_if(floor->ground.begin(), floor->ground.end(), [](const Ground& g) { return g.turns <= 0 && g.owner != 0; }), floor->ground.end());
   auto ms = floor->mons;
   for (auto& m : ms) {
     if (m->hp <= 0) continue;
@@ -1649,6 +1674,11 @@ void Game::mon_turn(Mon& m) {
   if (!h) return;
   int d = cheb(h->x, h->y, m.x, m.y);
   bool sees = h->sees(m.x, m.y);
+  // a statue stands until someone comes close; a heap of gold until someone is next to it
+  if (m.dormant || m.hidden) {
+    if (d <= (m.hidden ? 1 : 2)) wake(m, "");
+    return;
+  }
   if (m.rank == "boss" && !m.def->moves.empty() && sees && --m.cool <= 0) {
     if (m.deck.empty()) {
       auto it = BOSS_DECKS.find(m.def->key);
@@ -1665,6 +1695,7 @@ void Game::mon_turn(Mon& m) {
   } else if ((m.rank == "champion" || m.rank == "unique") && sees && d <= 2 && --m.cool <= 0) {
     if (wind_up(m, *h, "smash")) { m.cool = rnd.range(6, 8); return; }
   }
+  if (m.rank != "boss" && trait_turn(m, *h, d, sees)) return;
   if (m.def->ai == "erratic" && rnd.real() < .4) { step_random(m); return; }
   if (m.def->ai == "ranged" && sees && d >= 2 && d <= m.def->rng && rnd.real() < .75) {
     std::vector<P> line;
@@ -1681,8 +1712,10 @@ void Game::mon_turn(Mon& m) {
     }
   }
   if (d <= 1) { mon_hit(m, *h, false); return; }
-  if (m.pinned > 0) return;
-  step_toward(m);
+  if (m.pinned > 0 || m.can("rooted")) return;
+  P from{m.x, m.y};
+  if (!trait_step(m, *h)) step_toward(m);
+  if (P{m.x, m.y} != from) trait_moved(m, from);
   trod(m);
 }
 
@@ -1719,8 +1752,10 @@ void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   if (!ranged) add_fx({{"k", "swing"}, {"src", xy(m.x, m.y)}, {"cells", json::array({xy(h.x, h.y)})}});
   if (rnd.below(100) >= chance) { if (h.perk("riposte")) m.open = 2; return; }
   int dmg = std::max(1, rnd.range(m.lo, m.hi) - st.armour / 6);
+  if (m.can("fervour")) dmg = rnd_i(dmg * (1 + .6 * (1 - double(m.hp) / m.maxhp)));  // the more it bleeds, the harder
   if (m.def->fire || m.has("Fire-blooded")) dmg += rnd_i(rnd.range(m.lo, m.hi) * .3 * (1 - st.res_f / 100.0));
   hero_hurt(h, &m, dmg, "");
+  if (!h.dead) trait_hit(m, h, dmg);
   if (m.def->poison > 0 || m.has("Venomous")) {
     int p = rnd_i(std::max(m.def->poison, 2 + lvl / 2) * (1 - st.res_p / 100.0));
     if (p > 0) { h.poison = 4; h.poison_dmg = std::max(h.poison_dmg, p); }
@@ -1736,13 +1771,14 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   int dmg = dmg0;
   if (kind == "fire") dmg = rnd_i(dmg * (1 - st.res_f / 100.0));
   if (kind == "cold") dmg = rnd_i(dmg * (1 - st.res_c / 100.0));
+  if (h.brand > 0) dmg = rnd_i(dmg * 1.25);
   if (h.shield > 0) dmg = std::max(1, dmg / 2);
   if (h.standfast > 0) dmg = std::max(1, dmg / 2);
   if (h.cls->fury()) dmg = std::max(1, rnd_i(dmg * (1 - .02 * h.mana)));  // fury dulls the pain
   if (h.cls->fury() && m) h.mana = std::min(10, h.mana + (h.perk("guardian") ? 2 : 1));
   h.hp -= dmg;
   add_fx({{"k", "blood"}, {"x", h.x}, {"y", h.y}, {"src", xy(m ? m->x : h.x, m ? m->y : h.y - 1)}});
-  h.say((m ? cap(the(*m)) : std::string(kind == "fire" ? "Fire" : "Poison")) + " hurts you (" + std::to_string(dmg) + ").", 0xFF8080);
+  h.say((m ? cap(the(*m)) : std::string(kind == "fire" ? "Fire" : kind == "bleed" ? "Bleeding" : "Poison")) + " hurts you (" + std::to_string(dmg) + ").", 0xFF8080);
   if (h.hp <= stats(h).maxhp / 3 && h.heal > 0) tip(h, "quaff", "You are badly hurt. Drink a healing potion: [q].");
   if (h.hp <= 0) {
     h.hp = 0;
@@ -1818,18 +1854,26 @@ void Game::tick() {
   for (auto& m : floor->mons)
     if (m->has("Regenerating") && m->hp < m->maxhp) m->hp = std::min(m->maxhp, m->hp + std::max(1, m->maxhp / 50));
   classes_tick();
+  traits_tick();
 }
 
 void Game::look() {
   TCOD_Map* map = TCOD_map_new(W, H);
   for (int y = 0; y < H; ++y)
     for (int x = 0; x < W; ++x) TCOD_map_set_properties(map, x, y, !floor->opaque(x, y), floor->walk(x, y));
+  for (auto& g : floor->ground) if (g.kind == G_SMOKE) TCOD_map_set_properties(map, g.p.x, g.p.y, false, true);
   // for screenshots: PYREHEART_WHOLE shows the whole map at once, and nothing wakes for it
   static const bool whole_view = std::getenv("PYREHEART_WHOLE") != nullptr;
   for (auto& [id, hp] : heroes) {
     Hero& h = *hp;
     if (h.away) continue;
     int sight = floor->deep ? SIGHT + 5 : SIGHT;  // the lava lights the Deep: you see further there
+    bool dim = false;
+    for (auto& m : floor->mons) if (m->awake && m->can("dim") && cheb(m->x, m->y, h.x, h.y) <= 5) dim = true;
+    if (dim) sight = 3;
+    else if (h.ashen > 0) sight = std::min(sight, 4);
+    if (dim && !h.dimmed) { h.say("Your light gutters.", 0xC0A060); tip(h, "dim", "A lantern wraith eats the light. Kill it, and your light flares up again."); }
+    h.dimmed = dim;
     TCOD_map_compute_fov(map, h.x, h.y, sight, true, FOV_SYMMETRIC_SHADOWCAST);
     for (int y = 0; y < H; ++y)
       for (int x = 0; x < W; ++x) {
@@ -1838,7 +1882,7 @@ void Game::look() {
       }
     if (!h.present()) continue;
     for (auto& m : floor->mons)
-      if (!m->awake && !whole_view && h.sees(m->x, m->y)) {
+      if (!m->awake && !m->dormant && !m->hidden && !whole_view && h.sees(m->x, m->y)) {
         m->awake = true;
         if (m->rank == "champion") tip(h, "champion", "Blue foes are champions: stronger, and they carry better things.");
         if (m->rank == "unique") tip(h, "unique", "A gold name is a unique foe. Look at foes with [l].");

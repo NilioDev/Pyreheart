@@ -91,10 +91,11 @@ static json choose(Game& g, Hero& h) {
   MonP seen;
   int visible = 0;
   for (auto& m : f.mons)
-    if (h.sees(m->x, m->y) || cheb(m->x, m->y, h.x, h.y) <= 1) {
+    if ((h.sees(m->x, m->y) || cheb(m->x, m->y, h.x, h.y) <= 1) && !(m->dormant || m->hidden)) {  // statues and gold wait
       ++visible;
       if (!seen || cheb(h.x, h.y, m->x, m->y) < cheb(h.x, h.y, seen->x, seen->y)) seen = m;
     }
+  if (seen && std::getenv("BOTDBG") && g.turn > 19990) std::printf("seen %s at %d,%d tile %d dormant %d hidden %d\n", seen->name.c_str(), seen->x, seen->y, f.tile(seen->x, seen->y), seen->dormant, seen->hidden);
   if (seen) {
     if (!h.cls->fury() && h.mana < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
     int d = cheb(h.x, h.y, seen->x, seen->y);

@@ -1052,8 +1052,16 @@ void Client::draw_map() {
       int X = sx(g[0]), Y = sy(g[1]);
       if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
       bool flick = std::fmod(now() * 3 + g[0].get<int>() * .37, 1.0) < .5;
-      if (g[2] == 0) put(X, Y, '^', flick ? 0xFF8C28 : 0xFFC850, 0x3C1406);
-      else put(X, Y, 0x00B7, 0xFFE68C, 0x3C3414);
+      int k = g[2];
+      bool slow = std::fmod(now() * .8 + g[0].get<int>() * .21 + g[1].get<int>() * .13, 1.0) < .5;
+      if (k == 0 || k == 7) put(X, Y, '^', flick ? 0xFF8C28 : 0xFFC850, 0x3C1406);       // embers, burning grease
+      else if (k == 1) put(X, Y, 0x00B7, 0xFFE68C, 0x3C3414);                              // hallowed
+      else if (k == 2) put(X, Y, slow ? 0x2591 : 0x2592, 0x7AB048, 0x14280C);              // gas
+      else if (k == 3) put(X, Y, '~', slow ? 0xD8DC48 : 0xB8C030, 0x2C2E08);               // acid
+      else if (k == 4) put(X, Y, '~', 0x403428, 0x0E0B08);                                 // grease
+      else if (k == 5) put(X, Y, '~', flick ? 0xFF8C28 : 0xE06018, 0x4A1606);              // slag
+      else if (k == 6) put(X, Y, ',', 0x3C2C1C, 0x0C0906);                                 // tar
+      else if (k == 8) put(X, Y, slow ? 0x2592 : 0x2593, 0x9A968C, 0x2E2C28);              // smoke
     }
   if (s.contains("runes"))
     for (auto& g : s["runes"]) {
@@ -1081,7 +1089,19 @@ void Client::draw_map() {
   for (auto& e : s["ents"]) {
     int col = e["col"];
     if (e.value("frozen", false)) col = 0x9CD2FF;
-    put(sx(e["x"]), sy(e["y"]), e["ch"].get<int>(), col);
+    int X = sx(e["x"]), Y = sy(e["y"]);
+    if (e.value("chill", false))  // the cold around it, as a blue tint on the floor
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+          if ((dx || dy) && con_.in_bounds({X + dx, Y + dy})) {
+            auto& t = con_.at({X + dx, Y + dy});
+            t.bg = {uint8_t(t.bg.r * .6 + 20), uint8_t(t.bg.g * .6 + 40), uint8_t(t.bg.b * .6 + 80), 255};
+          }
+    int bg = -1;
+    if (e.value("braced", false)) bg = 0x6A5A3A;  // its guard up
+    if (e.value("hidden", false) && std::fmod(now() * .37 + e["id"].get<int>() * .61, 6.0) < .12) col = 0xB89400;  // a twitch
+    put(X, Y, e["ch"].get<int>(), col, bg);
+    if (e.value("listen", false) && con_.in_bounds({X, Y - 1})) put(X, Y - 1, '?', 0xE0E0A0);
   }
   for (auto& h : s["heroes"]) {
     if (h.value("gone", false)) continue;
@@ -1157,6 +1177,12 @@ void Client::draw_side(int x, int y, int w, int h) {
   if (me.value("poison", false)) st += "poisoned ";
   if (me.value("numb", false)) st += "numb ";
   if (me.value("shield", false)) st += "shielded ";
+  if (me.value("held", false)) st += "held ";
+  if (me.value("latched", false)) st += "latched ";
+  if (me.value("bleeding", false)) st += "bleeding ";
+  if (me.value("branded", false)) st += "branded ";
+  if (me.value("sundered", false)) st += "split armour ";
+  if (me.value("dazed", false)) st += "dazed ";
   if (!st.empty()) text(x + 1, r, st, 0x96E65A);
   ++r;
   std::string where = snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());

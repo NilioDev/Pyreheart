@@ -21,6 +21,28 @@ static std::string describe(const Mon& m) {
   if (m.def->poison > 0) add("its bite poisons");
   if (m.def->fire) add("it burns");
   if (m.def->cold) add("its touch numbs");
+  // what its trick is, in a line
+  static const std::vector<std::pair<std::string, std::string>> TRICKS = {
+      {"burst:gas", "it bursts into a cloud of gas as it dies"}, {"burst:acid", "it bursts into acid as it dies"},
+      {"embers", "its coal sets grease alight"}, {"trail:grease", "it leaves a trail of grease that burns"},
+      {"trail:slag", "it leaves molten slag behind it"}, {"hears", "it is blind: stand still and it loses you"},
+      {"heavy", "it winds up heavy blows"}, {"lob:tar", "it throws tar that sticks you fast"},
+      {"lob:acid", "it throws acid that splits your armour"}, {"lob:shard", "it throws glowing shards over the others"},
+      {"lob:jar", "it throws jars; a spirit may come out"}, {"leap", "it springs at you from 3 away"},
+      {"latch", "it latches on and drinks your life; step away"}, {"swims", "it swims through the sludge"},
+      {"brace", "its shell takes most blows; strike when it strikes"}, {"sunder", "its hammer splits your armour"},
+      {"stone", "stone: it does not bleed"}, {"cough", "it coughs ash: you see less"}, {"skittish", "it strikes and runs"},
+      {"dim", "near it your light shrinks"}, {"sleeper", "it stands like a statue until you come near"},
+      {"rooted", "it never moves"}, {"disguise", "it looks like a heap of gold"}, {"hold", "its bite holds you"},
+      {"ghost", "it goes through walls"}, {"rich", "it is heavy with gold"}, {"bleed", "its bite makes you bleed"},
+      {"bolt", "it shoots heavy bolts along a line"}, {"reach", "its pike strikes from 2 away"},
+      {"wall", "its shield stops arrows and spells"}, {"sweep", "it swings at all in front of it"},
+      {"knock", "its blow throws you back"}, {"hook", "it hooks you with a chain and drags you in"},
+      {"swarm", "it breaks into rats when hurt"}, {"grab", "it shuts you in its cage"}, {"brand", "its brand makes you hurt more"},
+      {"fervour", "it hits harder the more it bleeds"}, {"incense", "its smoke hides the dead and heals them"},
+      {"chill", "next to it you grow numb"}, {"shriek", "it shrieks: all within 2 reel"}, {"float", "it floats over everything"},
+  };
+  for (auto& [k, v] : TRICKS) if (m.def->has(k)) add(v);
   return out;
 }
 
@@ -63,12 +85,24 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   for (int i = 0; i < W * H; ++i) if (h.vis[i]) vis[i] = '1';
   out["vis"] = vis;
   json ents = json::array();
-  for (auto& m : f.mons)
-    if (h.sees(m->x, m->y))
-      ents.push_back({{"id", m->id}, {"x", m->x}, {"y", m->y}, {"ch", m->def->ch}, {"col", m->col}, {"name", m->name},
-                      {"hp", m->hp}, {"max", m->maxhp}, {"rank", m->rank}, {"frozen", m->frozen > 0}, {"stun", m->stun > 0},
-                      {"about", describe(*m)}, {"spent", m->spent > 0}, {"bleed", m->bleed > 0}, {"pinned", m->pinned > 0},
-                      {"busy", g.busy(*m, h)}});
+  for (auto& m : f.mons) {
+    if (!h.sees(m->x, m->y)) continue;
+    if (m->hidden) {  // a mimic is a heap of gold like any other until it moves
+      ents.push_back({{"id", m->id}, {"x", m->x}, {"y", m->y}, {"ch", int('$')}, {"col", 0xFFD700}, {"name", "gold"}, {"hp", 1}, {"max", 1},
+                      {"rank", "npc"}, {"about", ""}, {"hidden", true}});
+      continue;
+    }
+    json e = {{"id", m->id}, {"x", m->x}, {"y", m->y}, {"ch", m->def->ch}, {"col", m->dormant ? 0x8C8A86 : m->col},
+              {"name", m->dormant ? "a still figure of stone" : m->name},
+              {"hp", m->hp}, {"max", m->maxhp}, {"rank", m->rank}, {"frozen", m->frozen > 0}, {"stun", m->stun > 0},
+              {"about", describe(*m)}, {"spent", m->spent > 0}, {"bleed", m->bleed > 0}, {"pinned", m->pinned > 0},
+              {"busy", g.busy(*m, h)}};
+    if (m->listen) e["listen"] = true;
+    if (m->brace > 0) e["braced"] = true;
+    if (m->awake && m->can("chill")) e["chill"] = true;
+    if (m->dormant) e["dormant"] = true;
+    ents.push_back(e);
+  }
   json runes = json::array();
   for (auto& r : f.runes) if (h.sees(r.p.x, r.p.y) || r.owner == h.pid) runes.push_back({r.p.x, r.p.y, r.owner});
   out["runes"] = runes;
@@ -138,7 +172,8 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                {"hp", h.hp}, {"maxhp", st.maxhp}, {"mana", h.mana}, {"maxmana", st.maxmana}, {"lvl", h.lvl}, {"xp", h.xp},
                {"next", g.need(h.lvl)}, {"prev", h.lvl > 1 ? g.need(h.lvl - 1) : 0}, {"gold", h.gold}, {"heal", h.heal},
                {"manap", h.mana_pots}, {"dead", h.dead}, {"gone", h.gone}, {"shopping", h.shopping}, {"poison", h.poison > 0},
-               {"numb", h.numb > 0}, {"shield", h.shield > 0}, {"dmg", dmg}, {"armour", st.armour}, {"acc", st.acc},
+               {"numb", h.numb > 0}, {"shield", h.shield > 0}, {"held", h.held > 0}, {"latched", h.latched > 0},
+               {"bleeding", h.bleed > 0}, {"branded", h.brand > 0}, {"sundered", h.sunder > 0}, {"dazed", h.dazed > 0}, {"dmg", dmg}, {"armour", st.armour}, {"acc", st.acc},
                {"crit", st.crit}, {"res", {st.res_f, st.res_c, st.res_p}}, {"equip", equip}, {"pack", pack}, {"perks", perks},
                {"choice", choice}, {"skills", skills}, {"pool", h.cls->res}, {"focus", h.focus}, {"standfast", h.standfast}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
   if (h.shopping) {
