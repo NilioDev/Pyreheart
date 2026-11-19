@@ -140,7 +140,7 @@ inline const std::vector<MonDef> MONSTERS = {
     {"pikeman", "burned pikeman", 0x70, 0xB48C6E, 46, 8, 14, 74, 6, 100, 32, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, true, {"reach"}},
     {"shieldbearer", "soot-shield bearer", 0x64, 0x9696A0, 64, 6, 11, 70, 10, 80, 34, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, true, {"wall"}},
     {"drillbrute", "drill-yard brute", 0x74, 0xC86E50, 85, 10, 17, 68, 6, 80, 40, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false, {"sweep", "knock"}},
-    {"ironcaptain", "the Iron-Captain", 0x49, 0xE67850, 540, 11, 19, 86, 12, 100, 600, "melee", 1, 0x2A, 0xFFFFFF, true, false, 0, false, false, {"rally", "charge", "brace"}, true, {}},
+    {"ironcaptain", "the Iron-Captain", 0x49, 0xE67850, 540, 11, 19, 86, 12, 100, 600, "melee", 1, 0x2A, 0xFFFFFF, true, false, 0, false, false, {"rally", "charge", "brace", "summon:shieldbearer"}, true, {}},
     {"prisoner", "chain-dragged prisoner", 0x7A, 0xAA8C82, 44, 6, 11, 70, 3, 80, 28, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, true, {"hook"}},
     {"ratswarm", "cell-rat swarm", 0x72, 0xAA6E64, 40, 5, 9, 72, 1, 110, 26, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false, {"swarm"}},
     {"turnkey", "scarred turnkey", 0x64, 0x96826E, 56, 7, 13, 72, 6, 100, 32, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, true, {"hears", "sweep"}},

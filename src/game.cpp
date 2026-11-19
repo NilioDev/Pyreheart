@@ -822,6 +822,24 @@ const std::map<std::string, std::array<std::vector<std::string>, 3>> BOSS_DECKS 
     {"furnace", {{{"flame", "smash", "summon", "line"},
                   {"line", "sweep", "flame", "summon", "smash"},
                   {"pyre", "line", "flame", "summon", "sweep"}}}},
+    {"sluicekeeper", {{{"flood", "spit", "chain", "summon"},
+                       {"flood", "chain", "smash", "summon", "spit"},
+                       {"flood", "chain", "sweep", "flood", "summon", "spit"}}}},
+    {"ashmayor", {{{"ashbreath", "smash", "summon", "line"},
+                  {"ashbreath", "line", "summon", "smash", "slam"},
+                  {"ashbreath", "sweep", "summon", "line", "toll"}}}},
+    {"hoardwarden", {{{"ingot", "arms", "summon", "smash"},
+                     {"ingot", "arms", "line", "summon", "ingot"},
+                     {"ingot", "sweep", "arms", "pyre", "summon"}}}},
+    {"ironcaptain", {{{"smash", "charge", "rally", "line"},
+                     {"charge", "sweep", "rally", "line", "brace"},
+                     {"brace", "smash", "charge", "sweep", "rally", "brace"}}}},
+    {"headgaoler", {{{"chain", "smash", "summon", "chain"},
+                    {"chain", "sweep", "summon", "line", "smash"},
+                    {"chain", "sweep", "toll", "summon", "chain"}}}},
+    {"prelate", {{{"void", "line", "summon", "smash"},
+                 {"void", "toll", "line", "summon", "sweep"},
+                 {"void", "pyre", "line", "toll", "summon"}}}},
     {"ashenking", {{{"nova", "smash", "line", "blink", "summon"},
                     {"toll", "smash", "line", "blink", "summon", "sweep"},
                     {"pyre", "toll", "line", "blink", "summon", "smash"}}}},
@@ -835,11 +853,17 @@ const std::map<std::string, BlowDef> BLOWS = {
     {"lob", {BLOW_RED, 1, 1.0, false}}, {"jar", {BLOW_RED, 2, 1.1, false}}, {"leap", {BLOW_RED, 1, 1.3, false}},
     {"hook", {BLOW_RED, 1, .6, false}}, {"reach", {BLOW_RED, 1, 1.3, false}}, {"swing", {BLOW_RED, 1, 1.4, false}},
     {"grab", {BLOW_RED, 1, .8, false}}, {"shriek", {BLOW_RED, 2, .6, false}}, {"bolt", {BLOW_RED, 1, 1.5, false}},
+    // and the great foes' own
+    {"web", {BLOW_RED, 2, .5, false}}, {"flood", {BLOW_RED, 2, 1.2, false}}, {"chain", {BLOW_RED, 1, .7, false}},
+    {"ingot", {BLOW_RED, 2, 1.4, false}}, {"charge", {BLOW_RED, 1, 1.5, false}}, {"ashbreath", {BLOW_PURPLE, 2, .5, false}},
 };
 const std::map<std::string, std::string> TRICK_SAYS = {
     {"lob", "throws something high over the others."}, {"jar", "hurls a sealed jar."}, {"leap", "crouches to spring."},
     {"hook", "swings a hooked chain."}, {"reach", "levels its long weapon."}, {"swing", "draws back for a wide swing."},
     {"grab", "opens its iron door to you."}, {"shriek", "opens all its mouths."}, {"bolt", "takes aim along a line."},
+    {"web", "spins a net of greasy threads."}, {"flood", "hauls on the sluice wheel. Black sludge comes in waves!"},
+    {"chain", "swings his chain."}, {"ingot", "hurls a white-hot ingot."}, {"charge", "lowers the red-hot hammer and charges."},
+    {"ashbreath", "draws a breath of ash. Break it, or the hall goes dark!"},
 };
 // what the players read when it starts, by foe; "" for anyone else
 const std::map<std::string, std::map<std::string, std::string>> BLOW_SAYS = {
@@ -849,6 +873,15 @@ const std::map<std::string, std::map<std::string, std::string>> BLOW_SAYS = {
                    {"toll", "begins to keen. Break it!"}}},
     {"furnace", {{"smash", "lifts a fist of slag."}, {"line", "opens its grate toward you."}, {"sweep", "glows white. Get clear!"},
                  {"pyre", "roars, and the whole hall begins to burn. Find the gold!"}}},
+    {"ashmayor", {{"smash", "lifts the iron staff."}, {"line", "points the staff down the hall."}, {"sweep", "swings the staff round."},
+                  {"toll", "calls on the dead of his city. Break it!"}}},
+    {"hoardwarden", {{"smash", "brings the vault key down."}, {"line", "flings a stream of molten coin."}, {"sweep", "heaves the whole mound."},
+                     {"pyre", "melts his hoard. Find the gold that is not molten!"}}},
+    {"ironcaptain", {{"smash", "raises the warhammer."}, {"line", "points the hammer: the ranks surge."}, {"sweep", "swings the hammer round."}}},
+    {"headgaoler", {{"smash", "lifts the broken manacle."}, {"line", "flings a chain along the floor."}, {"sweep", "whirls his chains."},
+                    {"toll", "beats the manacle on the floor. Break it!"}}},
+    {"prelate", {{"smash", "spreads his frozen hands."}, {"line", "opens his ribs at you."}, {"sweep", "turns, and the cold spreads."},
+                 {"toll", "begins a black prayer. Break it!"}, {"pyre", "opens the void in his chest. Find the gold!"}}},
     {"ashenking", {{"smash", "raises the black blade."}, {"line", "points, and the frost gathers."}, {"sweep", "draws the cold around him."},
                    {"toll", "speaks a word of the old dwarves. Break it!"}, {"pyre", "opens his chest. The Pyreheart blazes. Find the gold!"}}},
 };
@@ -917,6 +950,7 @@ bool Game::wind_up(Mon& m, Hero& h, const std::string& name) {
 void Game::land(Mon& m) {
   Blow b = m.blow;
   m.blow = {};
+  m.brace = 0;  // a raised shield comes down to strike
   auto on = [&](Hero* o) { for (auto& c : b.cells) if (c.x == o->x && c.y == o->y) return true; return false; };
   std::vector<Hero*> hit;
   for (auto* o : active()) {
@@ -1667,6 +1701,7 @@ void Game::mon_turn(Mon& m) {
   if (!m.awake) return;
   if (m.blow.turns > 0) return;               // winding up: it does nothing else
   if (m.spent > 0) { --m.spent; return; }     // open after a great blow
+  if (m.rank == "boss" && m.brace > 0) --m.brace;
   if (m.surprised > 0) { --m.surprised; return; }
   if (m.lost > 0) { --m.lost; if (m.pinned <= 0) { step_random(m); trod(m); } return; }
   Hero* h = nearest_hero(m, true);
@@ -1799,7 +1834,7 @@ bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
     if (n >= 6) return false;
     for (int i = 0; i < 2; ++i) {
       P c;
-      if (free_near(m.x, m.y, 2, c)) if (auto s = spawn(mv.substr(7), c.x, c.y)) { s->summoned = true; s->awake = true; }
+      if (free_near(m.x, m.y, 2, c)) if (auto s = spawn(mv.substr(7), c.x, c.y)) { s->summoned = true; s->awake = true; s->dormant = s->hidden = 0; }
     }
     add_fx({{"k", "inward"}, {"x", m.x}, {"y", m.y}, {"col", m.col}});
     say_near(m.x, m.y, cap(the(m)) + " calls, and things answer.", m.col);
@@ -1827,6 +1862,38 @@ bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
     if (d > 3) return false;
     add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 3}, {"col", 0xFF7A28}, {"hollow", true}});
     for (auto* o : active()) if (cheb(o->x, o->y, m.x, m.y) <= 3) hero_hurt(*o, &m, rnd.range(m.lo, m.hi) * 3 / 4, "fire");
+  } else if (mv == "rally") {  // the Iron-Captain calls his ranks: two pikemen, and all near him quicken
+    for (int i = 0; i < 2; ++i) {
+      P c;
+      if (free_near(m.x, m.y, 2, c)) if (auto s2 = spawn("pikeman", c.x, c.y)) { s2->summoned = true; s2->awake = true; }
+    }
+    for (auto& o : floor->mons) if (o.get() != &m && cheb(o->x, o->y, m.x, m.y) <= 6) o->energy += 100;
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 3}, {"col", 0xE07850}, {"sign", "sound"}});
+    say_near(m.x, m.y, cap(the(m)) + " roars, and the ranks close up around him.", 0xE07850);
+  } else if (mv == "arms") {  // six arms: every hero next to it
+    if (d > 1) return false;
+    add_fx({{"k", "spin"}, {"x", m.x}, {"y", m.y}});
+    for (auto* o : active()) if (cheb(o->x, o->y, m.x, m.y) <= 1) hero_hurt(*o, &m, rnd.range(m.lo, m.hi), "");
+    say_near(m.x, m.y, "Six arms lash out of the gold.", 0xFFD060);
+  } else if (mv == "void") {  // the cold in the Prelate's chest pulls everyone two steps nearer
+    bool moved = false;
+    for (auto* o : active()) {
+      if (cheb(o->x, o->y, m.x, m.y) > 8 || !o->sees(m.x, m.y)) continue;
+      for (int k = 0; k < 2; ++k) {
+        int dx = (m.x > o->x) - (m.x < o->x), dy = (m.y > o->y) - (m.y < o->y);
+        int nx = o->x + dx, ny = o->y + dy;
+        if (cheb(nx, ny, m.x, m.y) < 1 || !floor->walk(nx, ny) || mon_at(nx, ny) || hero_at(nx, ny)) break;
+        o->x = nx; o->y = ny; moved = true;
+      }
+      o->numb = 3;
+      arrive(*o);
+    }
+    if (!moved) return false;
+    add_fx({{"k", "inward"}, {"x", m.x}, {"y", m.y}, {"col", 0x9CD2FF}});
+    say_near(m.x, m.y, "The void in " + the(m) + "'s chest drags you toward him.", 0x9CD2FF);
+  } else if (mv == "brace") {  // shield up: a quarter of the harm, until his next blow
+    m.brace = 3;
+    say_near(m.x, m.y, cap(the(m)) + " raises his shield. Wait for his blow.", 0xC0A080);
   } else if (mv == "blink") {
     P c;
     if (!free_near(h.x, h.y, 2, c)) return false;

@@ -218,7 +218,7 @@ M = {
     'drillbrute': dict(name='drill-yard brute', ch='t', col=(200, 110, 80), hp=85, dmg=(10, 17), acc=68, ar=6, spd=80, xp=40,
                        ai='melee', traits=('sweep', 'knock')),
     'ironcaptain': dict(undead=True, name='the Iron-Captain', ch='I', col=(230, 120, 80), hp=540, dmg=(11, 19), acc=86, ar=12, spd=100,
-                        xp=600, ai='melee', boss=True, moves=('rally', 'charge', 'brace')),
+                        xp=600, ai='melee', boss=True, moves=('rally', 'charge', 'brace', 'summon:shieldbearer')),
     'prisoner': dict(undead=True, name='chain-dragged prisoner', ch='z', col=(170, 140, 130), hp=44, dmg=(6, 11), acc=70, ar=3, spd=80,
                      xp=28, ai='melee', traits=('hook',)),
     'ratswarm': dict(name='cell-rat swarm', ch='r', col=(170, 110, 100), hp=40, dmg=(5, 9), acc=72, ar=1, spd=110, xp=26, ai='melee',

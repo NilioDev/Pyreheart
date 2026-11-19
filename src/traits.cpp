@@ -135,12 +135,19 @@ bool Game::trait_turn(Mon& m, Hero& h, int d, bool sees) {
 bool Game::trait_cells(Mon& m, Hero& h, const std::string& name, Blow& b) {
   auto add = [&](int x, int y) { if (floor->walk(x, y)) b.cells.push_back({x, y}); };
   if (name == "lob" || name == "leap" || name == "grab") add(h.x, h.y);
-  else if (name == "jar" || name == "shriek") {
-    P c = name == "jar" ? P{h.x, h.y} : P{m.x, m.y};
-    int r = name == "jar" ? 1 : 2;
-    for (int dy = -r; dy <= r; ++dy) for (int dx = -r; dx <= r; ++dx) if (name == "jar" || dx || dy) add(c.x + dx, c.y + dy);
-  } else if (name == "bolt" || name == "hook" || name == "reach") {
-    int range = name == "bolt" ? 8 : name == "hook" ? 5 : 2;
+  else if (name == "ashbreath") b.cells.push_back({m.x, m.y});
+  else if (name == "jar" || name == "shriek" || name == "web" || name == "ingot") {
+    bool round_foe = name == "shriek";
+    P c = round_foe ? P{m.x, m.y} : P{h.x, h.y};
+    int r = round_foe ? 2 : 1;
+    for (int dy = -r; dy <= r; ++dy) for (int dx = -r; dx <= r; ++dx) if (!round_foe || dx || dy) add(c.x + dx, c.y + dy);
+  } else if (name == "flood") {
+    // two lanes of sludge across the hall, two rows each: one where the hero stands, one a little way off
+    int other = h.y + (rnd.coin() ? 4 : -5);
+    for (int y : {h.y - 1, h.y, other, other + 1})
+      for (int x = h.x - 14; x <= h.x + 14; ++x) add(x, y);
+  } else if (name == "bolt" || name == "hook" || name == "reach" || name == "chain" || name == "charge") {
+    int range = name == "bolt" ? 8 : name == "hook" ? 5 : name == "reach" ? 2 : 6;
     int tx = m.x + (h.x - m.x) * 8, ty = m.y + (h.y - m.y) * 8;
     for (auto&& [x, y] : tcod::BresenhamLine({m.x, m.y}, {tx, ty}).without_start()) {
       if (!floor->walk(x, y) || cheb(x, y, m.x, m.y) > range) break;
@@ -192,7 +199,26 @@ void Game::trait_land(Mon& m, const Blow& b, const std::vector<Hero*>& hit) {
       }
     if (to.x >= 0) { add_fx({{"k", "inward"}, {"x", m.x}, {"y", m.y}, {"col", m.col}}); m.x = to.x; m.y = to.y; }
     hurt_all(1.0);
-  } else if (b.name == "hook") {
+  } else if (b.name == "web") {
+    hurt_all(1.0);
+    for (auto* o : hit) { o->held = 2; o->say("The web holds you fast.", 0xD0C0A0); }
+  } else if (b.name == "ingot") {
+    hurt_all(1.0);
+    for (auto& c : b.cells) if (rnd.real() < .4) lay(c, G_SLAG, 4, 3 + lvl / 2);
+  } else if (b.name == "flood") {
+    hurt_all(1.0);
+    for (auto* o : hit) { o->poison = std::max(o->poison, 4); o->poison_dmg = std::max(o->poison_dmg, 2 + lvl / 3); }
+    for (auto& c : b.cells) if (rnd.real() < .5) lay(c, G_ACID, 3, 2 + lvl / 3);
+  } else if (b.name == "ashbreath") {
+    hurt_all(1.0);
+    for (auto* o : hit) { o->ashen = 6; o->say("Ash fills the hall. You can hardly see.", 0xA0A0A0); }
+  } else if (b.name == "charge") {
+    // he runs the line to the last free square before the first hero on it
+    P to{m.x, m.y};
+    for (auto& c : b.cells) { if (hero_at(c.x, c.y) || mon_at(c.x, c.y)) break; to = c; }
+    if (to != P{m.x, m.y}) { add_fx({{"k", "inward"}, {"x", m.x}, {"y", m.y}, {"col", m.col}}); m.x = to.x; m.y = to.y; }
+    hurt_all(1.0);
+  } else if (b.name == "hook" || b.name == "chain") {
     hurt_all(1.0);
     for (auto* o : hit) {
       // dragged along the chain to the foe's side
@@ -201,7 +227,7 @@ void Game::trait_land(Mon& m, const Blow& b, const std::vector<Hero*>& hit) {
       if (to != P{o->x, o->y}) {
         add_fx({{"k", "bolt"}, {"cells", cells_json(b.cells)}, {"col", 0xA0A0A8}, {"ch", "~"}, {"src", xy(m.x, m.y)}});
         o->x = to.x; o->y = to.y;
-        o->say(cap(the(m)) + " drags you in on its chain.", 0xFF9070);
+        o->say(cap(the(m)) + " drags you in on " + (m.rank == "boss" ? "his" : "its") + " chain.", 0xFF9070);
         arrive(*o);
       }
     }
@@ -234,7 +260,7 @@ void Game::trait_hit(Mon& m, Hero& h, int dmg) {
     h.say(cap(the(m)) + " latches onto you!", 0xE0D0A0);
     tip(h, "latch", "Latched: it drinks your life each turn. Step away from it, or kill it.");
   }
-  if (m.can("hold")) { h.held = 1; h.say(cap(the(m)) + "'s teeth hold you fast.", 0xE0C060); }
+  if (m.can("hold")) { if (!h.held) h.say(cap(the(m)) + "'s teeth hold you fast.", 0xE0C060); h.held = 1; }
   if (m.can("bleed")) { h.bleed = 3; h.bleed_dmg = std::max(h.bleed_dmg, 2 + lvl / 4); }
   if (m.can("brand")) {
     h.brand = 3;
