@@ -26,6 +26,14 @@ struct Maker {
   std::vector<Cell> K = std::vector<Cell>(W * H);
   std::map<int, P> seeds;
   std::map<int, std::vector<P>> pc;  // plate -> its cells
+  std::map<int, int> alias;           // a seed fused into a bigger plate -> that plate
+  int A_(int p) const { auto it = alias.find(p); return it == alias.end() ? p : it->second; }
+  // the grid places a plate covers: one, or four for a fused plate
+  std::vector<P> foot(int pl) const {
+    std::vector<P> v{gp(pl)};
+    for (auto& [s, t] : alias) if (t == pl && s != pl) v.push_back(gp(s));
+    return v;
+  }
   Cell& at(int x, int y) { return K[y * W + x]; }
   bool in(int x, int y) const { return x >= 0 && y >= 0 && x < W && y < H; }
   int id(int i, int j) const { return j * 64 + i; }
@@ -48,8 +56,11 @@ struct Maker {
         if (i < 0 || j < 0) continue;
         P s = seed(i, j);
         double d = std::hypot(x - s.x, (y - s.y) * 2.2);
-        if (d < d1) { d2 = d1; p2 = p1; d1 = d; p1 = id(i, j); }
-        else if (d < d2) { d2 = d; p2 = id(i, j); }
+        int q = A_(id(i, j));
+        if (q == p1) { d1 = std::min(d1, d); continue; }
+        if (d < d1) { if (p1 != q) { d2 = d1; p2 = p1; } d1 = d; p1 = q; }
+        else if (q == p2) d2 = std::min(d2, d);
+        else if (d < d2) { d2 = d; p2 = q; }
       }
   }
 
@@ -114,8 +125,24 @@ P step_in(char sd) { return sd == 'S' ? P{0, -1} : sd == 'N' ? P{0, 1} : sd == '
 bool Game::build_deep(Floor& fl, char entry, bool last, char& exit_side) {
   Maker m{rnd};
   int GW = m.GW, GH = m.GH;
+  // a few big plates, four fused into one, where the stories of the Deep get room (see Game::dress_deep)
+  int ax0 = W / 2, ay0 = A + 5;
+  std::vector<P> fused;
+  for (int tries = 0; tries < 200 && fused.size() < 4; ++tries) {
+    P b{rnd.range(1, GW - 3), rnd.range(1, GH - 3)};
+    bool ok = true;
+    for (auto f : fused) if (std::abs(f.x - b.x) < 3 && std::abs(f.y - b.y) < 3) ok = false;
+    if (last && std::hypot((b.x + 1) * PX - ax0, ((b.y + 1) * PY - ay0) * 1.0) < A + 16) ok = false;
+    if (!ok) continue;
+    fused.push_back(b);
+    for (int dj = 0; dj < 2; ++dj)
+      for (int di = 0; di < 2; ++di) m.alias[m.id(b.x + di, b.y + dj)] = m.id(b.x, b.y);
+  }
   std::set<int> pools;
-  for (int i = 0; i < 14; ++i) pools.insert(m.id(rnd.range(1, GW - 1), rnd.range(1, GH - 2)));
+  for (int i = 0; i < 14; ++i) {
+    int pl = m.id(rnd.range(1, GW - 1), rnd.range(1, GH - 2));
+    if (!m.alias.count(pl)) pools.insert(pl);
+  }
   for (int y = 0; y < H; ++y)
     for (int x = 0; x < W; ++x) {
       auto& c = m.at(x, y);
@@ -142,7 +169,6 @@ bool Game::build_deep(Floor& fl, char entry, bool last, char& exit_side) {
         }
   }
   // the island of the Ashen King, with a moat of open lava round it
-  int ax0 = W / 2, ay0 = A + 5;
   std::set<std::pair<int, int>> ring;
   for (int k = 0; k < 12; ++k)
     ring.insert({int(std::lround(9.5 * std::cos(PI * k / 6 + PI / 12))), int(std::lround(9.5 * std::sin(PI * k / 6 + PI / 12)))});
@@ -194,8 +220,11 @@ bool Game::build_deep(Floor& fl, char entry, bool last, char& exit_side) {
   std::map<int, std::vector<int>> nbr;
   for (auto& [p, cp] : m.pc)
     for (auto& [q, cq] : m.pc) {
-      P a = m.gp(p), b = m.gp(q);
-      if (p < q && std::abs(a.x - b.x) + std::abs(a.y - b.y) == 1) {
+      bool next = false;
+      if (p < q)
+        for (P a : m.foot(p))
+          for (P b : m.foot(q)) if (std::abs(a.x - b.x) + std::abs(a.y - b.y) == 1) next = true;
+      if (next) {
         auto path = m.clean_line(p, q, 12);
         if (!path.empty()) { cand[{p, q}] = path; nbr[p].push_back(q); nbr[q].push_back(p); }
       }
