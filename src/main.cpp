@@ -89,6 +89,7 @@ int main(int argc, char** argv) {
       w = 800 * k; h = 400 * k;
     }
     p.pixel_width = w; p.pixel_height = h;
+    if (SDL_getenv("PYREHEART_WHOLE")) { p.pixel_width = W * 16; p.pixel_height = H * 16; }
     if (full) p.sdl_window_flags |= SDL_WINDOW_FULLSCREEN;
   }
   auto ctx = tcod::Context(p);

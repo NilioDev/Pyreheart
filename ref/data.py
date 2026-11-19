@@ -5,7 +5,8 @@ affixes and uniques. No rules live here."""
 # (sign, colour, walkable, see-through, name)
 WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
     TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, \
-    EDGE = range(35)
+    EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, \
+    BANNER, FALLEN = range(52)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -44,9 +45,28 @@ TILES = [
     ('Ψ', (192, 74, 22), True, True, 'burning rune'),
     ('╥', (138, 122, 160), False, True, 'throne'),
     ('→', (255, 230, 160), True, True, 'the way on'),
+    # the dressing of the Deep's plates: a dwarven forge, the King's ash shrine, steam vents, the fallen clan
+    ('▲', (255, 160, 48), False, True, 'forge hearth'),
+    ('▓', (90, 74, 64), False, False, 'forge stones'),
+    ('π', (154, 158, 168), False, True, 'anvil'),
+    ('▲', (96, 80, 70), False, True, 'slag heap'),
+    ('═', (106, 90, 74), True, True, 'mine rail'),
+    ('▄', (122, 90, 52), False, True, 'ore cart'),
+    ('§', (122, 122, 132), True, True, 'dropped chain'),
+    ('☼', (255, 160, 48), False, True, 'brazier'),
+    ('▲', (84, 70, 110), False, True, 'obsidian obelisk'),
+    ('∙', (138, 132, 120), True, True, 'circle of ash'),
+    ('o', (90, 74, 68), False, True, 'steam vent'),
+    ('▲', (96, 94, 130), False, True, 'obsidian spike'),
+    ('/', (138, 142, 150), True, True, 'broken axe'),
+    ('◘', (106, 90, 58), True, True, 'split shield'),
+    ('▬', (90, 86, 80), False, True, 'toppled statue'),
+    ('¶', (122, 42, 26), False, True, 'scorched banner'),
+    ('%', (154, 138, 116), False, True, 'fallen dwarf'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
-               OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL}
+               OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
+               OBSIDIAN, STATUE, BANNER, FALLEN}
 
 # ------------------------------------------------------------------ the four acts
 ACTS = [

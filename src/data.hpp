@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -40,8 +40,25 @@ inline const TileDef TILES[] = {
     {0x3A8, 0xC04A16, true, true, "burning rune"},
     {0x2565, 0x8A7AA0, false, true, "throne"},
     {0x2192, 0xFFE6A0, true, true, "the way on"},
+    {0x25B2, 0xFFA030, false, true, "forge hearth"},
+    {0x2593, 0x5A4A40, false, false, "forge stones"},
+    {0x3C0, 0x9A9EA8, false, true, "anvil"},
+    {0x25B2, 0x605046, false, true, "slag heap"},
+    {0x2550, 0x6A5A4A, true, true, "mine rail"},
+    {0x2584, 0x7A5A34, false, true, "ore cart"},
+    {0xA7, 0x7A7A84, true, true, "dropped chain"},
+    {0x263C, 0xFFA030, false, true, "brazier"},
+    {0x25B2, 0x54466E, false, true, "obsidian obelisk"},
+    {0x2219, 0x8A8478, true, true, "circle of ash"},
+    {0x6F, 0x5A4A44, false, true, "steam vent"},
+    {0x25B2, 0x605E82, false, true, "obsidian spike"},
+    {0x2F, 0x8A8E96, true, true, "broken axe"},
+    {0x25D8, 0x6A5A3A, true, true, "split shield"},
+    {0x25AC, 0x5A5650, false, true, "toppled statue"},
+    {0xB6, 0x7A2A1A, false, true, "scorched banner"},
+    {0x25, 0x9A8A74, false, true, "fallen dwarf"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: return true; default: return false; } }
 constexpr int FLOORS = 16;
 inline bool rest_after(int d) { return d == 4 || d == 8 || d == 12; }
 inline const ActDef ACTS[] = {

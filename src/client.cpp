@@ -82,7 +82,7 @@ void Client::pick_layout() {
     con_ = tcod::Console(cols, rows);
   } else {
     layout_ = Layout::Wide;
-    con_ = tcod::Console(WIDE_W, WIDE_H);
+    con_ = SDL_getenv("PYREHEART_WHOLE") ? tcod::Console(W, H) : tcod::Console(WIDE_W, WIDE_H);
   }
 }
 
@@ -798,7 +798,10 @@ void Client::draw_game() {
     return;
   }
   int cw = con_.get_width(), chh = con_.get_height();
-  if (layout_ == Layout::Wide) {
+  if (layout_ == Layout::Wide && SDL_getenv("PYREHEART_WHOLE")) {
+    vx_ = 0; vy_ = 0; vw_ = cw; vh_ = chh;  // the whole map, nothing else (for screenshots)
+    draw_map();
+  } else if (layout_ == Layout::Wide) {
     vx_ = 0; vy_ = 0; vw_ = VIEW_W; vh_ = VIEW_H;
     draw_map();
     draw_side(VIEW_W, 0, cw - VIEW_W, chh);

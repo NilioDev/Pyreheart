@@ -577,7 +577,7 @@ void Game::move(Hero& h, int dx, int dy) {
     case DOOR: floor->set(nx, ny, OPEN); return;
     case CHEST: open_chest(h, nx, ny); return;
     case SHRINE: shrine(h, nx, ny); return;
-    case TOMB: case CRACKED: case BIER: case RESTLESS: smash_dead(h, nx, ny); return;
+    case TOMB: case CRACKED: case BIER: case RESTLESS: case FALLEN: smash_dead(h, nx, ny); return;
     default: break;
   }
   if (!floor->walk(nx, ny)) return;
@@ -1742,6 +1742,8 @@ void Game::look() {
   TCOD_Map* map = TCOD_map_new(W, H);
   for (int y = 0; y < H; ++y)
     for (int x = 0; x < W; ++x) TCOD_map_set_properties(map, x, y, !floor->opaque(x, y), floor->walk(x, y));
+  // for screenshots: PYREHEART_WHOLE shows the whole map at once, and nothing wakes for it
+  static const bool whole_view = std::getenv("PYREHEART_WHOLE") != nullptr;
   for (auto& [id, hp] : heroes) {
     Hero& h = *hp;
     if (h.away) continue;
@@ -1749,12 +1751,12 @@ void Game::look() {
     TCOD_map_compute_fov(map, h.x, h.y, sight, true, FOV_SYMMETRIC_SHADOWCAST);
     for (int y = 0; y < H; ++y)
       for (int x = 0; x < W; ++x) {
-        h.vis[y * W + x] = TCOD_map_is_in_fov(map, x, y) && cheb(x, y, h.x, h.y) <= sight;
+        h.vis[y * W + x] = whole_view || (TCOD_map_is_in_fov(map, x, y) && cheb(x, y, h.x, h.y) <= sight);
         if (h.vis[y * W + x]) h.seen[y * W + x] = 1;
       }
     if (!h.present()) continue;
     for (auto& m : floor->mons)
-      if (!m->awake && h.sees(m->x, m->y)) {
+      if (!m->awake && !whole_view && h.sees(m->x, m->y)) {
         m->awake = true;
         if (m->rank == "champion") tip(h, "champion", "Blue foes are champions: stronger, and they carry better things.");
         if (m->rank == "unique") tip(h, "unique", "A gold name is a unique foe. Look at foes with [l].");

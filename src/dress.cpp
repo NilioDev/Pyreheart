@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <deque>
 #include <functional>
+#include <map>
 #include <set>
 
 #include "game.hpp"
@@ -15,6 +16,7 @@ using namespace data;
 namespace {
 
 struct Rect { int x, y, w, h; };
+struct PLess { bool operator()(P a, P b) const { return a.y != b.y ? a.y < b.y : a.x < b.x; } };
 std::string a_name(const std::string& n) { return (std::string("aeiou").find(n[0]) != std::string::npos ? "An " : "A ") + n; }
 using Piece = std::vector<std::pair<P, int>>;  // cells and the tile each gets
 using Set = std::vector<Piece>;                // pieces that stand or fall together, so the mirror image stays whole
@@ -333,7 +335,7 @@ void Game::dress(Floor& fl, const k5::Plan& plan) {
 void Game::wake_dead() {
   for (auto& s : floor->sleepers) {
     if (s.stage < 0) continue;
-    bool tomb = floor->tile(s.at.x, s.at.y) == CRACKED;
+    bool tomb = floor->tile(s.at.x, s.at.y) == CRACKED, dwarf = floor->tile(s.at.x, s.at.y) == FALLEN;
     if (s.stage == 0) {
       for (auto* h : active()) {
         if (!h->present()) continue;
@@ -341,7 +343,7 @@ void Game::wake_dead() {
         for (auto c : s.cells) if (cheb(c.x, c.y, h->x, h->y) <= 2 && h->sees(c.x, c.y)) near = true;
         if (!near) continue;
         s.stage = 1;
-        say_near(s.at.x, s.at.y, tomb ? "The lid of a tomb grinds against stone..." : "The corpse on the table twitches...", 0xC8BCA0);
+        say_near(s.at.x, s.at.y, tomb ? "The lid of a tomb grinds against stone..." : dwarf ? "A charred dwarf stirs among the bones..." : "The corpse on the table twitches...", 0xC8BCA0);
         tip(*h, "rising", "Something is stirring. Hit it now and it will not get up.");
         break;
       }
@@ -354,14 +356,15 @@ void Game::wake_dead() {
     if (tomb) {
       for (auto c : s.cells)
         if (c.y == s.at.y && std::abs(c.x - s.at.x) <= 1) floor->set(c.x, c.y, OPENTOMB);
-    } else floor->set(s.at.x, s.at.y, BIER);
+    } else floor->set(s.at.x, s.at.y, dwarf ? BONES : BIER);
     P at;
     if (!free_near(s.at.x, s.at.y, 3, at)) continue;
     auto m = spawn(s.kind, at.x, at.y);
     m->awake = true;
     m->energy = 0;
     say_near(at.x, at.y, tomb ? "The lid crashes down. " + a_name(m->name) + " climbs out of the tomb!"
-                              : "The corpse sits up! " + a_name(m->name) + " crawls off the table.", 0xFF9060);
+                         : dwarf ? "The fallen dwarf rises! " + a_name(m->name) + " comes for you."
+                                 : "The corpse sits up! " + a_name(m->name) + " crawls off the table.", 0xFF9060);
     add_fx({{"k", "dust"}, {"x", s.at.x}, {"y", s.at.y}, {"tomb", tomb}, {"fall", true}, {"dur", 1.6}});
   }
 }
@@ -371,16 +374,173 @@ bool Game::smash_dead(Hero& h, int x, int y) {
   for (auto& s : floor->sleepers) {
     if (s.stage <= 0) continue;
     if (std::find(s.cells.begin(), s.cells.end(), P{x, y}) == s.cells.end()) continue;
-    bool tomb = floor->tile(s.at.x, s.at.y) == CRACKED;
+    bool tomb = floor->tile(s.at.x, s.at.y) == CRACKED, dwarf = floor->tile(s.at.x, s.at.y) == FALLEN;
     s.stage = -1;
     if (tomb) {
       for (auto c : s.cells)
         if (c.y == s.at.y && std::abs(c.x - s.at.x) <= 1) floor->set(c.x, c.y, OPENTOMB);
-    } else floor->set(s.at.x, s.at.y, BIER);
+    } else floor->set(s.at.x, s.at.y, dwarf ? BONES : BIER);
     gain_xp(h, mon_def(s.kind).xp);
     h.say(tomb ? "You slam the lid in. Whatever was in there lies still." : "You strike the corpse down before it can rise.", 0xE6D2A0);
     add_fx({{"k", "dust"}, {"x", s.at.x}, {"y", s.at.y}, {"tomb", tomb}, {"fall", true}, {"dur", 1.6}});
     return true;
   }
   return false;
+}
+
+// Dressing the Deep: a few crust plates on the way get a story. A dwarven forge still glowing, the Ashen King's ash
+// shrine, a field of steam vents and obsidian, and the plate where the clan fell, where some of the dead get up again.
+// The forge and the shrine are mirrored; the vents and the battlefield lie where they lie. The ways onto a plate stay
+// clear and nothing may cut a plate off.
+void Game::dress_deep(Floor& fl, std::vector<std::vector<P>> plates) {
+  // the big plates first, so a story has room around it to fight in
+  rnd.shuffle(plates);
+  std::stable_sort(plates.begin(), plates.end(), [](auto& a, auto& b) { return a.size() / 12 > b.size() / 12; });
+  std::vector<std::string> themes = {"forge", "shrine", "steam", "field"};
+  rnd.shuffle(themes);
+  for (auto& cells : plates) {
+    if (themes.empty()) break;
+    std::set<P, PLess> S(cells.begin(), cells.end());
+    std::vector<P> ways{fl.up, fl.down};
+    for (auto c : cells)
+      for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) {
+        P n = c + d4;
+        if (!S.count(n) && fl.walk(n.x, n.y)) ways.push_back(c);
+      }
+    auto in_way = [&](P c) {
+      for (auto w : ways) if (cheb(c.x, c.y, w.x, w.y) <= 2) return true;
+      return false;
+    };
+    // the largest rectangle of plain crust on the plate
+    int x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (auto c : cells) { x0 = std::min(x0, c.x); y0 = std::min(y0, c.y); x1 = std::max(x1, c.x); y1 = std::max(y1, c.y); }
+    Rect R{0, 0, 0, 0};
+    int best = 0;
+    for (int ay = y0; ay <= y1; ++ay)
+      for (int ax = x0; ax <= x1; ++ax) {
+        int maxw = x1 - ax + 1;
+        for (int cy = ay; cy <= y1; ++cy) {
+          int w = 0;
+          while (w < maxw && S.count({ax + w, cy}) && fl.tile(ax + w, cy) == CRUST) ++w;
+          maxw = w;
+          if (!maxw) break;
+          int area = maxw * (cy - ay + 1);
+          if (area > best) { best = area; R = {ax, ay, maxw, cy - ay + 1}; }
+        }
+      }
+    if (R.w < 6 || R.h < 4) continue;
+    auto free_cell = [&](P c) { return S.count(c) && fl.tile(c.x, c.y) == CRUST && !in_way(c); };
+    for (size_t k = 0; k < themes.size(); ++k) {
+      std::string theme = themes[k];
+      std::vector<Set> sets;
+      std::vector<int> tags;              // tagged sets are tries: only so many of a tag get placed
+      std::map<int, int> quota;
+      auto tried = [&](int tag, Set st) { while (tags.size() < sets.size()) tags.push_back(-1); sets.push_back(st); tags.push_back(tag); };
+      std::vector<std::pair<P, int>> loose;  // walkable litter: needs no clear way, only crust
+      if (theme == "forge") {
+        if (R.w < 9 || R.h < 4) continue;
+        // the hearth against one long side, an anvil either side of it, slag heaps in the far corners, a rail
+        bool top = true;
+        for (int x = R.x; x < R.x + R.w; ++x) if (in_way({x, R.y})) top = false;
+        auto Y = [&](int k2) { return top ? R.y + k2 : R.y + R.h - 1 - k2; };
+        int hw = R.w % 2 ? 3 : 4, hx = R.x + (R.w - hw) / 2;
+        Piece hearth;
+        hearth.push_back({{hx - 1, Y(0)}, STONEWORK});
+        for (int x = hx; x < hx + hw; ++x) hearth.push_back({{x, Y(0)}, HEARTH});
+        hearth.push_back({{hx + hw, Y(0)}, STONEWORK});
+        sets.push_back({hearth});
+        int mx = 2 * R.x + R.w - 1;
+        if (hx - 3 >= R.x) sets.push_back({{{{hx - 3, Y(1)}, ANVIL}}, {{{mx - (hx - 3), Y(1)}, ANVIL}}});
+        if (R.h >= 5) sets.push_back({{{{R.x, Y(R.h - 1)}, SLAG}}, {{{mx - R.x, Y(R.h - 1)}, SLAG}}});
+        if (R.h >= 6) {
+          for (int x = R.x + 1; x < R.x + R.w - 1; ++x) loose.push_back({{x, Y(R.h - 2)}, RAIL});
+          sets.push_back({{{{R.x + R.w - 2, Y(R.h - 2)}, CART}}});
+        }
+        for (int i = 0; i < 2; ++i) loose.push_back({{rnd.range(R.x, R.x + R.w - 1), Y(rnd.range(2, R.h - 1))}, CHAIN});
+      } else if (theme == "shrine") {
+        // the King's brazier in the middle of a ring of ash, obsidian obelisks at the corners
+        int w = R.w - !(R.w % 2), h = R.h - !(R.h % 2);
+        if (w < 9 || h < 5) continue;
+        int rx = R.x + (R.w - w) / 2, ry = R.y + (R.h - h) / 2, cx = rx + w / 2, cy = ry + h / 2;
+        sets.push_back({{{{cx, cy}, BRAZIER}}});
+        // four obelisks round it, mirrored: as far out as the ways onto the plate allow
+        quota[0] = 1;
+        for (int in = 0; in <= (w - 7) / 2; ++in)
+          tried(0, {{{{rx + in, ry}, OBELISK}}, {{{rx + w - 1 - in, ry}, OBELISK}}, {{{rx + in, ry + h - 1}, OBELISK}}, {{{rx + w - 1 - in, ry + h - 1}, OBELISK}}});
+        for (int y = ry; y < ry + h; ++y)
+          for (int x = rx; x < rx + w; ++x) {
+            double r = std::hypot((x - cx) / 1.7, double(y - cy));
+            if (r >= 1.5 && r < 2.4) loose.push_back({{x, y}, ASH});
+          }
+        for (int dy : {-1, 1})
+          for (int dx : {-1, 1}) loose.push_back({{cx + dx, cy + dy}, BONES});
+      } else if (theme == "steam") {
+        // vents hissing out of the crust, glassy spikes of obsidian between them
+        quota[0] = 2 + (R.w * R.h >= 60); quota[1] = 3;
+        for (int i = 0; i < 14; ++i) tried(0, {{{{rnd.range(R.x + 1, R.x + R.w - 2), rnd.range(R.y + 1, R.y + R.h - 2)}, VENT}}});
+        for (int i = 0; i < 14; ++i) {
+          P c{rnd.range(R.x, R.x + R.w - 2), rnd.range(R.y, R.y + R.h - 1)};
+          Piece p{{c, OBSIDIAN}};
+          if (rnd.coin()) p.push_back({{c.x + 1, c.y}, OBSIDIAN});
+          tried(1, {p});
+        }
+      } else if (theme == "field") {
+        if (R.w < 8) continue;
+        // where the clan fell: a toppled statue, a scorched banner, the dead among broken axes and shields
+        quota[0] = 1; quota[1] = 1; quota[2] = 3;
+        for (int i = 0; i < 10; ++i) {
+          P st{rnd.range(R.x, R.x + R.w - 3), rnd.range(R.y, R.y + R.h - 1)};
+          Piece sp;
+          for (int j = 0; j < 3; ++j) sp.push_back({{st.x + j, st.y}, STATUE});
+          tried(0, {sp});
+        }
+        for (int i = 0; i < 10; ++i) tried(1, {{{{rnd.range(R.x, R.x + R.w - 1), rnd.range(R.y, R.y + R.h - 1)}, BANNER}}});
+        for (int i = 0; i < 20; ++i) tried(2, {{{{rnd.range(R.x, R.x + R.w - 1), rnd.range(R.y, R.y + R.h - 1)}, FALLEN}}});
+        for (int i = 0; i < 7; ++i) loose.push_back({{rnd.range(R.x, R.x + R.w - 1), rnd.range(R.y, R.y + R.h - 1)}, BONES});
+        for (int i = 0; i < 3; ++i) loose.push_back({{rnd.range(R.x, R.x + R.w - 1), rnd.range(R.y, R.y + R.h - 1)}, WRECK});
+        for (int i = 0; i < 2; ++i) loose.push_back({{rnd.range(R.x, R.x + R.w - 1), rnd.range(R.y, R.y + R.h - 1)}, SHIELD});
+      }
+      // place what stands clear, a whole set or nothing of it; the forge stands or falls with its hearth, the shrine
+      // with its brazier
+      std::vector<std::pair<P, int>> placed;
+      bool core = true;
+      while (tags.size() < sets.size()) tags.push_back(-1);
+      for (size_t si = 0; si < sets.size(); ++si) {
+        if (tags[si] >= 0 && quota[tags[si]] <= 0) continue;
+        bool ok = true;
+        std::set<P, PLess> mine;
+        for (auto& p : sets[si])
+          for (auto& [c, t] : p) if (!free_cell(c) || !mine.insert(c).second) ok = false;
+        // nothing blocking may stand next to something else blocking that is not of its own set
+        for (auto c : mine)
+          for (int dy = -1; dy <= 1 && ok; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+              if (!mine.count({c.x + dx, c.y + dy}) && blocks(fl.tile(c.x + dx, c.y + dy)) && fl.tile(c.x + dx, c.y + dy) != LAVA) ok = false;
+        if (!ok) { if (si == 0 && (theme == "forge" || theme == "shrine")) { core = false; break; } continue; }
+        for (auto& p : sets[si])
+          for (auto& [c, t] : p) { fl.set(c.x, c.y, t); placed.push_back({c, t}); }
+        if (tags[si] >= 0) --quota[tags[si]];
+      }
+      if (core && !whole(fl)) core = false;
+      if (!core || placed.empty()) {
+        for (auto& [c, t] : placed) fl.set(c.x, c.y, CRUST);
+        continue;
+      }
+      for (auto& [c, t] : loose)
+        if (S.count(c) && fl.tile(c.x, c.y) == CRUST) fl.set(c.x, c.y, t);
+      // some of the fallen are not done fighting
+      for (auto& [c, t] : placed) {
+        if (t != FALLEN || fl.tile(c.x, c.y) != FALLEN) continue;
+        if (rnd.real() < .6) {
+          Sleeper s;
+          s.at = c;
+          s.cells = {c};
+          s.kind = rnd.real() < .5 ? "deepknight" : "wraith";
+          fl.sleepers.push_back(s);
+        }
+      }
+      themes.erase(themes.begin() + long(k));
+      break;
+    }
+  }
 }

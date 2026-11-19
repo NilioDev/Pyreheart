@@ -381,5 +381,9 @@ bool Game::build_deep(Floor& fl, char entry, bool last, char& exit_side) {
   if (last) fl.t[throne.y * W + throne.x] = THRONE;
   fl.w = W; fl.h = H;
   fl.deep = true;
-  return whole(fl);
+  if (!whole(fl)) return false;
+  std::vector<std::vector<P>> plates;
+  for (auto& [pl, cs] : m.pc) if (pl != start && pl != goal) plates.push_back(cs);
+  dress_deep(fl, plates);
+  return true;
 }

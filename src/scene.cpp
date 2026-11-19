@@ -84,7 +84,8 @@ void Client::draw_tiles() {
   double glow = .35 + .2 * std::sin(tt * .8);
 
   // the light: a dim base, pools round every flame, and each hero's own light
-  double base = rest ? .9 : .6;
+  static const bool whole_view = SDL_getenv("PYREHEART_WHOLE") != nullptr;  // a screenshot of the whole map
+  double base = rest ? .9 : whole_view ? .8 : .6;
   std::vector<float> L(W * H, float(base)), warm(W * H, 0.f);
   auto pool = [&](double cx, double cy, double r, double a, double w) {
     int ax = std::max(x0, int(cx - r - 1)), bx = std::min(x1 - 1, int(cx + r + 1));
@@ -122,6 +123,18 @@ void Client::draw_tiles() {
         emits_.push_back({float(x), float(y), 'w', sd});
       } else if (t == CRACKED && vis[i] == '1') {
         emits_.push_back({float(x), float(y), 's', sd});
+      } else if (t == HEARTH || t == BRAZIER) {
+        // the forge still burns; the King's brazier too
+        pool(x, y, (t == HEARTH ? 5.5 : 6) * f, 1.25 * f, 1.);
+        if (vis[i] == '1') emits_.push_back({float(x), float(y), 'f', sd});
+        if (vis[i] == '1' && t == HEARTH && hash(x, y, 4) % 2) emits_.push_back({float(x), float(y), 'k', sd});
+      } else if (t == VENT && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'v', sd});
+      } else if ((t == CRUST || t == NECK) && vis[i] == '1') {
+        // smoke seeping out of the crust, red embers drifting in loops, ash falling
+        if (hash(x, y, 12) % 37 == 0) emits_.push_back({float(x), float(y), 'g', sd});
+        if (hash(x, y, 13) % 29 == 0) emits_.push_back({float(x), float(y), 'e', sd});
+        if (hash(x, y, 14) % 61 == 0) emits_.push_back({float(x), float(y), 'a', sd});
       }
     }
   if (s.contains("ground"))
@@ -217,6 +230,10 @@ void Client::draw_tiles() {
           else bg = mixc(0x1C0E08, 0x2E140A, .5 + .3 * (glow + .1 * std::sin(x * .08 + y * .05)));
           ch = (x + y) % 2 == 0 ? '.' : ' '; fg = 0x5A3A30;
           if (t == CRUST && hh % 23 == 0) { ch = ','; fg = 0x3C1E12; }
+          // glowing seams in the crust, breathing slowly
+          if (t == CRUST && noise(x, y, 2.2, 21) > .72 && hh % 2) {
+            ch = 0x00B7; fg = mixc(0x8C2A0A, 0xFF7020, .5 + .5 * std::sin(tt * 1.1 + x * .3)); bright = true;
+          }
           if (t == NECK && hh % 7 == 0) { ch = '~'; fg = mixc(0x8C2A0A, 0xE0561A, glow); }
           break;
         }
@@ -300,6 +317,41 @@ void Client::draw_tiles() {
           fg = ch == '%' ? 0xA89C80 : 0xC8BCA0; bg = 0x241F1A;
           break;
         case BONES: ch = hh % 2 ? ',' : '%'; fg = 0xD2C4AA; bg = floor_bg(); break;
+        case HEARTH: {
+          int st = int(tt * 7 + hh % 7);
+          static const int FL[] = {'^', 0x25B2, '*'};
+          ch = FL[(st + x) % 3]; fg = FIREC[std::clamp(int(nz(int(hh % 31) + st) * 3.5), 0, 5)];
+          bg = mixc(0x5A1804, 0xA04008, nz(int(hh % 7) + st * 7)); bright = true;
+          break;
+        }
+        case BRAZIER: {
+          int st = int(tt * 5 + hh % 7);
+          fg = mixc(0xFF9030, 0xFFF0B0, nz(st)); bg = 0x5A1A08; bright = true;
+          break;
+        }
+        case STONEWORK: bg = 0x2A1E18; fg = 0x5A4A40; break;
+        case CHAIN: case WRECK: case SHIELD: case RAIL: case ASH:
+          bg = mixc(0x16100C, 0x2A1A12, noise(x, y, 5, 3));
+          if (t == ASH) bg = mixc(bg, 0x3A3632, .5);
+          break;
+        case ANVIL: case SLAG: case CART: case BANNER: case FALLEN: case STATUE: {
+          bg = mixc(0x16100C, 0x2A1A12, noise(x, y, 5, 3));
+          if (t == CART) bg = 0x2A1A0C;
+          if (t == STATUE) {
+            bg = 0x2A2622;
+            if (tile(x - 1, y) != STATUE) ch = 0x263B;  // the head
+          }
+          if (t == FALLEN && (std::fmod(tt * .45 + (hh % 100) / 100.0, 1.0) < .05 || (shudder(x, y) && int(tt * 14) % 2))) fg = 0xE8DCC0;
+          break;
+        }
+        case OBELISK: bg = 0x0A080C; break;
+        case OBSIDIAN: {
+          // glassy: now and then it catches the light
+          bg = 0x0C0A12;
+          if (std::fmod(tt * .2 + (hh % 100) / 100.0, 1.0) < .06) { fg = 0xC8D8F0; bright = true; }
+          break;
+        }
+        case VENT: bg = 0x1A0E0A; break;
         case DOOR: case OPEN: bg = floor_bg(); keep = true; break;
         case STAIRS: case UPSTAIRS: case CHEST: case OPENCHEST: case SHRINE: case USED: case FOUNTAIN:
           bg = floor_bg(); keep = true; break;
@@ -400,6 +452,53 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         }
         break;
       }
+      case 'k':
+        // sparks thrown off the hearth
+        for (int j = 0; j < 8; ++j) {
+          double ph = std::fmod(tt * .9 + j / 8.0 + nz(sd + j) * .3, 1.0);
+          if (ph > .6) continue;
+          double ang = -.3 - nz(sd * 2 + j) * 2.6, k = ph / .6;
+          double x = ex + .5 + std::cos(ang) * ph * 3, y = ey + .4 + std::sin(ang) * ph * 3 + ph * ph * 3;
+          dot(x, y, mixc(0xFFF4C0, 0xFF5010, k), 1 - k * .5);
+        }
+        break;
+      case 'v': {
+        // a burst of steam, then quiet
+        double ph = std::fmod(tt * .22 + nz(sd), 1.0);
+        if (ph < .5) {
+          double k = ph / .5;
+          for (int j = 0; j < 16; ++j) {
+            double x = ex + .5 + (nz(sd + j) - .5) * k * 2.4 + std::sin(tt * 2 + j) * .2, y = ey + .3 - k * (2 + nz(sd * 3 + j) * 2.5);
+            dot(x, y, mixc(0xF0F0F0, 0x50505A, k), (1 - k) * .9, j % 3 ? 1 : 2);
+          }
+        }
+        break;
+      }
+      case 'g':
+        // a thin wisp of smoke out of the ground
+        for (int j = 0; j < 6; ++j) {
+          double ph = std::fmod(tt * .18 + j / 6.0 + nz(sd) * .7, 1.0);
+          double x = ex + .5 + std::sin(tt * .9 + j + sd) * .5 * ph + ph * .3, y = ey + .5 - ph * 2.6;
+          dot(x, y, mixc(0x8A8078, 0x241E1C, ph), .7 * (1 - ph), ph < .4 ? 1 : 2);
+        }
+        break;
+      case 'e': {
+        // a red ember drifting in slow loops
+        double rr = .8 + nz(sd + 5) * 1.6, sp = .35 + .2 * (sd % 3), a = tt * sp + sd;
+        double x = ex + .5 + std::cos(a) * rr * 1.3 + std::sin(tt * .3 + sd) * .8;
+        double y = ey + .5 + std::sin(a) * rr * .7 - std::sin(tt * .15 + sd) * .6;
+        double tw = .5 + .5 * std::sin(tt * 1.6 + sd * 2);
+        dot(x, y, mixc(0xC02810, 0xFF8040, tw), .65 + .35 * tw, tw > .8 ? 2 : 1);
+        break;
+      }
+      case 'a':
+        // flakes of ash, falling
+        for (int j = 0; j < 4; ++j) {
+          double ph = std::fmod(tt * .08 + j / 4.0 + nz(sd + j), 1.0);
+          double x = ex + (nz(sd + j * 7) - .5) * 6 + std::sin(tt * .5 + j) * .6, y = ey - 2 + ph * 4;
+          dot(x, y, mixc(0x9A9488, 0x3A3632, ph), .8 * std::sin(ph * PI));
+        }
+        break;
       case 's':
         // dust trickling from the crack in a lid
         for (int j = 0; j < 3; ++j) {

@@ -178,6 +178,7 @@ class Game {
   bool build_deep(Floor& fl, char entry, bool last, char& exit_side);  // deep.cpp
   char deep_exit_ = 'N';
   void dress(Floor& fl, const k5::Plan& plan);  // dress.cpp
+  void dress_deep(Floor& fl, std::vector<std::vector<P>> plates);
   void wake_dead();
   bool smash_dead(Hero& h, int x, int y);
   MonP spawn(const std::string& key, int x, int y);
