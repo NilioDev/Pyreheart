@@ -59,6 +59,10 @@ struct Hero {
   std::vector<LogLine> log;
   std::unordered_set<std::string> tips;
 
+  std::map<std::string, int> talents;  // the Pyre's gifts this player brought (pyre.hpp)
+  int heat_floor = -1, fury_floor = -1, fury_t = 0;  // Heat of Battle and Heart's Fury: once a floor
+  bool unquenched = false, forged = false;           // Unquenched and Spark-Forged: once a dive
+  int tal(const std::string& k) const { auto it = talents.find(k); return it == talents.end() ? 0 : it->second; }
   int perk(const std::string& k) const { auto it = perks.find(k); return it == perks.end() ? 0 : it->second; }
   bool present() const { return !dead && !gone && !away; }
   void say(const std::string& t, int col = 0xC8C8C8) { log.push_back({t, col}); }
@@ -161,7 +165,14 @@ const SkillDef& skill_def(const std::string& key);
 
 class Game {
  public:
-  explicit Game(uint64_t seed);
+  explicit Game(uint64_t seed, int frost = 0);
+  int frost = 0;                  // the Frost level: 0 the game as it is, each one up harder foes and better loot
+  std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)
+  bool landing_ = false;           // a blow seen coming is landing (for Mantle)
+  int belt(const Hero& h) const { return data::BELT_MAX + h.tal("banked"); }
+  int price(const Hero& h, const Item& it) const { return h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2; }
+  ItemP roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
+  void forge(Hero& h);
   Rng rnd;
   std::map<int, std::unique_ptr<Hero>> heroes;  // by player id, in join order
   std::unique_ptr<Floor> floor;
@@ -173,7 +184,7 @@ class Game {
   std::string state = "play";
   std::vector<json> fx;
 
-  Hero& join(int pid, const std::string& name, const std::string& cls);
+  Hero& join(int pid, const std::string& name, const std::string& cls, const json& talents = json());
   void leave(int pid);
   bool free_action(Hero& h, const json& a);
   void step(const std::map<int, json>& actions);

@@ -179,7 +179,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                {"choice", choice}, {"skills", skills}, {"pool", h.cls->res}, {"focus", h.focus}, {"standfast", h.standfast}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
   if (h.shopping) {
     json shop = json::array();
-    for (auto& it : f.shop) { json j = it->to_json(); j["price"] = it->value * 2; j["cmp"] = cmp(g, h, *it); shop.push_back(j); }
+    for (auto& it : f.shop) { json j = it->to_json(); j["price"] = g.price(h, *it); j["cmp"] = cmp(g, h, *it); shop.push_back(j); }
     json sell = json::array();
     for (auto& it : h.pack) sell.push_back({it->id, std::max(1, it->value / 3)});
     out["shop"] = {{"items", shop}, {"potion", 25 + 5 * g.lvl}, {"sell", sell}};
@@ -195,6 +195,9 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   h.log.clear();
   out["log"] = log;
   out["fx"] = g.fx;
+  out["frost"] = g.frost;
+  out["slain"] = g.slain;  // the zones whose boss fell: Sparks for the players' Pyre
+  if (h.tal("forged") && !h.forged && f.rest) out["forge"] = true;
   json wait = json::array();
   for (auto* o : g.active()) wait.push_back(o->pid);
   out["wait"] = wait;

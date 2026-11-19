@@ -10,6 +10,7 @@
 #include "data.hpp"
 #include "fx.hpp"
 #include "lore.hpp"
+#include "pyre.hpp"
 
 namespace {
 // the places to listen to, in the order of the map, and their music
@@ -114,6 +115,20 @@ void Client::load_settings() {
     if (line.rfind("class=", 0) == 0) cls_ = std::clamp(std::atoi(line.c_str() + 6), 0, int(data::CLASSES.size()) - 1);
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
     if (line.rfind("numbers=", 0) == 0) numbers_on_ = line[8] != '0';
+    if (line.rfind("sparks=", 0) == 0) sparks_ = std::max(0, std::atoi(line.c_str() + 7));
+    if (line.rfind("frost_max=", 0) == 0) frost_max_ = std::clamp(std::atoi(line.c_str() + 10), 0, pyre::FROST_MAX);
+    if (line.rfind("frost=", 0) == 0) frost_ = std::max(0, std::atoi(line.c_str() + 6));
+    auto list = [&](size_t from, auto fn) {
+      for (size_t i = from; i < line.size();) {
+        size_t j = line.find(',', i);
+        if (j == std::string::npos) j = line.size();
+        if (j > i) fn(line.substr(i, j - i));
+        i = j + 1;
+      }
+    };
+    if (line.rfind("talents=", 0) == 0)
+      list(8, [&](const std::string& t) { auto c = t.find(':'); if (c != std::string::npos) talents_[t.substr(0, c)] = std::atoi(t.c_str() + c + 1); });
+    if (line.rfind("claimed=", 0) == 0) list(8, [&](const std::string& t) { claimed_.insert(t); });
     if (line.rfind("window=", 0) == 0) std::sscanf(line.c_str(), "window=%dx%d", &win_w_, &win_h_);
     if (line.rfind("fullscreen=", 0) == 0) fullscreen_ = line[11] == '1';
     if (line.rfind("bag_", 0) == 0 && line.find('=') != std::string::npos) {
@@ -143,6 +158,13 @@ void Client::save_settings() {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
   }
+  f << "sparks=" << sparks_ << "\nfrost_max=" << frost_max_ << "\nfrost=" << frost_ << "\ntalents=";
+  bool first = true;
+  for (auto& [k, v] : talents_) { f << (first ? "" : ",") << k << ":" << v; first = false; }
+  f << "\nclaimed=";
+  first = true;
+  for (auto& c : claimed_) { f << (first ? "" : ",") << c; first = false; }
+  f << "\n";
   for (auto& [k, bag] : bags_) {
     f << "bag_" << k << "=";
     for (size_t i = 0; i < bag.size(); ++i) f << (i ? "," : "") << bag[i];
@@ -189,6 +211,11 @@ std::vector<std::string> Client::title_items() const {
   std::vector<std::string> items;
   if (saved_dive(save_file())) items.push_back("Go on with the dive");
   for (auto s : {"Dive alone", "Host a game for friends", "Join a game", "How to play", "Listen to the music"}) items.push_back(s);
+  {
+    int free = sparks_ - pyre::spent(pyre::clean(talents_, sparks_));
+    items.push_back("The Pyre" + (sparks_ ? " (" + std::to_string(free) + (free == 1 ? " Spark)" : " Sparks)") : std::string()));
+  }
+  if (frost_max_ > 0) items.push_back("Frost: " + std::to_string(std::min(frost_, frost_max_)) + " of " + std::to_string(frost_max_));
   items.push_back(music_on_ ? "Music: on" : "Music: off");
   items.push_back("Quit");
   return items;
@@ -206,9 +233,9 @@ void Client::start(bool host, bool open, bool resume) {
   open_ = open;
   // a dive alone is saved after every move, so it goes on after the app is closed or killed
   host_ = std::make_unique<Host>(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()), open,
-                                 open ? "" : save_file(), resume);
+                                 open ? "" : save_file(), resume, std::min(frost_, frost_max_));
   link_ = host_->local();
-  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}}}});
+  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
   screen_ = Screen::Game;
   maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
   if (open) {
@@ -228,7 +255,7 @@ void Client::join(const std::string& address) {
   if (!link_) { message_ = err; screen_ = Screen::Title; return; }
   hosting_ = false;
   host_.reset();
-  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}}}});
+  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
   screen_ = Screen::Game;
   maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
 }
@@ -278,6 +305,7 @@ void Client::apply(const json& s) {
       } else if (zf == 0 || (act == 0 && zf == 1)) queue_epigraph(data::ACTS[act].key);
     }
   }
+  claim_sparks(s);
   snap_ = s;
   bool shopping = s["me"].value("shopping", false);
   if (shopping && !was_shopping) { over_ = Over::Shop; sel_ = 0; }
@@ -420,6 +448,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     } else if (k == SDLK_ESCAPE) { SDL_StopTextInput(ctx_.get_sdl_window()); screen_ = Screen::Title; }
     return;
   }
+  if (screen_ == Screen::Pyre) { pyre_key(k); return; }
   if (screen_ == Screen::Listen) {
     if (k == SDLK_F) { listen_fight_ = !listen_fight_; return; }
     if (k == SDLK_N) { music_.renew(); return; }
@@ -541,6 +570,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case SDLK_I: act("pack"); break;
     case SDLK_P: act("perk"); break;
     case SDLK_L: act("look"); break;
+    case SDLK_R: if (snap_.value("forge", false)) send({{"t", "forge"}}); break;
     case SDLK_RETURN: case SDLK_KP_ENTER: {
       int t = maps_.count(snap_["floor"]) ? maps_[snap_["floor"]][me["y"].get<int>() * W + me["x"].get<int>()] - TILE0 : -1;
       if (t == data::STAIRS || t == data::EDGE) act("down");
@@ -554,6 +584,17 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
 void Client::click(int x, int y, bool down) {
   if (!down) { held_ = false; return; }
   if (screen_ == Screen::Intro) { screen_ = Screen::Title; menu_ = 0; return; }
+  if (screen_ == Screen::Pyre) {
+    for (auto& b : buttons_)
+      if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
+        if (b.action.rfind("pyre:", 0) == 0) {
+          int i = std::atoi(b.action.c_str() + 5);
+          if (i == pyre_sel_) pyre_key(SDLK_RETURN); else pyre_sel_ = i;
+        } else if (b.action.rfind("key:", 0) == 0) pyre_key(SDL_Keycode(std::atoi(b.action.c_str() + 4)));
+        return;
+      }
+    return;
+  }
   if (screen_ != Screen::Game) {
     int choice = x == -1000 ? y : -1;
     if (x != -1000) {  // which line was tapped
@@ -576,6 +617,8 @@ void Client::click(int x, int y, bool down) {
       else if (it == "Join a game") { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
       else if (it == "How to play") over_ = Over::Help, screen_ = Screen::Title;
       else if (it == "Listen to the music") { screen_ = Screen::Listen; menu_ = 0; }
+      else if (it.rfind("The Pyre", 0) == 0) { screen_ = Screen::Pyre; pyre_sel_ = 0; }
+      else if (it.rfind("Frost:", 0) == 0) { frost_ = (std::min(frost_, frost_max_) + 1) % (frost_max_ + 1); save_settings(); }
       else if (it.rfind("Music:", 0) == 0) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
       else running = false;
     } else if (screen_ == Screen::Listen) {
@@ -752,6 +795,7 @@ void Client::frame() {
   con_.clear({0x20, {200, 200, 200, 255}, {0, 0, 0, 255}});
   buttons_.clear();
   if (screen_ == Screen::Game) draw_game();
+  else if (screen_ == Screen::Pyre) draw_pyre();
   else draw_title();
   if (over_ == Over::Help) draw_help();
   TCOD_ViewportOptions vp{};
@@ -1569,4 +1613,115 @@ void Client::draw_end() {
   text(x + 2, r++, "depth " + std::to_string(snap_["depth"].get<int>()) + ", " + std::to_string(me["kills"].get<int>()) + " foes slain, " +
                        std::to_string(snap_["turn"].get<int>()) + " turns", GREY);
   text(x + 2, y + h - 2, "[Enter]", KEY);
+}
+
+// ------------------------------------------------------------------ the Pyre
+// Sparks from the snapshot: each zone boss that falls pays one, the first time on each Frost level; the King pays
+// three and opens the next Frost level.
+void Client::claim_sparks(const json& s) {
+  if (!s.contains("slain")) return;
+  int frost = s.value("frost", 0);
+  bool got = false;
+  for (auto& z : s["slain"]) {
+    std::string key = z.get<std::string>() + "@" + std::to_string(frost);
+    if (claimed_.count(key)) continue;
+    claimed_.insert(key);
+    bool king = z == "deep";
+    int n = king ? 3 : 1;
+    sparks_ += n;
+    got = true;
+    log_.push_back({std::string(king ? "Three sparks leap" : "A spark leaps") + " from the dying fire and settle" + (king ? "" : "s") +
+                        " in your palm, warm and unburning. Spend " + (king ? "them" : "it") + " at the Pyre in Charnfen.", 0xFFB040});
+    if (king && frost >= frost_max_ && frost_max_ < pyre::FROST_MAX) {
+      frost_max_ = frost + 1;
+      log_.push_back({"The frost will come back harder. Frost level " + std::to_string(frost_max_) + " is open.", 0x90C8FF});
+    }
+  }
+  if (got) save_settings();
+}
+
+void Client::pyre_key(SDL_Keycode k) {
+  // the talents in the order they are drawn: by branch, then down the rows
+  std::vector<int> order[3];
+  for (int i = 0; i < pyre::N; ++i) order[pyre::TALENTS[i].branch].push_back(i);
+  const pyre::Talent& t = pyre::TALENTS[std::clamp(pyre_sel_, 0, pyre::N - 1)];
+  auto& col = order[t.branch];
+  int at = int(std::find(col.begin(), col.end(), pyre_sel_) - col.begin());
+  auto have = pyre::clean(talents_, sparks_);
+  if (k == SDLK_ESCAPE) { talents_ = have; save_settings(); screen_ = Screen::Title; menu_ = 0; return; }
+  if (k == SDLK_UP || k == SDLK_KP_8) pyre_sel_ = col[(at + int(col.size()) - 1) % col.size()];
+  else if (k == SDLK_DOWN || k == SDLK_KP_2) pyre_sel_ = col[(at + 1) % col.size()];
+  else if (k == SDLK_LEFT || k == SDLK_KP_4 || k == SDLK_RIGHT || k == SDLK_KP_6) {
+    int b = (t.branch + (k == SDLK_LEFT || k == SDLK_KP_4 ? 2 : 1)) % 3;
+    pyre_sel_ = order[b][std::min(at, int(order[b].size()) - 1)];
+  } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE || k == SDLK_KP_PLUS || k == SDLK_EQUALS) {
+    int r = have.count(t.key) ? have[t.key] : 0;
+    if (r < t.ranks && pyre::open(have, t) && pyre::spent(have) < sparks_) { have[t.key] = r + 1; talents_ = have; save_settings(); }
+  } else if (k == SDLK_BACKSPACE || k == SDLK_MINUS || k == SDLK_KP_MINUS) {
+    // a rank comes back only if the rows below still stand without it
+    if (have.count(t.key)) {
+      auto less = have;
+      if (--less[t.key] == 0) less.erase(t.key);
+      if (pyre::clean(less) == less) { talents_ = less; save_settings(); }
+    }
+  } else if (k == SDLK_R) { talents_.clear(); save_settings(); }
+}
+
+void Client::draw_pyre() {
+  int cw = con_.get_width(), chh = con_.get_height();
+  auto have = pyre::clean(talents_, sparks_);
+  int free = sparks_ - pyre::spent(have);
+  auto centre = [&](int y, const std::string& s, int col) { text(std::max(0, (cw - int(s.size())) / 2), y, s, col); };
+  // the fire itself, small, at the top
+  double tt = now();
+  for (int i = -3; i <= 3; ++i) {
+    double f = .5 + .5 * std::sin(tt * 3.1 + i * 1.7);
+    int h = 2 - std::abs(i) / 2;
+    for (int j = 0; j <= h; ++j) put(cw / 2 + i, 3 - j, j == h ? '^' : 0x25B2, mixc(0xFFD060, 0xA02000, (j + f) / (h + 1.5)));
+  }
+  centre(5, "THE PYRE", GOLD);
+  centre(6, std::to_string(free) + (free == 1 ? " Spark" : " Sparks") + " to give, of " + std::to_string(sparks_), free ? 0xFFB040 : GREY);
+  bool narrow = cw < 66;
+  int colw = narrow ? cw : std::min(30, (cw - 2) / 3);
+  int x0 = narrow ? 0 : (cw - 3 * colw) / 2;
+  int top = 8, step = chh >= 46 ? 2 : 1, bottom = top;
+  const pyre::Talent& cur = pyre::TALENTS[std::clamp(pyre_sel_, 0, pyre::N - 1)];
+  for (int b = 0; b < 3; ++b) {
+    if (narrow && b != cur.branch) continue;  // a phone shows one branch at a time
+    int x = narrow ? 1 : x0 + b * colw;
+    int pts = 0;
+    for (auto& t : pyre::TALENTS) if (t.branch == b && have.count(t.key)) pts += have[t.key];
+    static const int BCOL[3] = {0xFF7030, 0xE0B070, 0xFFD040};
+    text(x + 1, top, std::string(pyre::BRANCHES[b]) + "  " + std::to_string(pts), BCOL[b]);
+    int y = top + 2 * step, row = 0;
+    for (int i = 0; i < pyre::N; ++i) {
+      auto& t = pyre::TALENTS[i];
+      if (t.branch != b) continue;
+      if (t.row != row) { if (row) y += step; row = t.row; }
+      int r = have.count(t.key) ? have[t.key] : 0;
+      bool open = pyre::open(have, t), on = i == pyre_sel_;
+      int col = !open ? 0x505050 : r == t.ranks ? 0xFFD060 : r ? 0xE0E0E0 : 0x9A9A9A;
+      std::string s = std::string(on ? ">" : " ") + t.name;
+      std::string rk = std::to_string(r) + "/" + std::to_string(t.ranks);
+      text(x, y, s.substr(0, colw - 5), col, on ? 0x302018 : 0);
+      text(x + colw - 5, y, rk, col, on ? 0x302018 : 0);
+      buttons_.push_back({x, y, colw - 1, step, "", "pyre:" + std::to_string(i)});
+      y += step;
+    }
+    bottom = std::max(bottom, y);
+  }
+  int by = std::min(chh - 9, bottom + step);
+  int w = std::min(cw - 4, 70);
+  int r = have.count(cur.key) ? have[cur.key] : 0;
+  std::string head = std::string(cur.name) + ", " + pyre::BRANCHES[cur.branch] + " row " + std::to_string(cur.row);
+  text((cw - w) / 2, by, head, WHITE);
+  wrap((cw - w) / 2, by + step, w, cur.text, 0xB4A078);
+  if (!pyre::open(have, cur))
+    text((cw - w) / 2, by + 3 * step, "Opens after " + std::to_string(3 * (cur.row - 1)) + " points in the rows above, in " + pyre::BRANCHES[cur.branch] + ".", 0x907060);
+  else if (r == cur.ranks) text((cw - w) / 2, by + 3 * step, "Full.", 0xFFD060);
+  std::string keys = "[Enter] give a Spark   [Bksp] take one back   [r] start over   [Esc] back";
+  if (narrow) keys = "[Enter] give  [Bksp] back  [r] reset  [Esc]";
+  centre(chh - 2, keys, 0x808080);
+  buttons_.push_back({0, chh - 2, cw, 1, "", "key:" + std::to_string(SDLK_ESCAPE)});
+  if (frost_max_ > 0) centre(chh - 2 - step, "The frost deepens: level " + std::to_string(std::min(frost_, frost_max_)) + " of " + std::to_string(frost_max_) + " (choose on the title screen).", 0x90C8FF);
 }

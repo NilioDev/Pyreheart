@@ -81,6 +81,14 @@ struct Host::Peer {
   std::atomic<bool> dead{false};
 };
 
+static json journal_head(const std::string& path) {
+  std::ifstream f(path);
+  std::string line;
+  if (!std::getline(f, line)) return json();
+  json head = json::parse(line, nullptr, false);
+  return head.is_object() ? head : json();
+}
+
 static uint64_t journal_seed(const std::string& path) {
   std::ifstream f(path);
   std::string line;
@@ -92,8 +100,10 @@ static uint64_t journal_seed(const std::string& path) {
 
 bool saved_dive(const std::string& journal) { return journal_seed(journal) != 0; }
 
-Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume)
-    : game_(resume && journal_seed(journal) ? journal_seed(journal) : seed), journal_(journal) {
+Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume, int frost)
+    : game_(resume && journal_seed(journal) ? journal_seed(journal) : seed,
+            resume && journal_seed(journal) ? journal_head(journal).value("frost", 0) : frost),
+      journal_(journal) {
   if (resume && journal_seed(journal)) {
     std::ifstream f(journal);
     std::string line;
@@ -102,7 +112,7 @@ Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume)
       json e = json::parse(line, nullptr, false);
       if (!e.is_object()) break;  // a line cut short when the app was killed
       if (e.contains("j")) {
-        game_.join(e["j"][0], e["j"][1], e["j"][2]);
+        game_.join(e["j"][0], e["j"][1], e["j"][2], e["j"].size() > 3 ? e["j"][3] : json());
         resume_pid_ = e["j"][0];
         next_pid_ = (std::max)(next_pid_, resume_pid_ + 1);
       } else if (e.contains("f")) {
@@ -122,7 +132,7 @@ Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume)
     if (game_.state != "play" || !resume_pid_) { resume_pid_ = 0; finished(); }
   } else if (!journal_.empty()) {
     std::ofstream f(journal_, std::ios::trunc);
-    f << json{{"build", PYREHEART_BUILD}, {"seed", seed}}.dump() << "\n";
+    f << json{{"build", PYREHEART_BUILD}, {"seed", seed}, {"frost", game_.frost}}.dump() << "\n";
   }
   loop_ = std::thread([this] { loop(); });
   if (open) {
@@ -339,8 +349,10 @@ void Host::handle(const std::shared_ptr<Peer>& peer, const json& m) {
     std::string name = hello.value("name", "Nameless").substr(0, 16);
     if (name.empty()) name = "Nameless";
     peer->pid = next_pid_++;
-    game_.join(peer->pid, name, hello.value("cls", "warrior"));
-    write({{"j", {peer->pid, name, hello.value("cls", "warrior")}}});
+    json talents = hello.contains("talents") && hello["talents"].is_object() ? hello["talents"] : json::object();
+    Hero& h = game_.join(peer->pid, name, hello.value("cls", "warrior"), talents);
+    json kept(h.talents);  // only what the tree allows
+    write({{"j", {peer->pid, name, hello.value("cls", "warrior"), kept}}});
     peer->out(json{{"welcome", peer->pid}}.dump());
     for (auto& p : peers_) push(*p);
     return;

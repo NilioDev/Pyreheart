@@ -7,6 +7,7 @@
 #include <tuple>
 
 #include "game.hpp"
+#include "pyre.hpp"
 
 using namespace data;
 
@@ -182,8 +183,23 @@ static json choose(Game& g, Hero& h) {
 }
 
 static void run(const std::vector<std::string>& classes, uint64_t seed) {
-  Game g(seed);
-  for (size_t i = 0; i < classes.size(); ++i) g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i]);
+  // BOTFROST=n plays on that Frost level; BOTTALENTS=all gives every bot the whole Pyre tree (or "kindled:3,glint:1")
+  Game g(seed, std::getenv("BOTFROST") ? std::atoi(std::getenv("BOTFROST")) : 0);
+  json talents = json::object();
+  if (const char* t = std::getenv("BOTTALENTS")) {
+    std::string s = t;
+    if (s == "all") for (auto& d : pyre::TALENTS) talents[d.key] = d.ranks;
+    else
+      for (size_t i = 0; i < s.size();) {
+        size_t j = s.find(',', i);
+        if (j == std::string::npos) j = s.size();
+        auto part = s.substr(i, j - i);
+        auto c = part.find(':');
+        if (c != std::string::npos) talents[part.substr(0, c)] = std::atoi(part.c_str() + c + 1);
+        i = j + 1;
+      }
+  }
+  for (size_t i = 0; i < classes.size(); ++i) g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents);
   int steps = 0;
   while (g.state == "play" && steps < 20000) {
     std::map<int, json> acts;

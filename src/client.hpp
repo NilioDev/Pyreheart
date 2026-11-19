@@ -6,6 +6,7 @@
 #include <deque>
 #include <libtcod.hpp>
 #include <memory>
+#include <set>
 
 #include "music.hpp"
 #include "net.hpp"
@@ -22,7 +23,7 @@ class Client {
   void shot(const std::string& path) { shot_ = path; frame(); }  // the screen as shown, particles too, as a PNG
 
  private:
-  enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Game };
+  enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
   enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring, Epigraph };
   tcod::Context& ctx_;
   tcod::Console con_;
@@ -118,6 +119,14 @@ class Client {
   double epi_start_ = 0;
   int epi_floor_ = -1;
   std::map<std::string, std::vector<int>> bags_;
+  // the Pyre: Sparks earned (all of them, spent or not), the gifts bought with them, the Frost levels opened and chosen,
+  // and the zone bosses already paid out for, as "zone@frost"
+  int sparks_ = 0, frost_max_ = 0, frost_ = 0, pyre_sel_ = 0;
+  std::map<std::string, int> talents_;
+  std::set<std::string> claimed_;
+  void claim_sparks(const json& s);
+  void draw_pyre();
+  void pyre_key(SDL_Keycode k);
   void queue_epigraph(const std::string& zone);
   void draw_epigraph();
   void draw_route();

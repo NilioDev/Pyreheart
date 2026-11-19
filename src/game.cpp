@@ -7,6 +7,7 @@
 #include <deque>
 
 #include "k5.hpp"
+#include "pyre.hpp"
 #include "lore.hpp"
 
 using namespace data;
@@ -56,7 +57,7 @@ json xy(int x, int y) { return json::array({x, y}); }
 json cells_json(const std::vector<P>& cs) { json a = json::array(); for (auto c : cs) a.push_back(xy(c.x, c.y)); return a; }
 }  // namespace
 
-Game::Game(uint64_t seed) : rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
+Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, pyre::FROST_MAX)), rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
   // for screenshots and tests: PYREHEART_ZONE=vaults starts the dive in that zone (by the first way there), and
   // PYREHEART_BOSS=1 on its boss's map, next to it; PYREHEART_ROUTE=cistern,vaults,prison picks the ways a whole dive takes
   route = {0};
@@ -89,7 +90,7 @@ void Game::set_level() {
 }
 
 // ------------------------------------------------------------------ players
-Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
+Hero& Game::join(int pid, const std::string& name, const std::string& cls, const json& talents) {
   for (auto& [id, h] : heroes)
     if (h->away && h->name == name) {  // the same player back again: they keep their hero
       auto back = std::move(h);
@@ -108,6 +109,12 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   h->pid = pid;
   h->name = name;
   h->cls = &class_def(cls);
+  if (talents.is_object()) {
+    std::map<std::string, int> want;
+    for (auto& [k, v] : talents.items()) if (v.is_number_integer()) want[k] = v.get<int>();
+    h->talents = pyre::clean(want);
+  }
+  h->heal += 2 * h->tal("credit");
   for (auto& b : h->cls->start) { auto it = loot::make(b); h->equip[it->slot] = it; }
   // for screenshots and tests: start with a full pack of things to compare
   if (const char* g = std::getenv("PYREHEART_GIFTS"))
@@ -207,18 +214,19 @@ Stats Game::stats(const Hero& h) const {
   bool bow = w && w->kind == "bow";
   int ar = 0;
   for (auto& [slot, it] : h.equip) ar += it->ar;
-  auto res = [&](const std::string& k) { return std::min(75, s(k) + 20 * h.perk("ward")); };
+  auto res = [&](const std::string& k, int more = 0) { return std::min(75, s(k) + 20 * h.perk("ward") + more); };
   Stats st{};
-  st.maxhp = h.cls->hp + h.cls->hp_lvl * (h.lvl - 1) + 15 * h.perk("tough") + s("hp");
+  st.maxhp = h.cls->hp + h.cls->hp_lvl * (h.lvl - 1) + 15 * h.perk("tough") + s("hp") + 5 * h.tal("hearthskin");
   st.maxmana = h.cls->fury() ? 10 : h.cls->mana + h.cls->mana_lvl * (h.lvl - 1) + 15 * h.perk("well") + s("mana");
   st.lo = (w ? w->lo : 1) + s("dmg");
   st.hi = (w ? w->hi : 3) + s("dmg");
-  st.pct = s("dmg_pct") + 15 * h.perk("brute");
+  st.pct = s("dmg_pct") + 15 * h.perk("brute") + 4 * h.tal("kindled") + (h.fury_t > 0 ? 50 : 0);
+  if (h.hp < st.maxhp / 2) st.pct += 5 * h.tal("fevered");
   st.acc = h.cls->acc + h.lvl + 8 * h.perk("eye") + s("acc");
-  st.crit = 5 + 4 * h.perk("eye") + s("crit") + (bow ? 10 * (h.perk("sniper") + h.perk("sharpshooter")) : 0);
+  st.crit = 5 + 4 * h.perk("eye") + s("crit") + 2 * h.tal("coaleyed") + (bow ? 10 * (h.perk("sniper") + h.perk("sharpshooter")) : 0);
   st.armour = ar + s("armour") + 3 * h.perk("hide") + 4 * h.perk("guardian");
   if (h.sunder > 0) st.armour /= 2;  // split by acid or a smith's hammer
-  st.res_f = res("res_fire"); st.res_c = res("res_cold"); st.res_p = res("res_poison");
+  st.res_f = res("res_fire"); st.res_c = res("res_cold", 10 * h.tal("warmhands")); st.res_p = res("res_poison");
   st.leech = s("leech"); st.spell = s("spell"); st.fire = s("fire_dmg");
   st.regen = 1 + h.perk("well") + s("regen"); st.thorns = s("thorns");
   st.bow = bow;
@@ -355,7 +363,12 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
     std::string kind = pick_kind();
     std::string aff = rnd.pick(AFFIXES).first;
     P c = rnd.pick(far);
-    for (int i = 0; i < 3; ++i) if (auto m = spawn_near(kind, c)) champion(*m, {aff});
+    std::vector<std::string> mods{aff};
+    if (frost > 0 && rnd.real() < .35 * frost) {  // Frost: a second affix
+      std::string more = rnd.pick(AFFIXES).first;
+      if (more != aff) mods.push_back(more);
+    }
+    for (int i = 0; i < 3; ++i) if (auto m = spawn_near(kind, c)) champion(*m, mods);
     budget -= 4;
   }
   if (lvl >= 3 && rnd.real() < .5 && !far.empty()) {
@@ -507,7 +520,9 @@ void Game::build_waystation(Floor& f) {
       if (ch == 'M') { f.merchant = {x, y}; f.has_merchant = true; }
     }
   auto kinds = party_kinds();
-  for (int i = 0; i < 5; ++i) f.shop.push_back(loot::roll(lvl + 1, rnd, kinds, "", "magic"));
+  int wares = 5;
+  for (auto& [id, h] : heroes) if (h->tal("friend")) wares = 6;
+  for (int i = 0; i < wares; ++i) f.shop.push_back(roll_loot(lvl + 1, kinds, "", "magic"));
 }
 
 MonP Game::spawn(const std::string& key, int x, int y) {
@@ -518,7 +533,12 @@ MonP Game::spawn(const std::string& key, int x, int y) {
   m->xp = d.xp * 2;
   m->rank = d.boss ? "boss" : "normal";
   double k = 1 + .6 * (std::max<size_t>(1, living().size()) - 1);
-  m->maxhp = rnd_i(d.hp * k); m->hp = m->maxhp;
+  m->maxhp = rnd_i(d.hp * k * (1 + .4 * frost)); m->hp = m->maxhp;
+  if (frost > 0) {  // the deeper the frost, the harder they come
+    m->lo = rnd_i(m->lo * (1 + .25 * frost)); m->hi = rnd_i(m->hi * (1 + .25 * frost));
+    m->acc += 3 * frost; m->ar += frost;
+    m->xp = rnd_i(m->xp * (1 + .3 * frost));
+  }
   m->energy = rnd.below(100);
   if (d.has("sleeper")) m->dormant = 1;
   if (d.has("disguise")) m->hidden = 1;
@@ -577,7 +597,11 @@ void Game::next_floor() {
   floor = make_floor(depth, to_rest);
   scaled_ = 1.0;
   rescale();
-  for (auto& [id, h] : heroes) h->seen.assign(W * H, 0);
+  for (auto& [id, h] : heroes) {
+    h->seen.assign(W * H, 0);
+    if (int r = h->tal("sense"))  // Treasure Sense: the chests (and shrines) of a new floor are known at once
+      for (int i = 0; i < W * H; ++i) if (floor->t[i] == CHEST || (r >= 2 && floor->t[i] == SHRINE)) h->seen[i] = 1;
+  }
   for (auto& [id, h] : heroes) {
     h->gone = false; h->shopping = false; h->drank = false;
     if (to_rest && h->dead && !h->away) {
@@ -588,6 +612,8 @@ void Game::next_floor() {
   }
   if (to_rest) {
     say_all(lore::WAYSTATION, 0xD2B48C);
+    for (auto* h : living())
+      if (h->tal("forged") && !h->forged) h->say("The Spark in you could reforge your weapon's magic here, once this dive: [r].", 0xFFB040);
     auto& next = ACTS[route.back()].next;
     if (next.size() > 1)
       say_all("Two stairs lead on: to " + ACTS[next[0]].name + " and to " + ACTS[next[1]].name + ". Look at them with [l].",
@@ -649,6 +675,7 @@ void Game::act(Hero& h, const json& a) {
   else if (t == "drop") drop(h, a.value("id", 0));
   else if (t == "give") give(h, a.value("id", 0));
   else if (t == "down") descend(h);
+  else if (t == "forge") forge(h);
   else if (t != "wait") free_action(h, a);
 }
 
@@ -698,9 +725,14 @@ void Game::arrive(Hero& h) {
     FloorItem& fi = floor->items[k];
     if (fi.x != h.x || fi.y != h.y || (fi.owner && fi.owner != h.pid)) { ++k; continue; }
     bool took = true;
-    if (fi.gold > 0) { h.gold += fi.gold; num(h.x, h.y, "+" + std::to_string(fi.gold), 0xFFD700); h.say(std::to_string(fi.gold) + " gold.", 0xFFD700); }
+    if (fi.gold > 0) {
+      int g = fi.gold * (100 + 5 * h.tal("glint")) / 100;
+      h.gold += g;
+      num(h.x, h.y, "+" + std::to_string(g), 0xFFD700);
+      h.say(std::to_string(g) + " gold.", 0xFFD700);
+    }
     else if (!fi.pot.empty()) {
-      if (fi.pot == "heal" && h.heal < BELT_MAX) { ++h.heal; h.say("A healing potion.", 0xFF7070); }
+      if (fi.pot == "heal" && h.heal < belt(h)) { ++h.heal; h.say("A healing potion.", 0xFF7070); }
       else if (fi.pot == "mana" && h.mana_pots < BELT_MAX) { ++h.mana_pots; h.say("A mana potion.", 0x7090FF); }
       else took = false;
     } else if (fi.item) {
@@ -819,6 +851,12 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
     bleed(h, m, dmg);
     h.mana = std::min(st.maxmana, h.mana + 2);
     tip(h, "opening", "An opening! A busy foe takes a critical blow from you, and bleeds.");
+  }
+  if (h.tal("embers") && rnd.below(100) < 5 * h.tal("embers") && !m.can("stone")) {
+    m.bleed = std::max(m.bleed, 3);
+    m.bleed_dmg = std::max(m.bleed_dmg, std::max(2, dmg / 3));
+    add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 0}, {"col", 0xFF8C28}});
+    num(m.x, m.y, "burning", 0xFF8C28);
   }
   crit_next = crit;
   hurt(m, dmg, &h, opening ? "An opening: you cut " + the(m) + " deep (" + std::to_string(dmg) + ")."
@@ -987,6 +1025,7 @@ bool Game::wind_up(Mon& m, Hero& h, const std::string& name) {
 }
 
 void Game::land(Mon& m) {
+  struct Landing { bool& f; Landing(bool& x) : f(x) { f = true; } ~Landing() { f = false; } } landing(landing_);
   Blow b = m.blow;
   m.blow = {};
   m.brace = 0;  // a raised shield comes down to strike
@@ -1039,6 +1078,17 @@ void Game::kill(Mon& m, Hero* by) {
   if (by) {
     ++by->kills;
     if (by->perk("blood")) by->hp = std::min(stats(*by).maxhp, by->hp + 3 * by->perk("blood"));
+    if (by->tal("heat") && by->heat_floor != floor->id) {  // Heat of Battle
+      by->heat_floor = floor->id;
+      Stats st = stats(*by);
+      by->mana = std::min(st.maxmana, by->mana + std::max(2, st.maxmana / 5));
+    }
+    if (int r = by->tal("pyrewake")) {  // Pyre Wake: the dead flare up and burn their neighbours
+      add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", 0xFF8C28}});
+      std::vector<MonP> near;
+      for (auto& o : floor->mons) if (cheb(o->x, o->y, m.x, m.y) <= 1) near.push_back(o);
+      for (auto& o : near) if (o->hp > 0) hurt(*o, rnd.range(2, 4) * r + lvl / 2, nullptr, "");
+    }
   }
   if (m.has("Fire-blooded")) {
     add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", 0xFF8C28}});
@@ -1048,6 +1098,7 @@ void Game::kill(Mon& m, Hero* by) {
   trait_death(m);
   drops(m);
   if (floor->boss.get() == &m) {
+    slain.push_back(ACTS[floor->act].key);
     say_all(lore::BOSS_DIES.at(m.def->key), 0xFFD27F);
     if (final_floor()) {
       state = "won";
@@ -1118,16 +1169,16 @@ void Game::drops(const Mon& m) {
   if (m.rank == "boss") {
     // the great foes give each hero two things worth having
     for (auto* o : owners) {
-      drop_at({0, 0, loot::roll(lvl + 1, rnd, o->cls->kinds, "", "rare"), 0, "", o->pid});
-      drop_at({0, 0, loot::roll(lvl + 1, rnd, kinds, "", "magic"), 0, "", o->pid});
+      drop_at({0, 0, roll_loot(lvl + 1, o->cls->kinds, "", "rare"), 0, "", o->pid});
+      drop_at({0, 0, roll_loot(lvl + 1, kinds, "", "magic"), 0, "", o->pid});
     }
-    if (rnd.real() < .3) drop_at({0, 0, loot::roll(lvl, rnd, kinds, "unique"), 0, "", rnd.pick(owners)->pid});
+    if (rnd.real() < .3) drop_at({0, 0, roll_loot(lvl, kinds, "unique"), 0, "", rnd.pick(owners)->pid});
     return;
   }
   std::vector<ItemP> items;
-  if (m.rank == "unique") { items.push_back(loot::roll(lvl, rnd, kinds, "", "rare")); items.push_back(loot::roll(lvl, rnd, kinds, "", "magic")); }
-  else if (m.rank == "champion") { if (m.def->gear || rnd.real() < .4) items.push_back(loot::roll(lvl, rnd, kinds, "", "magic")); }
-  else if (m.def->gear && rnd.real() < .12) items.push_back(loot::roll(lvl, rnd, kinds));
+  if (m.rank == "unique") { items.push_back(roll_loot(lvl, kinds, "", "rare")); items.push_back(roll_loot(lvl, kinds, "", "magic")); }
+  else if (m.rank == "champion") { if (m.def->gear || rnd.real() < .4) items.push_back(roll_loot(lvl, kinds, "", "magic")); }
+  else if (m.def->gear && rnd.real() < .12) items.push_back(roll_loot(lvl, kinds));
   for (auto& it : items) drop_at({0, 0, it, 0, "", rnd.pick(owners)->pid});
 }
 
@@ -1142,7 +1193,7 @@ void Game::open_chest(Hero& h, int x, int y) {
     });
   };
   for (auto* o : living()) {  // something for each hero
-    auto it = loot::roll(lvl, rnd, o->cls->kinds, rnd.real() < .45 ? "magic" : "");
+    auto it = roll_loot(lvl, o->cls->kinds, rnd.real() < .45 ? "magic" : "");
     P c;
     if (spot(c)) floor->items.push_back({c.x, c.y, it, 0, "", o->pid});
   }
@@ -1664,7 +1715,7 @@ void Game::give(Hero& h, int id) {
 void Game::buy(Hero& h, int i) {
   if (!h.shopping || i < 0 || i >= int(floor->shop.size())) return;
   ItemP it = floor->shop[i];
-  int price = it->value * 2;
+  int price = this->price(h, *it);
   if (h.gold < price) { h.say("You cannot pay " + std::to_string(price) + " gold.", 0x909090); return; }
   if (int(h.pack.size()) >= PACK_MAX) { h.say("Your pack is full.", 0x909090); return; }
   h.gold -= price;
@@ -1677,7 +1728,7 @@ void Game::buy_potion(Hero& h, const std::string& k) {
   if (!h.shopping) return;
   int price = 25 + 5 * lvl;
   if (h.gold < price) { h.say("You cannot pay " + std::to_string(price) + " gold.", 0x909090); return; }
-  if (k == "heal" && h.heal < BELT_MAX) { ++h.heal; h.gold -= price; }
+  if (k == "heal" && h.heal < belt(h)) { ++h.heal; h.gold -= price; }
   else if (k == "mana" && h.mana_pots < BELT_MAX) { ++h.mana_pots; h.gold -= price; }
 }
 
@@ -1867,6 +1918,7 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   if (h.brand > 0) dmg = rnd_i(dmg * 1.25);
   if (h.shield > 0) dmg = std::max(1, dmg / 2);
   if (h.standfast > 0) dmg = std::max(1, dmg / 2);
+  if (landing_ && h.tal("mantle")) dmg = std::max(1, dmg * (100 - 10 * h.tal("mantle")) / 100);
   if (h.cls->fury()) dmg = std::max(1, rnd_i(dmg * (1 - .02 * h.mana)));  // fury dulls the pain
   if (h.cls->fury() && m) h.mana = std::min(10, h.mana + (h.perk("guardian") ? 2 : 1));
   h.hp -= dmg;
@@ -1874,6 +1926,25 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   add_fx({{"k", "blood"}, {"x", h.x}, {"y", h.y}, {"src", xy(m ? m->x : h.x, m ? m->y : h.y - 1)}});
   h.say((m ? cap(the(*m)) : std::string(kind == "fire" ? "Fire" : kind == "bleed" ? "Bleeding" : "Poison")) + " hurts you (" + std::to_string(dmg) + ").", 0xFF8080);
   if (h.hp <= stats(h).maxhp / 3 && h.heal > 0) tip(h, "quaff", "You are badly hurt. Drink a healing potion: [q].");
+  if (h.hp <= 0 && h.tal("unquenched") && !h.unquenched) {  // Unquenched: once a dive, the fire will not go out
+    h.unquenched = true;
+    Stats st = stats(h);
+    h.hp = 1 + st.maxhp * 3 / 10;
+    h.say("The Spark in you will not go out. You burst into healing flame!", 0xFFB040);
+    add_fx({{"k", "wave"}, {"x", h.x}, {"y", h.y}, {"r", 2}, {"col", 0xFF8C28}, {"sign", "*"}});
+    num(h.x, h.y, "unquenched", 0xFFB040);
+    std::vector<MonP> near;
+    for (auto& o : floor->mons) if (cheb(o->x, o->y, h.x, h.y) <= 2) near.push_back(o);
+    for (auto& o : near) if (o->hp > 0) hurt(*o, 8 + lvl * 2, &h);
+    return;
+  }
+  if (h.hp > 0 && h.tal("heartsfury") && h.fury_floor != floor->id && h.hp <= stats(h).maxhp / 4) {  // Heart's Fury
+    h.fury_floor = floor->id;
+    h.fury_t = 5;
+    h.say("Your heart flares! The flames stun all around you.", 0xFF8040);
+    add_fx({{"k", "wave"}, {"x", h.x}, {"y", h.y}, {"r", 3}, {"col", 0xFF6020}, {"sign", "^"}});
+    for (auto& o : floor->mons) if (cheb(o->x, o->y, h.x, h.y) <= 3) o->stun = std::max(o->stun, o->rank == "boss" ? 1 : 2);
+  }
   if (h.hp <= 0) {
     h.hp = 0;
     h.dead = true;
@@ -1975,6 +2046,15 @@ void Game::tick() {
     if (h->shield > 0) --h->shield;
     if (turn % 3 == 0 && !h->cls->fury()) h->mana = std::min(st.maxmana, h->mana + st.regen);
     if (h->standfast > 0) --h->standfast;
+    if (h->fury_t > 0) --h->fury_t;
+    if (int r = h->tal("pulse"); r && turn % (9 - 2 * r) == 0) h->hp += std::max(1, st.maxhp / 60);  // Steady Pulse
+    if (h->tal("shared") && turn % 3 == 0)  // Shared Hearth
+      for (auto* o : active()) if (o != h && cheb(o->x, o->y, h->x, h->y) <= 3) o->hp = std::min(stats(*o).maxhp, o->hp + std::max(1, stats(*o).maxhp / 80));
+    if (h->tal("thaw") && turn % 2 == 0) {  // Thaw: what holds you wears off twice as fast
+      if (h->numb > 0) --h->numb;
+      if (h->held > 0) --h->held;
+      if (h->dazed > 0) --h->dazed;
+    }
     h->hp = std::min(h->hp, st.maxhp);
   }
   for (auto& m : floor->mons)
@@ -2007,7 +2087,7 @@ void Game::look() {
   for (auto& [id, hp] : heroes) {
     Hero& h = *hp;
     if (h.away) continue;
-    int sight = floor->deep ? SIGHT + 5 : SIGHT;  // the lava lights the Deep: you see further there
+    int sight = (floor->deep ? SIGHT + 5 : SIGHT) + h.tal("lantern");  // the lava lights the Deep: you see further there
     bool dim = false;
     for (auto& m : floor->mons) if (m->awake && m->can("dim") && cheb(m->x, m->y, h.x, h.y) <= 5) dim = true;
     if (dim) sight = 3;
@@ -2033,4 +2113,41 @@ void Game::look() {
     }
   }
   TCOD_map_delete(map);
+}
+
+// ------------------------------------------------------------------ the Pyre's gifts
+// Drops: the Frost makes them deeper, and Good Eye (the best in the party) sometimes makes them a rarity better.
+ItemP Game::roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity, const std::string& at_least) {
+  d += 3 * frost;
+  auto it = loot::roll(d, rnd, kinds, rarity, at_least);
+  int eye = 0;
+  for (auto* h : living()) eye = std::max(eye, h->tal("goodeye"));
+  if (rarity.empty() && eye && rnd.below(100) < 3 * eye) {
+    std::string up = it->rarity == "normal" ? "magic" : it->rarity == "magic" ? "rare" : it->rarity == "rare" ? "unique" : "";
+    if (!up.empty()) it = loot::roll(d, rnd, kinds, up);
+  }
+  return it;
+}
+
+// Spark-Forged: once a dive, at a waystation, the weapon's magic is rolled again (the same kind of weapon, as good)
+void Game::forge(Hero& h) {
+  if (!h.tal("forged")) return;
+  if (!floor->rest) { h.say("Only at a waystation's fire.", 0x909090); return; }
+  if (h.forged) { h.say("The Spark has already reforged once this dive.", 0x909090); return; }
+  auto wi = h.equip.find("weapon");
+  if (wi == h.equip.end() || wi->second->rarity == "normal" || wi->second->rarity == "unique") {
+    h.say("Only a magic or rare weapon can be reforged.", 0x909090);
+    return;
+  }
+  ItemP old = wi->second, best;
+  for (int i = 0; i < 40 && !best; ++i) {
+    auto it = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity);
+    if (it->base == old->base) best = it;
+  }
+  if (!best) best = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity);
+  if (best->slot != "weapon") return;
+  h.forged = true;
+  wi->second = best;
+  add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xFFB040}});
+  h.say("The Spark reforges " + old->name + " into " + best->name + ".", rarity_col(best->rarity));
 }
