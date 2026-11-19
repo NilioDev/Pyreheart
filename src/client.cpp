@@ -727,10 +727,11 @@ void Client::update_music() {
   music_.volume(music_on_ ? .7f : 0);
   if (screen_ != Screen::Game || !snap_.is_object()) { music_.mood(music::TITLE); return; }
   if (snap_.value("rest", false)) { music_.mood(music::REST); return; }
-  // the zones without music of their own yet borrow the nearest: the wet ones the Caves', the halls the Forge's
-  static const int borrow[] = {0, 1, 2, 3, 1, 2, 2, 2, 0, 3};
-  int act = borrow[std::clamp(snap_.value("act", 0), 0, data::ZONES - 1)];
-  music_.mood(music::Mood(music::CRYPT + act), snap_.contains("boss"));
+  // each zone its own mood, in the order of ACTS
+  namespace m = music;
+  static const m::Mood zone[] = {m::CRYPT, m::CAVES, m::FORGE, m::DEEP, m::CISTERN, m::CITY, m::VAULTS, m::BARRACKS, m::PRISON, m::SANCTUM};
+  static_assert(sizeof zone / sizeof zone[0] == data::ZONES);
+  music_.mood(zone[std::clamp(snap_.value("act", 0), 0, data::ZONES - 1)], snap_.contains("boss"));
 }
 
 void Client::frame() {
