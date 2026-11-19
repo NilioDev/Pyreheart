@@ -534,6 +534,7 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
   if (screen_ != Screen::Game || !snap_.is_object() || (over_ != Over::None && over_ != Over::Target)) return;
   int fl = snap_["floor"];
   if (!maps_.count(fl)) return;
+  if (snap_.value("town", false)) { draw_town_particles(r, ox, oy, cell); return; }
   const std::string& map = maps_[fl];
   const std::string& vis = snap_["vis"].get_ref<const std::string&>();
   double tt = now(), px = cell / 8;

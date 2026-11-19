@@ -3,6 +3,10 @@
 // melts before it reaches the fire.
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <string>
+
+#include <SDL3/SDL.h>
 
 #include "client.hpp"
 #include "data.hpp"
@@ -16,6 +20,20 @@ int mixc(int a, int b, double f) {
   f = std::clamp(f, 0.0, 1.0);
   auto m = [&](int s) { int x = (a >> s) & 255, y = (b >> s) & 255; return std::clamp(int(x + (y - x) * f), 0, 255) << s; };
   return m(16) | m(8) | m(0);
+}
+// value noise, smooth, for the mist
+double vnoise(double x, double y) {
+  auto h = [](int a, int b) { unsigned v = unsigned(a) * 73856093u ^ unsigned(b) * 19349663u; v ^= v >> 13; v *= 0x5bd1e995u; v ^= v >> 15; return (v % 10000) / 10000.0; };
+  int x0 = int(std::floor(x)), y0 = int(std::floor(y));
+  double fx = x - x0, fy = y - y0;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  double a = h(x0, y0) + (h(x0 + 1, y0) - h(x0, y0)) * fx, b = h(x0, y0 + 1) + (h(x0 + 1, y0 + 1) - h(x0, y0 + 1)) * fx;
+  return a + (b - a) * fy;
+}
+// for the mock-ups: PYREHEART_TOWNFX=mist (banks of ground mist) or all (mist and finer particles)
+int town_fx() {
+  static int m = [] { const char* e = std::getenv("PYREHEART_TOWNFX"); return !e ? 0 : std::string(e) == "all" ? 2 : 1; }();
+  return m;
 }
 }  // namespace
 
@@ -89,6 +107,22 @@ void Client::draw_town() {
       if (t == data::WALL) bg = mixc(scale(col, .22 * l), 0x3A1A08, w * .5);
       else if (w > .05f) bg = scale(0x5A2A0A, w * std::min(l, 1.2f) * .75f);
       (void)vis;
+      if (town_fx() && t != data::WALL && !data::blocks(t)) {
+        // ground mist: slow banks drifting with the wind, thick among the graves, burnt away round the fire;
+        // where the firelight falls on it, it glows warm
+        double fd = std::hypot((x - fcx) / 1.6, double(y - fcy));
+        double keep = std::clamp((fd - 7) / 9, 0.0, 1.0);
+        double n = .55 * vnoise(x * .09 - tt * .22, y * .2 + tt * .03) + .3 * vnoise(x * .21 - tt * .4 + 50, y * .4 - tt * .05) +
+                   .15 * vnoise(x * .5 - tt * .7, y * .9 + 20);
+        double m = std::clamp((n - .38) / .35, 0.0, 1.0) * keep;
+        if (m > 0) {
+          int fog = mixc(0x46506A, 0x8A5A34, std::min(1.0, w * 1.4));
+          fog = scale(fog, .55 + .6 * std::min(1.f, l));
+          bg = mixc(bg, fog, m * .62);
+          fg = mixc(fg, fog, m * .38);
+          if (t == data::SNOW && ch == ' ' && m > .7) { ch = 0x2591; fg = mixc(bg, 0x8A94A8, .25); }  // the thickest wisps
+        }
+      }
       put(X, Y, ch, fg, bg);
     }
   // the fire, sparks and smoke, torches and candles, snow
@@ -135,6 +169,7 @@ void Client::draw_town() {
   for (auto& c : smokes) smoke(c, ++k, 5, 9);
   if (fcx >= 0) {
     smoke({fcx, fcy - 1}, 99, 10, 13);
+    if (town_fx() < 2)
     // sparks: thrown up from the fire, drifting, cooling from yellow to red to nothing
     for (int j = 0; j < 26; ++j) {
       double period = .9 + noise(j * 3) * 1.4, ph = std::fmod(tt / period + noise(j * 7), 1.0);
@@ -146,7 +181,7 @@ void Client::draw_town() {
     }
   }
   // snow: about one flake in forty cells, falling and drifting; it melts before it reaches the fire
-  for (int k2 = 0; k2 < W * H / 40; ++k2) {
+  for (int k2 = 0; k2 < (town_fx() == 2 ? 0 : W * H / 40); ++k2) {
     unsigned hsh = k2 * 2654435761u;
     double speed = 1.5 + (hsh >> 8) % 100 / 60.0;
     int x = int(hsh % W + std::sin(tt * .8 + k2) * 1.5 + tt * .6) % W;
@@ -157,4 +192,67 @@ void Client::draw_town() {
     if (t2 == data::FLAGS || (data::blocks(t2) && t2 != data::GRAVE && t2 != data::CROSS && t2 != data::TREE)) continue;
     put(sx(x), sy(y), (k2 % 7) ? 0x00B7 : '*', (k2 % 7) ? 0xB8C0D4 : 0x7A8498);
   }
+}
+
+// Finer than a cell: snow and ash in three layers, sparks from the great fire, the breath of the heroes in the cold
+void Client::draw_town_particles(SDL_Renderer* r, double ox, double oy, double cell) {
+  if (town_fx() < 2) return;
+  const std::string& map = maps_[snap_["floor"].get<int>()];
+  double tt = now(), px = cell / 8;
+  int fcx = town_fire_.x, fcy = town_fire_.y;
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  auto dot = [&](double x, double y, int c, double a, double size = 1) {
+    double X = x - camx_ + vx_, Y = y - camy_ + vy_;
+    if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) return;
+    SDL_SetRenderDrawColor(r, (c >> 16) & 255, (c >> 8) & 255, c & 255, Uint8(std::clamp(a, 0.0, 1.0) * 255));
+    SDL_FRect rc{float(ox + X * cell), float(oy + Y * cell), float(px * size), float(px * size)};
+    SDL_RenderFillRect(r, &rc);
+  };
+  auto nz = [](int k) { unsigned h = unsigned(k) * 2654435761u; h ^= h >> 13; h *= 0x5bd1e995u; return (h ^ (h >> 15)) % 10000 / 10000.0; };
+  auto open = [&](double x, double y) {
+    int ix = int(std::floor(x)), iy = int(std::floor(y));
+    if (ix < 0 || iy < 0 || ix >= W || iy >= H) return false;
+    int t = tile_of(map[iy * W + ix]);
+    return t != data::WALL && t != data::CHIMNEY && t != data::WINDOW && t != data::LIT;
+  };
+  // snow in three layers: the near flakes big and quick, the far ones fine and slow; one in six is grey ash
+  for (int layer = 0; layer < 3; ++layer) {
+    int n = layer == 0 ? 120 : layer == 1 ? 220 : 340;
+    double sp = layer == 0 ? 2.6 : layer == 1 ? 1.7 : 1.0, size = layer == 0 ? 2 : 1;
+    for (int k = 0; k < n; ++k) {
+      int id = layer * 1000 + k;
+      bool ash = k % 6 == 0;
+      double s2 = sp * (.8 + nz(id * 3) * .5) * (ash ? .6 : 1);
+      double x = camx_ + std::fmod(nz(id) * 140 + tt * .5 * sp + std::sin(tt * (.6 + nz(id * 5)) + k) * (1.2 + layer * .3), 140.0) - 10;
+      double y = camy_ + std::fmod(nz(id * 7) * 80 + tt * s2, 80.0) - 10;
+      double fd = std::hypot((x - fcx) / 1.6, y - fcy);
+      if (fd < 9) continue;  // melted in the heat
+      if (!open(x, y)) continue;
+      double a = (layer == 0 ? .9 : layer == 1 ? .7 : .45) * std::clamp((fd - 9) / 3, 0.0, 1.0);
+      dot(x, y, ash ? 0x8A8478 : layer == 2 ? 0x9AA4BC : 0xDCE4F0, a, ash ? 1 : size);
+    }
+  }
+  if (fcx >= 0) {
+    // sparks: thrown up out of the fire, wobbling on the heat, cooling from white to gold to red to nothing
+    for (int j = 0; j < 60; ++j) {
+      double period = 1.2 + nz(j * 3) * 1.8, ph = std::fmod(tt / period + nz(j * 7), 1.0);
+      double x = fcx + .5 + (nz(j * 11 + int(tt / period)) - .5) * 3 + std::sin(tt * 3 + j) * ph * 1.2 + ph * ph * 2;
+      double y = fcy + .3 - ph * (5 + nz(j * 5) * 7);
+      int c = ph < .2 ? 0xFFF4C0 : ph < .5 ? 0xFFC040 : ph < .8 ? 0xFF6A20 : 0xA02810;
+      dot(x, y, c, 1 - ph * .8, j % 9 == 0 && ph < .3 ? 2 : 1);
+    }
+  }
+  // breath: every two seconds or so each hero breathes out a little cloud that drifts off and thins
+  for (auto& h : snap_["heroes"]) {
+    if (h.value("gone", false) || h.value("dead", false)) continue;
+    int hx = h["x"], hy = h["y"], sd = h.value("pid", 1);
+    double ph = std::fmod(tt / 2.4 + sd * .37, 1.0);
+    if (ph > .6) continue;
+    double k = ph / .6;
+    for (int j = 0; j < 7; ++j) {
+      double x = hx + .75 + k * (1 + nz(sd * 9 + j) * .9) + (nz(j) - .5) * k * .7, y = hy + .25 - k * (.5 + nz(j * 3) * .6);
+      dot(x, y, 0xD8DCE4, .55 * (1 - k), k > .5 ? 2 : 1);
+    }
+  }
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
