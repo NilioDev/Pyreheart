@@ -30,6 +30,7 @@ uint32_t hash(int x, int y, int s = 0) {
   h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
   return h;
 }
+const double PI = 3.14159265358979323846;
 double nz(int k) { return (hash(k, k * 7 + 3, 11) % 10000) / 10000.0; }
 // smooth value noise, so moss and stains come in clumps instead of salt and pepper
 double noise(int x, int y, double sc, int s) {
@@ -306,7 +307,7 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           double ph = std::fmod(tt * .07 + nz(sd * 5 + j), 1.0);
           double x = ex + (nz(sd + j * 13) - .5) * 6 + std::sin(tt * .4 + j) * .6, y = ey + (nz(sd + j * 29) - .5) * 5 - ph * 1.5;
           if (!open_at(x, y) || blocks(map[int(y) * W + int(x)] - '0')) continue;
-          dot(x, y, mixc(0x6A5A40, 0xE8D8B0, std::sin(ph * M_PI)), .8 * std::sin(ph * M_PI));
+          dot(x, y, mixc(0x6A5A40, 0xE8D8B0, std::sin(ph * PI)), .8 * std::sin(ph * PI));
         }
         break;
       case 'w': {
@@ -318,7 +319,7 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         } else if (ph < .6) {
           double k = (ph - .25) / .35, rr = .1 + k * .45;
           for (int j = 0; j < 10; ++j) {
-            double a = j * M_PI / 5;
+            double a = j * PI / 5;
             dot(ex + .5 + std::cos(a) * rr * 1.2 - px / cell / 2, ey + .5 + std::sin(a) * rr * .7, 0x8AB0E0, (1 - k) * .7);
           }
         }
@@ -351,7 +352,7 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
     } else {
       double k = std::min(1.0, age / 1.4);
       for (int j = 0; j < 26; ++j) {
-        double a = nz(j) * 2 * M_PI, rr = .4 + k * (1.5 + nz(j + 3) * 2);
+        double a = nz(j) * 2 * PI, rr = .4 + k * (1.5 + nz(j + 3) * 2);
         double x = bx + .5 + std::cos(a) * rr * 1.3, y = by + .5 + std::sin(a) * rr * .7 - k;
         dot(x, y, mixc(0xE0D8C8, 0x2A2824, k), 1 - k, j % 4 == 0 ? 2 : 1);
       }
