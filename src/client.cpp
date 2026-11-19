@@ -10,6 +10,17 @@
 #include "lore.hpp"
 
 namespace {
+// the places to listen to, in the order of the map, and their music
+struct ListenPlace { const char* name; music::Mood mood; bool foe; };
+const ListenPlace LISTEN[] = {
+    {"Charnfen", music::TITLE, false},       {"The Crypt", music::CRYPT, true},   {"The Caves", music::CAVES, true},
+    {"The Cistern", music::CISTERN, true},   {"The Forge", music::FORGE, true},   {"The City", music::CITY, true},
+    {"The Vaults", music::VAULTS, true},     {"The Barracks", music::BARRACKS, true}, {"The Prison", music::PRISON, true},
+    {"The Sanctum", music::SANCTUM, true},   {"The Deep", music::DEEP, true},     {"A waystation", music::REST, false},
+};
+const int LISTEN_N = int(std::size(LISTEN)), LISTEN_ROWS = (LISTEN_N + 1) / 2;
+bool listen_foe(int i) { return LISTEN[std::clamp(i, 0, LISTEN_N - 1)].foe; }
+
 const int WIDE_W = 100, WIDE_H = 50;
 const int GREY = 0xA0A0A0, DIM = 0x606060, WHITE = 0xE8E8E8, GOLD = 0xFFD27F, KEY = 0xFFC860, RED = 0xD04040, BLUE = 0x4070E0;
 const int PANEL = 0x101014;
@@ -352,10 +363,15 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (screen_ == Screen::Listen) {
     if (k == SDLK_F) { listen_fight_ = !listen_fight_; return; }
     if (k == SDLK_N) { music_.renew(); return; }
+    if (layout_ != Layout::Watch && (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_KP_4 || k == SDLK_KP_6)) {
+      menu_ = (menu_ + LISTEN_ROWS) % (2 * LISTEN_ROWS);  // to the other column
+      if (menu_ >= LISTEN_N) menu_ -= LISTEN_ROWS;
+      return;
+    }
     if (k == SDLK_ESCAPE) { screen_ = Screen::Title; menu_ = title_index("Listen to the music"); return; }
   }
   if (screen_ == Screen::Title || screen_ == Screen::Class || screen_ == Screen::Finding || screen_ == Screen::Listen) {
-    int n = screen_ == Screen::Title ? int(title_items().size()) : screen_ == Screen::Class ? int(data::CLASSES.size()) : screen_ == Screen::Listen ? 6 : int(found_.size()) + 1;
+    int n = screen_ == Screen::Title ? int(title_items().size()) : screen_ == Screen::Class ? int(data::CLASSES.size()) : screen_ == Screen::Listen ? LISTEN_N : int(found_.size()) + 1;
     if (k == SDLK_UP || k == SDLK_KP_8) menu_ = (menu_ + n - 1) % n;
     else if (k == SDLK_DOWN || k == SDLK_KP_2) menu_ = (menu_ + 1) % n;
     else if (k == SDLK_ESCAPE) { if (screen_ == Screen::Title) running = false; else { screen_ = Screen::Title; menu_ = 0; } }
@@ -476,6 +492,8 @@ void Client::click(int x, int y, bool down) {
       choice = (y - top) / step;
       if ((y - top) < 0) choice = -1;
       else if (layout_ == Layout::Watch) choice += std::max(0, menu_ - 2);
+      // the music's places stand in two columns: a tap on the right one counts from its first line
+      else if (screen_ == Screen::Listen) choice = choice < LISTEN_ROWS ? choice + (x >= con_.get_width() / 2 ? LISTEN_ROWS : 0) : choice + LISTEN_ROWS;
     }
     if (screen_ == Screen::Title) {
       auto items = title_items();
@@ -492,9 +510,9 @@ void Client::click(int x, int y, bool down) {
       else running = false;
     } else if (screen_ == Screen::Listen) {
       // a tap on a place plays it; a tap on the one playing writes a new piece; below the list, back
-      if (choice >= 0 && choice < 6) { if (choice == menu_) music_.renew(); menu_ = choice; }
-      else if (choice == 6) listen_fight_ = !listen_fight_;
-      else { screen_ = Screen::Title; menu_ = title_index("Listen to the music"); }
+      if (choice >= 0 && choice < LISTEN_N) { if (choice == menu_) music_.renew(); menu_ = choice; }
+      else if (choice == LISTEN_N + 1) listen_fight_ = !listen_fight_;  // the line "[f] a great foe awake"
+      else if (choice > LISTEN_N + 1 || choice < 0) { screen_ = Screen::Title; menu_ = title_index("Listen to the music"); }
     } else if (screen_ == Screen::Class) {
       if (choice < 0 || choice >= int(data::CLASSES.size())) return;
       cls_ = choice;
@@ -633,8 +651,7 @@ bool Client::in_circle(int x, int y) const {
 // the music follows where you are: the title, an act, a waystation; a great foe awake makes it heavier
 void Client::update_music() {
   if (screen_ == Screen::Listen) {
-    static const music::Mood order[] = {music::TITLE, music::CRYPT, music::CAVES, music::FORGE, music::DEEP, music::REST};
-    music_.mood(order[std::clamp(menu_, 0, 5)], listen_fight_ && menu_ >= 1 && menu_ <= 4);
+    music_.mood(LISTEN[std::clamp(menu_, 0, LISTEN_N - 1)].mood, listen_fight_ && listen_foe(menu_));
     music_.volume(.7f);  // to listen, the music plays even when it is off for the game
     return;
   }
@@ -750,7 +767,7 @@ void Client::draw_title() {
   if (screen_ == Screen::Title) items = title_items();
   else if (screen_ == Screen::Listen) {
     title = "The music writes itself: a new piece every time.";
-    items = {"Charnfen", "The Crypt", "The Caves", "The Forge", "The Deep", "A waystation"};
+    for (auto& p : LISTEN) items.push_back(p.name);
   }
   else if (screen_ == Screen::Class) {
     title = "Who are you, " + name_ + "?";
@@ -774,12 +791,18 @@ void Client::draw_title() {
   int last = layout_ == Layout::Watch ? std::min(int(items.size()), first + 5) : int(items.size());
   for (int i = first; i < last; ++i) {
     bool on = i == menu_;
+    if (screen_ == Screen::Listen && layout_ != Layout::Watch) {  // two columns, the map's order down each
+      std::string s = (on ? "> " : "  ") + items[i] + (on ? " <" : "  ");
+      int cx = cw / 2 + (i < LISTEN_ROWS ? -1 : 1) * std::min(13, cw / 4);
+      text(cx - int(s.size()) / 2, top + (i % LISTEN_ROWS) * 2, s, on ? WHITE : GREY);
+      continue;
+    }
     centre(top + (i - first) * 2, (on ? "> " : "  ") + items[i] + (on ? " <" : "  "), on ? WHITE : GREY);
   }
   if (screen_ == Screen::Listen && layout_ != Layout::Watch) {
-    int y = top + 13;
+    int y = top + 2 * LISTEN_ROWS + 1;
     centre(y, "Now: " + music_.describe(), 0xB4A078);
-    if (menu_ >= 1 && menu_ <= 4)
+    if (listen_foe(menu_))
       centre(y + 2, std::string("[f] a great foe awake: ") + (listen_fight_ ? "yes" : "no"), listen_fight_ ? 0xFF8060 : GREY);
     centre(y + 4, "[Enter] a new piece    [Esc] back", 0x808080);
   }
