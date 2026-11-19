@@ -1064,6 +1064,7 @@ void Game::land(Mon& m) {
   struct Landing { bool& f; Landing(bool& x) : f(x) { f = true; } ~Landing() { f = false; } } landing(landing_);
   Blow b = m.blow;
   m.blow = {};
+  if ((b.name == "smash" || b.name == "sweep") && floor->act != DEEP) add_fx({{"k", "quake"}, {"x", m.x}, {"y", m.y}, {"dur", 1.8}});
   m.brace = 0;  // a raised shield comes down to strike
   auto on = [&](Hero* o) { for (auto& c : b.cells) if (c.x == o->x && c.y == o->y) return true; return false; };
   std::vector<Hero*> hit;
@@ -1130,6 +1131,7 @@ void Game::kill(Mon& m, Hero* by) {
     add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", 0xFF8C28}});
     for (auto* h : active()) if (cheb(h->x, h->y, m.x, m.y) <= 1) hero_hurt(*h, nullptr, 4 + lvl, "fire");
   }
+  if (m.def->undead) add_fx({{"k", "soul"}, {"x", m.x}, {"y", m.y}, {"dur", 2.2}});  // what held it up lets go
   for (auto* h : living()) gain_xp(*h, m.xp);
   trait_death(m);
   drops(m);
@@ -2011,6 +2013,7 @@ bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
   } else if (mv == "slam") {
     if (d > 1) return false;
     add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", 0xDCC8A0}, {"sign", "*"}});
+    if (floor->act != DEEP) add_fx({{"k", "quake"}, {"x", m.x}, {"y", m.y}, {"dur", 1.8}});  // the vault shakes
     for (auto* o : active()) if (cheb(o->x, o->y, m.x, m.y) <= 1) hero_hurt(*o, &m, rnd.range(m.lo, m.hi) + 4, "");
   } else if (mv == "spit") {
     if (d < 2 || d > 7) return false;

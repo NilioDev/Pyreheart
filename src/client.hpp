@@ -98,6 +98,14 @@ class Client {
   std::string shot_;
   std::vector<int> ldist_;  // each lava cell's distance from land, for the current map
   int ldist_floor_ = -1;
+  // the Crypt's air (mock-ups, PYREHEART_CRYPTFX=1): how near each cell is to an open grave or the ossuary, for the
+  // grave chill; the coloured light of the chapel windows; where a hero last stepped, for bone dust
+  int chill_floor_ = -1;
+  std::vector<float> chill_;
+  struct Beam { int wx, wy, len, col, dir; };  // dir: +1 the light falls down the screen, -1 up
+  std::vector<Beam> beams_;
+  int step_x_ = -1, step_y_ = -1;
+  double step_t_ = -9;
   std::string ldist_map_;
   void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
   void present(const TCOD_ViewportOptions& vp);

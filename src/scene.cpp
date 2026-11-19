@@ -42,6 +42,18 @@ double noise(int x, int y, double sc, int s) {
   double a = v(x0, y0) + (v(x0 + 1, y0) - v(x0, y0)) * fx, b = v(x0, y0 + 1) + (v(x0 + 1, y0 + 1) - v(x0, y0 + 1)) * fx;
   return a + (b - a) * fy;
 }
+// value noise at any point, for mist that drifts
+double vnoise(double x, double y) {
+  int x0 = int(std::floor(x)), y0 = int(std::floor(y));
+  double fx = x - x0, fy = y - y0;
+  auto v = [&](int i, int j) { return (hash(i, j, 77) % 1000) / 1000.0; };
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  double a = v(x0, y0) + (v(x0 + 1, y0) - v(x0, y0)) * fx, b = v(x0, y0 + 1) + (v(x0 + 1, y0 + 1) - v(x0, y0 + 1)) * fx;
+  return a + (b - a) * fy;
+}
+// the Crypt's new air, for the mock-ups: PYREHEART_CRYPTFX=1
+bool crypt_fx() { static bool on = SDL_getenv("PYREHEART_CRYPTFX") != nullptr; return on; }
+const int GLASS[] = {0xC83848, 0x3C5AD0, 0xD8A840, 0x6A3CB0};
 double flick(double t, int seed) { return .86 + .08 * std::sin(t * 4.1 + seed * 1.7) + .06 * std::sin(t * 9.7 + seed * 3.1); }
 const int FIREC[] = {0xFFF4C0, 0xFFD050, 0xFFA030, 0xFF7020, 0xE04818, 0xA02810};
 bool tombish(int t) { return t == TOMB || t == CRACKED || t == OPENTOMB; }
@@ -82,6 +94,57 @@ void Client::draw_tiles() {
     }
   }
   double glow = .35 + .2 * std::sin(tt * .8);
+  bool cfx = actn == 0 && crypt_fx() && !rest;
+  if (cfx && chill_floor_ != fl) {
+    chill_floor_ = fl;
+    // the grave chill spreads over open ground from open tombs and walls of bones, six steps at most
+    chill_.assign(W * H, 0.f);
+    std::vector<int> d(W * H, -1), q;
+    for (int i = 0; i < W * H; ++i) {
+      int t = tile_of(map[i]);
+      if (t == OPENTOMB || t == BONEWALL || t == CRACKED) { d[i] = 0; q.push_back(i); }
+    }
+    for (size_t k = 0; k < q.size(); ++k) {
+      int i = q[k];
+      if (d[i] >= 6) continue;
+      for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) {
+        int x = i % W + d4.x, y = i / W + d4.y;
+        if (x < 0 || y < 0 || x >= W || y >= H || d[y * W + x] >= 0 || blocks(tile_of(map[y * W + x]))) continue;
+        d[y * W + x] = d[i] + 1;
+        q.push_back(y * W + x);
+      }
+    }
+    for (int i = 0; i < W * H; ++i) if (d[i] > 0) chill_[i] = float(1 - (d[i] - 1) / 6.0);
+    // three high windows in the wall behind each chapel altar, their light falling slantwise into the chapel
+    beams_.clear();
+    for (int i = 0; i < W * H; ++i) {
+      int x = i % W, y = i / W;
+      if (tile_of(map[i]) != ALTAR || tile(x - 1, y) == ALTAR || tile(x + 1, y) != ALTAR) continue;
+      int a = tile(x + 2, y) == ALTAR ? 3 : 2, dir = tile(x, y - 1) == WALL ? 1 : tile(x, y + 1) == WALL ? -1 : 0;
+      if (!dir) continue;
+      int wy = y - dir, depth = 0;
+      while (depth < 10 && !blocks(tile(x, y + dir * (depth + 1)))) ++depth;
+      double cx = x + (a - 1) / 2.0;
+      for (int k = -1; k <= 1; ++k) {
+        int wx = int(std::lround(cx + k * 3 - (a == 2 && k ? .5 * k : 0)));
+        if (tile(wx, wy) != WALL) continue;
+        beams_.push_back({wx, wy, std::max(4, depth), GLASS[(k + 1 + x) % 4], dir});
+      }
+    }
+  }
+  // how much of a window's light falls on a cell, and in what colour
+  auto beam_at = [&](int x, int y, int& col) {
+    double best = 0;
+    for (auto& b : beams_) {
+      int st = (y - b.wy) * b.dir;
+      if (st <= 0 || st > b.len) continue;
+      double cx = b.wx + st * .45, dd = std::abs(x - cx);
+      if (dd > 1.1) continue;
+      double k = (1 - dd / 1.1) * (1 - .45 * st / double(b.len));
+      if (k > best) { best = k; col = b.col; }
+    }
+    return best;
+  };
 
   // the light: a dim base, pools round every flame, and each hero's own light
   static const bool whole_view = SDL_getenv("PYREHEART_WHOLE") != nullptr;  // a screenshot of the whole map
@@ -124,6 +187,13 @@ void Client::draw_tiles() {
         emits_.push_back({float(x), float(y), 'w', sd});
       } else if (t == CRACKED && vis[i] == '1') {
         emits_.push_back({float(x), float(y), 's', sd});
+      } else if (cfx && t == ALTAR && tile(x - 1, y) != ALTAR && tile(x + 1, y) == ALTAR) {
+        float mid = x + (tile(x + 2, y) == ALTAR ? 1.f : .5f);
+        if (vis[i] == '1') emits_.push_back({mid, float(y), 'i', sd});  // incense from the middle of the altar
+      } else if (cfx && t == RESTLESS && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'b', sd});  // will-o'-wisps round a corpse that will not lie still
+      } else if (cfx && (t == BIER || t == CORPSE) && vis[i] == '1' && hash(x, y, 18) % 3 == 0) {
+        emits_.push_back({float(x), float(y), 'j', sd});  // the fumes of the embalmers' jars
       } else if (t == HEARTH || t == BRAZIER) {
         // the forge still burns; the King's brazier too
         pool(x, y, (t == HEARTH ? 5.5 : 6) * f, 1.25 * f, 1.);
@@ -519,6 +589,27 @@ void Client::draw_tiles() {
           if (!bright) fg = mixc(fg, scale(0x5AE0B0, l), c * .35);
           bg = mixc(bg, 0x0E3A30, c * .45 * std::min(l, 1.2));
         }
+        if (cfx) {
+          // the grave chill: low cold mist, in drifting banks, thinning round a hero who walks through it
+          if (float ch2 = chill_[i]; ch2 > 0 && !blocks(t)) {
+            double n = .6 * vnoise(x * .18 - tt * .12, y * .3 + tt * .05) + .4 * vnoise(x * .4 + tt * .2, y * .6 - tt * .08);
+            double m = std::clamp((n - .25) / .45, 0.0, 1.0) * ch2;
+            for (auto& h : s["heroes"]) {
+              double hd = std::hypot(x - h["x"].get<int>(), (y - h["y"].get<int>()) * 1.3);
+              if (hd < 2.2) m *= hd / 2.2;
+            }
+            bg = mixc(bg, scale(0x5A6A84, .4 + .5 * std::min(l, 1.2)), m * .5);
+            if (!bright) fg = mixc(fg, 0x7A8AA4, m * .3);
+          }
+          // coloured light from the chapel windows, and the windows themselves
+          int gc = 0;
+          if (double k = beam_at(x, y, gc); k > 0 && !blocks(t)) {
+            bg = mixc(bg, scale(gc, .55), k * .55);
+            if (!bright) fg = mixc(fg, gc, k * .35);
+          }
+          for (auto& b : beams_)
+            if (b.wx == x && b.wy == y) { ch = 0x2592; fg = b.col; bg = scale(b.col, .35); }
+        }
       } else {
         // remembered, not seen: cold and dim
         fg = mixc(scale(fg, .35), 0x202430, .3);
@@ -724,6 +815,39 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           dot(x, y, mixc(0x9A9488, 0x3A3632, ph), .8 * std::sin(ph * PI));
         }
         break;
+      case 'i':
+        // incense: a thin, slow ribbon of grey-lilac smoke out of the censer on the altar, curling as it climbs
+        for (int j = 0; j < 22; ++j) {
+          double ph = std::fmod(tt * .09 + j / 22.0, 1.0);
+          double x = ex + .5 + std::sin(tt * .7 + ph * 7 + sd) * ph * 1.1 + ph * .4, y = ey + .2 - ph * 5.5;
+          if (!open_at(x, y)) continue;
+          dot(x, y, mixc(0xC8B8D8, 0x3A3448, ph), .6 * (1 - ph) * std::min(1.0, ph * 8), ph < .35 ? 1 : 2);
+        }
+        break;
+      case 'b':
+        // will-o'-wisps: three pale lights circling a corpse that will not lie still, flickering out and back
+        for (int j = 0; j < 3; ++j) {
+          double a = tt * (.6 + .15 * j) + j * 2.1 + sd, rr = .9 + .3 * std::sin(tt * .5 + j);
+          double x = ex + .5 + std::cos(a) * rr * 1.4, y = ey + .4 + std::sin(a) * rr * .6 - .3 * std::sin(tt * 1.3 + j);
+          double fl = .5 + .5 * std::sin(tt * 5.3 + j * 3 + sd) * std::sin(tt * 2.1 + j);
+          if (fl < .15) continue;
+          dot(x - px / cell, y - px / cell, 0x6AA8FF, .4 * fl, 3);
+          dot(x, y, mixc(0x9AC8FF, 0xF0F8FF, fl), fl, 2);
+          for (int k = 1; k < 4; ++k) {
+            double b2 = a - k * .18;
+            dot(ex + .5 + std::cos(b2) * rr * 1.4, ey + .4 + std::sin(b2) * rr * .6 - .3 * std::sin(tt * 1.3 + j), 0x6A98E0, .55 * fl * (1 - k / 4.0));
+          }
+        }
+        break;
+      case 'j':
+        // embalming fumes: a sickly green breath seeping off the bier and creeping low
+        for (int j = 0; j < 14; ++j) {
+          double ph = std::fmod(tt * .13 + j / 14.0 + nz(sd + j) * .3, 1.0);
+          double x = ex + .5 + (nz(sd * 3 + j) - .5) * 1.6 + std::sin(tt * .8 + j) * .4 + ph * 1.2, y = ey + .3 - ph * 1.6;
+          if (!open_at(x, y)) continue;
+          dot(x, y, mixc(0xB0E880, 0x2A3A1A, ph), .8 * (1 - ph), ph < .3 ? 1 : 2);
+        }
+        break;
       case 's':
         // dust trickling from the crack in a lid
         for (int j = 0; j < 3; ++j) {
@@ -754,6 +878,119 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         double a = nz(j) * 2 * PI, rr = .4 + k * (1.5 + nz(j + 3) * 2);
         double x = bx + .5 + std::cos(a) * rr * 1.3, y = by + .5 + std::sin(a) * rr * .7 - k;
         dot(x, y, mixc(0xE0D8C8, 0x2A2824, k), 1 - k, j % 4 == 0 ? 2 : 1);
+      }
+    }
+  }
+  if (static const char* demo = SDL_getenv("PYREHEART_FXDEMO"); demo && !snap_["heroes"].empty()) {
+    // for recording: now and then a soul or a quake beside the hero ("soul", "quake" or both)
+    static double last = -9;
+    static int n = 0;
+    if (tt - last > 2.6) {
+      last = tt;
+      std::string d = demo;
+      bool soul = d == "soul" || (d != "quake" && n % 2 == 0);
+      int hx = snap_["heroes"][0]["x"], hy = snap_["heroes"][0]["y"];
+      fx_.push_back({json{{"k", soul ? "soul" : "quake"}, {"x", hx + 3}, {"y", hy - 2}, {"dur", 2.2}}, tt});
+      ++n;
+    }
+  }
+  if (snap_.value("act", 0) == 0 && crypt_fx() && !snap_.value("rest", false)) {
+    auto tl = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : tile_of(map[y * W + x]); };
+    // the grave chill as wisps: slow pale motes drifting low over the misty ground, pushed aside by a hero
+    if (!chill_.empty()) {
+      int x0 = std::max(0, camx_), y0 = std::max(0, camy_), x1 = std::min(W, camx_ + vw_), y1 = std::min(H, camy_ + vh_);
+      for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) {
+          float c = chill_[y * W + x];
+          if (c <= 0 || vis[y * W + x] != '1' || hash(x, y, 21) % 3) continue;
+          int sd = x * 131 + y * 17;
+          for (int j = 0; j < 2; ++j) {
+            double ph = std::fmod(tt * .06 + nz(sd + j), 1.0);
+            double wx = x + ph * 2.5 - .8 + std::sin(tt * .4 + sd + j) * .3, wy = y + .5 + std::sin(tt * .3 + j + sd) * .4;
+            for (auto& h : snap_["heroes"]) {
+              double dx = wx - h["x"].get<int>() - .5, dy = (wy - h["y"].get<int>() - .5) * 1.3, d = std::hypot(dx, dy);
+              if (d < 2 && d > .01) { wx += dx / d * (2 - d) * .6; wy += dy / d * (2 - d) * .4; }
+            }
+            if (!open_at(wx, wy) || blocks(tl(int(wx), int(wy)))) continue;
+            dot(wx, wy, 0xA8B8D0, .35 * c * std::sin(ph * PI), j ? 1 : 2);
+          }
+        }
+    }
+    // dust turning slowly in the coloured window light
+    for (auto& b : beams_)
+      for (int j = 0; j < 14; ++j) {
+        double ph = std::fmod(tt * .05 + nz(b.wx * 7 + j), 1.0), d = nz(b.wx * 13 + j * 5) * b.len;
+        double st = 1 + d + std::sin(tt * .3 + j) * .3 - ph * .8, y = b.wy + .5 + b.dir * st, x = b.wx + .5 + st * .45 + (nz(j * 3 + b.wx) - .5) * 1.6;
+        if (!open_at(x, y)) continue;
+        dot(x, y, mixc(b.col, 0xFFFFFF, .6), .7 * std::sin(ph * PI));
+      }
+    for (auto& h : snap_["heroes"]) {
+      if (h.value("gone", false) || h.value("dead", false)) continue;
+      int hx = h["x"], hy = h["y"], sd = h.value("pid", 1);
+      // breath in the cold of the tombs
+      double ph = std::fmod(tt / 2.6 + sd * .37, 1.0);
+      if (ph < .55) {
+        double k = ph / .55;
+        for (int j = 0; j < 6; ++j) {
+          double x = hx + .75 + k * (.8 + nz(sd * 9 + j) * .8) + (nz(j) - .5) * k * .6, y = hy + .25 - k * (.4 + nz(j * 3) * .5);
+          dot(x, y, 0xC8D0DC, .45 * (1 - k), k > .5 ? 2 : 1);
+        }
+      }
+      // bone dust: a step onto old bones kicks up a little grey puff
+      if (sd == pid_ || snap_["heroes"].size() == 1) {
+        if (hx != step_x_ || hy != step_y_) {
+          step_x_ = hx; step_y_ = hy;
+          if (tl(hx, hy) == BONES) step_t_ = tt;
+        }
+        double age = tt - step_t_;
+        if (age < .8) {
+          double k = age / .8;
+          for (int j = 0; j < 16; ++j) {
+            double a = PI + nz(j * 7 + int(step_t_ * 10)) * PI, rr = k * (.5 + nz(j) * .9);
+            dot(hx + .5 + std::cos(a) * rr * 1.4, hy + .85 + std::sin(a) * rr * .6 + k * k * .3, mixc(0xD8D0B8, 0x5A5448, k), .8 * (1 - k), j % 4 ? 1 : 2);
+          }
+        }
+      }
+    }
+  }
+  for (auto& f : fx_) {
+    std::string k = f.kw.value("k", "");
+    if (k != "soul" && k != "quake") continue;
+    if (k == "soul" && !(snap_.value("act", 0) == 0 && crypt_fx())) continue;
+    if (k == "quake" && !crypt_fx()) continue;
+    double age = tt - f.start;
+    int bx = f.kw.value("x", 0), by = f.kw.value("y", 0);
+    if (k == "soul") {
+      // what held the dead up lets go: a pale wisp rising, with a fading trail
+      if (age > 2.2 || !open_at(bx, by)) continue;
+      double q = age / 2.2;
+      for (int j = 0; j < 16; ++j) {
+        double qq = std::max(0.0, q - j * .02);
+        double x = bx + .5 + std::sin(qq * 9 + bx) * .35 * (1 + qq), y = by + .3 - qq * 3.4;
+        double a = (1 - q * q) * (1 - j / 16.0) * std::min(1.0, age * 4);
+        if (j == 0) {
+          dot(x - 2 * px / cell, y - 2 * px / cell, 0x6A8AD0, a * .25, 5);
+          dot(x - px / cell, y - px / cell, 0xA8C0F0, a * .5, 3);
+        }
+        dot(x, y, j == 0 ? 0xFFFFFF : mixc(0xC8D8FF, 0x506080, j / 16.0), a, j < 3 ? 2 : 1);
+      }
+    } else {
+      // the vault shakes: dust and grit fall from the ceiling all round, sparks fly where the blow lands
+      if (age > 1.8) continue;
+      for (int j = 0; j < 90; ++j) {
+        double st = nz(j * 5 + bx) * .6, ag = age - st;
+        if (ag < 0 || ag > 1.1) continue;
+        double x = bx + .5 + (nz(j * 3 + by) - .5) * 14, y0 = by + (nz(j * 11) - .5) * 9 - 1.2, y = y0 + ag * ag * 3.2;
+        if (!open_at(x, y)) continue;
+        bool grit = j % 5 == 0;
+        dot(x, y, grit ? 0xA89C88 : 0xD8D0C0, (1 - ag / 1.1) * (grit ? 1 : .75), grit ? 2 : 1);
+      }
+      if (age < .35) {
+        double q = age / .35;
+        for (int j = 0; j < 28; ++j) {
+          double a = nz(j * 13 + bx) * 2 * PI, rr = q * (1 + nz(j) * 2);
+          dot(bx + .5 + std::cos(a) * rr * 1.4, by + .5 + std::sin(a) * rr * .7 + q * q * .5, mixc(0xFFF0C0, 0xFF5010, q), 1 - q * .7, j % 5 ? 1 : 2);
+        }
       }
     }
   }
