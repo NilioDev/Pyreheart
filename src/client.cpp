@@ -11,6 +11,7 @@
 
 namespace {
 const int WIDE_W = 100, WIDE_H = 50;
+const int VIEW_W = 76, VIEW_H = 42;  // the map's window in the wide layout
 const int GREY = 0xA0A0A0, DIM = 0x606060, WHITE = 0xE8E8E8, GOLD = 0xFFD27F, KEY = 0xFFC860, RED = 0xD04040, BLUE = 0x4070E0;
 const int PANEL = 0x101014;
 
@@ -457,7 +458,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case SDLK_L: act("look"); break;
     case SDLK_RETURN: case SDLK_KP_ENTER: {
       int t = maps_.count(snap_["floor"]) ? maps_[snap_["floor"]][me["y"].get<int>() * W + me["x"].get<int>()] - '0' : -1;
-      if (t == data::STAIRS) act("down");
+      if (t == data::STAIRS || t == data::EDGE) act("down");
       break;
     }
     default: break;
@@ -798,10 +799,10 @@ void Client::draw_game() {
   }
   int cw = con_.get_width(), chh = con_.get_height();
   if (layout_ == Layout::Wide) {
-    vx_ = 0; vy_ = 0; vw_ = W; vh_ = H;
+    vx_ = 0; vy_ = 0; vw_ = VIEW_W; vh_ = VIEW_H;
     draw_map();
-    draw_side(W, 0, cw - W, chh);
-    draw_log(0, H, W, chh - H);
+    draw_side(VIEW_W, 0, cw - VIEW_W, chh);
+    draw_log(0, VIEW_H, VIEW_W, chh - VIEW_H);
   } else if (layout_ == Layout::Tall) {
     vx_ = 0; vy_ = 2; vw_ = cw; vh_ = chh - 2 - 5 - 6;
     draw_status_tall(0);
@@ -872,10 +873,11 @@ void Client::draw_map() {
   if (map.size() != size_t(W * H)) return;
   auto& seen = seen_[fl];
   int hx = s["me"]["x"], hy = s["me"]["y"];
-  camx_ = std::clamp(hx - vw_ / 2, 0, std::max(0, W - vw_));
-  camy_ = std::clamp(hy - vh_ / 2, 0, std::max(0, H - vh_));
-  if (vw_ >= W) camx_ = -(vw_ - W) / 2;
-  if (vh_ >= H) camy_ = -(vh_ - H) / 2;
+  int mw = s.value("mw", W), mh = s.value("mh", H);  // the part of the map in use
+  camx_ = std::clamp(hx - vw_ / 2, 0, std::max(0, mw - vw_));
+  camy_ = std::clamp(hy - vh_ / 2, 0, std::max(0, mh - vh_));
+  if (vw_ >= mw) camx_ = -(vw_ - mw) / 2;
+  if (vh_ >= mh) camy_ = -(vh_ - mh) / 2;
   auto sx = [&](int x) { return x - camx_ + vx_; };
   auto sy = [&](int y) { return y - camy_ + vy_; };
   draw_tiles();

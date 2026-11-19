@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -33,6 +33,13 @@ inline const TileDef TILES[] = {
     {0x25, 0xB8A890, false, true, "twitching corpse"},
     {0x3A9, 0xC8BCA0, false, false, "wall of bones"},
     {0x2C, 0xC8BCA0, true, true, "scattered bones"},
+    {0x2E, 0x5A3A30, true, true, "crust"},
+    {0x2E, 0x5A3A30, true, true, "thin crust"},
+    {0x2E, 0x4A4D5C, true, true, "cut basalt"},
+    {0x25AC, 0x5A5C6E, true, true, "dais"},
+    {0x3A8, 0xC04A16, true, true, "burning rune"},
+    {0x2565, 0x8A7AA0, false, true, "throne"},
+    {0x2192, 0xFFE6A0, true, true, "the way on"},
 };
 inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: return true; default: return false; } }
 constexpr int FLOORS = 16;

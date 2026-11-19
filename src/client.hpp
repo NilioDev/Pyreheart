@@ -94,6 +94,9 @@ class Client {
   struct Emit { float x, y; char kind; int seed; };
   std::vector<Emit> emits_;  // where particles rise this frame
   std::string shot_;
+  std::vector<int> ldist_;  // each lava cell's distance from land, for the current map
+  int ldist_floor_ = -1;
+  std::string ldist_map_;
   void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
   void present(const TCOD_ViewportOptions& vp);
   void draw_side(int x, int y, int w, int h);

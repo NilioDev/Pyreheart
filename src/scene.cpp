@@ -61,6 +61,27 @@ void Client::draw_tiles() {
   emits_.clear();
   auto tile = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : map[y * W + x] - '0'; };
   int x0 = std::max(0, camx_), y0 = std::max(0, camy_), x1 = std::min(W, camx_ + vw_), y1 = std::min(H, camy_ + vh_);
+  // how far each lava cell lies from land: the lava is one mass, crusted dark at the shore and bright far out
+  if (ldist_floor_ != fl || ldist_map_ != map) {
+    ldist_floor_ = fl; ldist_map_ = map;
+    ldist_.assign(W * H, 0);
+    std::vector<int> q;
+    for (int i = 0; i < W * H; ++i) {
+      if (map[i] - '0' == LAVA) ldist_[i] = 99;
+      else q.push_back(i);
+    }
+    for (size_t k = 0; k < q.size(); ++k) {
+      int i = q[k];
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          int x = i % W + dx, y = i / W + dy;
+          if (x < 0 || y < 0 || x >= W || y >= H || ldist_[y * W + x] <= ldist_[i] + 1) continue;
+          ldist_[y * W + x] = ldist_[i] + 1;
+          q.push_back(y * W + x);
+        }
+    }
+  }
+  double glow = .35 + .2 * std::sin(tt * .8);
 
   // the light: a dim base, pools round every flame, and each hero's own light
   double base = rest ? .9 : .6;
@@ -95,7 +116,8 @@ void Client::draw_tiles() {
         pool(x, y, 3.5 * f, 1.0 * f, .6);
         if (vis[i] == '1') emits_.push_back({float(x), float(y), 'c', sd});
       } else if (t == LAVA) {
-        pool(x, y, 2.2, .95, .9);
+        if (ldist_[i] <= 2) pool(x, y, 2.2, .95, .9);
+        if (vis[i] == '1' && ldist_[i] >= 2 && hash(x, y, 8) % 41 == 0) emits_.push_back({float(x), float(y), 'l', sd});
       } else if (t == SHALLOW && vis[i] == '1' && hash(x, y, 5) % 19 == 0) {
         emits_.push_back({float(x), float(y), 'w', sd});
       } else if (t == CRACKED && vis[i] == '1') {
@@ -176,8 +198,51 @@ void Client::draw_tiles() {
           ch = '~'; fg = 0x2E5490;
           break;
         case LAVA: {
-          double p = .5 + .5 * std::sin(tt * 1.3 + (hh % 100) * .2);
-          bg = mixc(0x6A1806, 0xA03A0A, p); fg = mixc(0xFF7020, 0xFFC050, p); bright = true;
+          double a = tt * .8, d = ldist_[i];
+          double v = .5 + .25 * std::sin(x * .23 + y * .41 + a) + .2 * std::sin(y * .17 - x * .11 - a) + .05 * std::sin(x * .9 + y * 1.3 + 2 * a);
+          double nearf = std::min(1.0, (d - 1) / 3), farf = std::clamp((d - 3) / 6, 0.0, 1.0);
+          bg = mixc(0x6A1806, 0xC8460C, .2 + .8 * nearf * (.6 + .4 * v));
+          bg = mixc(bg, 0xFFB43C, farf * (v - .3) * 1.1);
+          ch = ' '; fg = 0;
+          int kk = int((int(tt * 3) + hh) % 22);
+          if (d >= 3 && hh % 11 == 0 && kk < 5) { static const int BUB[] = {'.', 'o', 'O', '*', 0x00B0}; ch = BUB[kk]; fg = kk < 4 ? 0xFFE6A0 : 0x5A1404; }
+          else if (d >= 2 && v > .82 && (x + y) % 3 == 0) { ch = '~'; fg = mixc(0xE0561A, 0xFFE6A0, farf); }
+          else if (d == 1 && hh % 6 == 0) { ch = 0x00B7; fg = 0x8C2A0A; }
+          bright = true;
+          break;
+        }
+        case CRUST: case NECK: {
+          // black crust; the thin ridges between plates a touch warmer, with the glow showing through cracks
+          if (t == CRUST) bg = mixc(0x16100C, 0x2A1A12, noise(x, y, 5, 3));
+          else bg = mixc(0x1C0E08, 0x2E140A, .5 + .3 * (glow + .1 * std::sin(x * .08 + y * .05)));
+          ch = (x + y) % 2 == 0 ? '.' : ' '; fg = 0x5A3A30;
+          if (t == CRUST && hh % 23 == 0) { ch = ','; fg = 0x3C1E12; }
+          if (t == NECK && hh % 7 == 0) { ch = '~'; fg = mixc(0x8C2A0A, 0xE0561A, glow); }
+          break;
+        }
+        case BASALT: case RUNE: case DAIS: case THRONE: {
+          // the island: big slabs of a colder, cut stone, warmed only at the edge by the lava
+          bg = mixc(0x24262E, 0x30333D, (hash(x / 3, y / 3, 6) % 5) / 5.0);
+          ch = ' ';
+          if (x % 3 == 0 && y % 3 == 0) { ch = 0x00B7; fg = 0x4A4D5C; }
+          bool shore = false;
+          for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) if (tile(x + dx, y + dy) == LAVA) shore = true;
+          if (t == BASALT && shore) { bg = mixc(0x16171C, 0x3A1A10, .3 + .2 * glow); ch = 0x25AA; fg = 0x3A3C48; }
+          if (t == RUNE) {
+            static const int RUNES[] = {0x3A8, 0x3A9, 0x2206, 0x2020, 0x398, 0x3A3};
+            ch = RUNES[(x * 3 + y) % 6]; fg = mixc(0x4A1E10, 0xC04A16, .25 + .9 * glow); bright = true;
+          }
+          if (t == DAIS) { bg = mixc(0x383A46, 0x44465A, (hash(x / 3, y / 3, 6) % 3) / 3.0); ch = tile(x, y + 1) == DAIS ? ' ' : 0x25AC; fg = 0x5A5C6E; }
+          if (t == THRONE) { bg = 0x383A46; ch = 0x2565; fg = 0x8A7AA0; }
+          break;
+        }
+        case EDGE: {
+          // the way on: arrows pointing off the map
+          bg = mixc(0x1A0A06, 0x3A1408, .6);
+          ch = x == 0 ? 0x2190 : x == W - 1 ? 0x2192 : y == 0 ? 0x2191 : 0x2193;
+          fg = mixc(0xC8A060, 0xFFE6A0, .5 + .5 * std::sin(tt * 3));
+          keep = true;
           break;
         }
         case TORCH: {
@@ -322,6 +387,16 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
             double a = j * PI / 5;
             dot(ex + .5 + std::cos(a) * rr * 1.2 - px / cell / 2, ey + .5 + std::sin(a) * rr * .7, 0x8AB0E0, (1 - k) * .7);
           }
+        }
+        break;
+      }
+      case 'l': {
+        // now and then a bubble bursts and throws up a spark
+        double ph = std::fmod(tt * .4 + nz(sd), 1.0);
+        if (ph < .35) {
+          double k = ph / .35;
+          for (int j = 0; j < 3; ++j)
+            dot(ex + .5 + (nz(sd + j) - .5) * k * 1.2, ey + .4 - k * 1.4 + k * k * .8, mixc(0xFFF0B0, 0xB0300A, k), 1 - k);
         }
         break;
       }

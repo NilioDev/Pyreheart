@@ -41,6 +41,9 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["act"] = f.act;
   out["rest"] = f.rest;
   out["floor"] = f.id;
+  out["mw"] = f.w;
+  out["mh"] = f.h;
+  out["deep"] = f.deep;
   if (with_map) {
     std::string m(W * H, '0');
     for (int i = 0; i < W * H; ++i) m[i] = char('0' + f.t[i]);

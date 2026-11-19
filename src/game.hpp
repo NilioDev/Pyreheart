@@ -8,8 +8,10 @@
 
 using json = nlohmann::json;
 
-constexpr int W = 76;
-constexpr int H = 42;
+constexpr int W = 120;  // the largest map (the Deep); floors of rooms use the top left ZONE_W x ZONE_H
+constexpr int H = 66;
+constexpr int ZONE_W = 76;
+constexpr int ZONE_H = 42;
 constexpr int SIGHT = 9;
 
 struct Item {
@@ -97,7 +99,8 @@ struct FloorItem { int x, y; ItemP item; int gold = 0; std::string pot; int owne
 
 struct Floor {
   int depth = 1, act = 0, id = 0, version = 0;
-  bool rest = false;
+  int w = ZONE_W, h = ZONE_H;  // the part of the map in use
+  bool rest = false, deep = false;
   std::vector<int> t = std::vector<int>(W * H, data::WALL);
   std::map<int, std::string> writings;
   std::vector<FloorItem> items;
@@ -128,6 +131,8 @@ struct Stats {
 };
 
 namespace k5 { struct Plan; }
+// stairs down, or in the Deep the way on at the edge of the map
+inline bool way_down(int t) { return t == data::STAIRS || t == data::EDGE; }
 // can every open cell still be walked to from the stairs up?
 bool whole(const Floor& f);
 
@@ -169,6 +174,9 @@ class Game {
 
   std::unique_ptr<Floor> make_floor(int depth, bool rest);
   void build_waystation(Floor& f);
+  void build_rooms(Floor& fl, int d, bool boss_floor);
+  bool build_deep(Floor& fl, char entry, bool last, char& exit_side);  // deep.cpp
+  char deep_exit_ = 'N';
   void dress(Floor& fl, const k5::Plan& plan);  // dress.cpp
   void wake_dead();
   bool smash_dead(Hero& h, int x, int y);

@@ -139,7 +139,7 @@ bool Game::free_near(int x, int y, int r, P& out, const std::function<bool(int, 
   return false;
 }
 bool Game::free_near(int x, int y, int r, P& out) {
-  return free_near(x, y, r, out, [&](int a, int b) { return floor->walk(a, b) && floor->tile(a, b) != STAIRS; });
+  return free_near(x, y, r, out, [&](int a, int b) { return floor->walk(a, b) && !way_down(floor->tile(a, b)); });
 }
 
 std::vector<Hero*> Game::active() {
@@ -264,10 +264,94 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   Floor& fl = *floor;
   if (rest) { build_waystation(fl); return std::move(floor); }
   int act = fl.act;
+  bool boss_floor = d % 4 == 0;
+  // the last two floors are the Deep's crust maze: no stairs, the way on lies at an edge of the map
+  bool deep = act == 3 && d >= FLOORS - 1;
+  bool built = false;
+  if (deep) {
+    char entry = d == FLOORS - 1 ? 'S' : deep_exit_ == 'N' ? 'S' : deep_exit_ == 'E' ? 'W' : 'E';
+    for (int i = 0; i < 40 && !built; ++i) {
+      fl.t.assign(W * H, WALL);
+      char out = 0;
+      built = build_deep(fl, entry, d == FLOORS, out);
+      if (built) deep_exit_ = out;
+    }
+  }
+  if (!built) {
+    fl.t.assign(W * H, WALL);
+    fl.deep = false;
+    build_rooms(fl, d, boss_floor);
+  }
+  // creatures
+  std::vector<P> far;
+  {
+    std::vector<int> dist(W * H, -1);
+    std::deque<int> q{fl.up.y * W + fl.up.x};
+    dist[q.front()] = 0;
+    while (!q.empty()) {
+      int i = q.front(); q.pop_front();
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          int x = i % W + dx, y = i / W + dy;
+          if (x < 0 || y < 0 || x >= W || y >= H || dist[y * W + x] >= 0) continue;
+          int t = fl.tile(x, y);
+          if (data::blocks(t) && t != DOOR) continue;
+          dist[y * W + x] = dist[i] + 1;
+          q.push_back(y * W + x);
+        }
+    }
+    for (int i = 0; i < W * H; ++i) {
+      int t = fl.t[i];
+      if (dist[i] > 12 && (t == FLOOR || t == CRUST)) far.push_back({i % W, i / W});
+    }
+  }
+  int budget = 14 + int(d * 1.5) - int(fl.sleepers.size());
+  auto& spawns = SPAWNS[act];
+  auto pick_kind = [&]() {
+    int sum = 0;
+    for (auto& [k, w] : spawns) sum += w;
+    int r = rnd.below(sum);
+    for (auto& [k, w] : spawns) { r -= w; if (r < 0) return k; }
+    return spawns[0].first;
+  };
+  scaled_ = 1.0;
+  if (boss_floor) {
+    fl.boss = spawn(ACTS[act].boss, fl.down.x, fl.down.y);
+    budget -= 4;
+  }
+  if (d >= 2 && rnd.real() < .65 && !far.empty()) {
+    std::string kind = pick_kind();
+    std::string aff = rnd.pick(AFFIXES).first;
+    P c = rnd.pick(far);
+    for (int i = 0; i < 3; ++i) if (auto m = spawn_near(kind, c)) champion(*m, {aff});
+    budget -= 4;
+  }
+  if (d >= 3 && rnd.real() < .5 && !far.empty()) {
+    std::string kind = pick_kind();
+    P c = rnd.pick(far);
+    if (auto m = spawn_near(kind, c)) unique(*m);
+    int n = rnd.range(2, 3);
+    for (int i = 0; i < n; ++i) spawn_near(kind, c);
+    budget -= 5;
+  }
+  while (budget > 0 && !far.empty()) {
+    std::string kind = pick_kind();
+    int n = (kind == "rat" || kind == "bat" || kind == "spider") ? rnd.range(2, 4)
+          : (kind == "bonearcher" || kind == "spitter" || kind == "imp" || kind == "caller") ? rnd.range(1, 2) : rnd.range(1, 3);
+    P c = rnd.pick(far);
+    for (int i = 0; i < n; ++i) spawn_near(kind, c);
+    budget -= n;
+  }
+  return std::move(floor);
+}
+
+// a floor of rooms and halls (k5), dressed, with treasure, a shrine and a writing now and then
+void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
+  int act = fl.act;
   k5::Plan plan;
   bool have = false;
   for (int i = 0; i < 30; ++i) {
-    auto p = k5::make(W, H, rnd, ACTS[act].mood, 13);
+    auto p = k5::make(ZONE_W, ZONE_H, rnd, ACTS[act].mood, 13);
     if (p.up == p.down || !p.floor.count(p.down)) continue;  // a level too small to have two ends
     int rooms = 0;
     for (auto& r : p.rooms) if (r.kind != "hall") ++rooms;
@@ -280,10 +364,8 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   for (auto d2 : plan.doors) fl.t[d2.y * W + d2.x] = DOOR;
   fl.up = plan.up; fl.down = plan.down;
   fl.t[plan.up.y * W + plan.up.x] = UPSTAIRS;
-  bool boss_floor = d % 4 == 0;
   if (!boss_floor) fl.t[plan.down.y * W + plan.down.x] = STAIRS;
   dress(fl, plan);
-  auto up_dist = k5::walk(plan.floor, plan.up);
   std::vector<const k5::Room*> rooms;
   for (auto& r : plan.rooms)
     if (r.kind != "hall" && !r.cells.empty() && !r.cells.count(plan.up)) rooms.push_back(&r);
@@ -328,51 +410,6 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
       }
     }
   }
-  // creatures
-  std::vector<P> far;
-  for (auto& [c, k] : plan.floor) {
-    auto it = up_dist.find(c);
-    if (it != up_dist.end() && it->second > 12 && fl.tile(c.x, c.y) == FLOOR) far.push_back(c);
-  }
-  std::sort(far.begin(), far.end(), [](P a, P b) { return a.y != b.y ? a.y < b.y : a.x < b.x; });
-  int budget = 14 + int(d * 1.5) - int(fl.sleepers.size());
-  auto& spawns = SPAWNS[act];
-  auto pick_kind = [&]() {
-    int sum = 0;
-    for (auto& [k, w] : spawns) sum += w;
-    int r = rnd.below(sum);
-    for (auto& [k, w] : spawns) { r -= w; if (r < 0) return k; }
-    return spawns[0].first;
-  };
-  scaled_ = 1.0;
-  if (boss_floor) {
-    fl.boss = spawn(ACTS[act].boss, plan.down.x, plan.down.y);
-    budget -= 4;
-  }
-  if (d >= 2 && rnd.real() < .65 && !far.empty()) {
-    std::string kind = pick_kind();
-    std::string aff = rnd.pick(AFFIXES).first;
-    P c = rnd.pick(far);
-    for (int i = 0; i < 3; ++i) if (auto m = spawn_near(kind, c)) champion(*m, {aff});
-    budget -= 4;
-  }
-  if (d >= 3 && rnd.real() < .5 && !far.empty()) {
-    std::string kind = pick_kind();
-    P c = rnd.pick(far);
-    if (auto m = spawn_near(kind, c)) unique(*m);
-    int n = rnd.range(2, 3);
-    for (int i = 0; i < n; ++i) spawn_near(kind, c);
-    budget -= 5;
-  }
-  while (budget > 0 && !far.empty()) {
-    std::string kind = pick_kind();
-    int n = (kind == "rat" || kind == "bat" || kind == "spider") ? rnd.range(2, 4)
-          : (kind == "bonearcher" || kind == "spitter" || kind == "imp" || kind == "caller") ? rnd.range(1, 2) : rnd.range(1, 3);
-    P c = rnd.pick(far);
-    for (int i = 0; i < n; ++i) spawn_near(kind, c);
-    budget -= n;
-  }
-  return std::move(floor);
 }
 
 void Game::build_waystation(Floor& f) {
@@ -415,7 +452,7 @@ MonP Game::spawn(const std::string& key, int x, int y) {
 
 MonP Game::spawn_near(const std::string& key, P c) {
   P s;
-  if (!free_near(c.x, c.y, 3, s, [&](int a, int b) { int t = floor->tile(a, b); return t == FLOOR || t == RUBBLE; })) return nullptr;
+  if (!free_near(c.x, c.y, 3, s, [&](int a, int b) { int t = floor->tile(a, b); return t == FLOOR || t == RUBBLE || t == CRUST; })) return nullptr;
   return spawn(key, s.x, s.y);
 }
 
@@ -581,6 +618,7 @@ void Game::arrive(Hero& h) {
   }
   int t = floor->tile(h.x, h.y);
   if (t == STAIRS) h.say("Stairs lead down. Press [>] to descend.", 0xFFE680);
+  if (t == EDGE) h.say("The crust runs on into the dark. Press [>] to go on.", 0xFFE680);
   if (t == FOUNTAIN && !h.drank) {
     h.drank = true;
     Stats st = stats(h);
@@ -591,7 +629,7 @@ void Game::arrive(Hero& h) {
 }
 
 void Game::descend(Hero& h) {
-  if (floor->tile(h.x, h.y) != STAIRS) { h.say("There are no stairs here.", 0x909090); return; }
+  if (!way_down(floor->tile(h.x, h.y))) { h.say("There are no stairs here.", 0x909090); return; }
   h.gone = true;
   if (!active().empty()) {
     h.say("You wait on the stairs for the others.", 0xA0A0A0);
@@ -887,7 +925,7 @@ void Game::drops(const Mon& m) {
   auto drop_at = [&](FloorItem fi) {
     P c;
     if (!free_near(m.x, m.y, 2, c, [&](int a, int b) {
-          if (!floor->walk(a, b) || floor->tile(a, b) == STAIRS) return false;
+          if (!floor->walk(a, b) || way_down(floor->tile(a, b))) return false;
           for (auto& i : floor->items) if (i.x == a && i.y == b) return false;
           return true;
         }))
@@ -921,7 +959,7 @@ void Game::open_chest(Hero& h, int x, int y) {
   h.say("You open the chest.", 0xC8963C);
   auto spot = [&](P& c) {
     return free_near(x, y, 2, c, [&](int a, int b) {
-      if (!floor->walk(a, b) || floor->tile(a, b) == STAIRS) return false;
+      if (!floor->walk(a, b) || way_down(floor->tile(a, b))) return false;
       for (auto& i : floor->items) if (i.x == a && i.y == b) return false;
       return true;
     });
@@ -1707,10 +1745,11 @@ void Game::look() {
   for (auto& [id, hp] : heroes) {
     Hero& h = *hp;
     if (h.away) continue;
-    TCOD_map_compute_fov(map, h.x, h.y, SIGHT, true, FOV_SYMMETRIC_SHADOWCAST);
+    int sight = floor->deep ? SIGHT + 5 : SIGHT;  // the lava lights the Deep: you see further there
+    TCOD_map_compute_fov(map, h.x, h.y, sight, true, FOV_SYMMETRIC_SHADOWCAST);
     for (int y = 0; y < H; ++y)
       for (int x = 0; x < W; ++x) {
-        h.vis[y * W + x] = TCOD_map_is_in_fov(map, x, y) && cheb(x, y, h.x, h.y) <= SIGHT;
+        h.vis[y * W + x] = TCOD_map_is_in_fov(map, x, y) && cheb(x, y, h.x, h.y) <= sight;
         if (h.vis[y * W + x]) h.seen[y * W + x] = 1;
       }
     if (!h.present()) continue;

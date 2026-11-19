@@ -4,7 +4,8 @@ affixes and uniques. No rules live here."""
 # ------------------------------------------------------------------ tiles
 # (sign, colour, walkable, see-through, name)
 WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, \
-    TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES = range(28)
+    TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, \
+    EDGE = range(35)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -35,6 +36,14 @@ TILES = [
     ('%', (184, 168, 144), False, True, 'twitching corpse'),
     ('Ω', (200, 188, 160), False, False, 'wall of bones'),
     (',', (200, 188, 160), True, True, 'scattered bones'),
+    # the Deep: crust on the lava, and the Ashen King's island of cut basalt
+    ('.', (90, 58, 48), True, True, 'crust'),
+    ('.', (90, 58, 48), True, True, 'thin crust'),
+    ('.', (74, 77, 92), True, True, 'cut basalt'),
+    ('▬', (90, 92, 110), True, True, 'dais'),
+    ('Ψ', (192, 74, 22), True, True, 'burning rune'),
+    ('╥', (138, 122, 160), False, True, 'throne'),
+    ('→', (255, 230, 160), True, True, 'the way on'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL}

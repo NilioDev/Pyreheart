@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <map>
 #include <set>
 #include <tuple>
 
@@ -154,7 +155,7 @@ static json choose(Game& g, Hero& h) {
     auto a = toward(g, h, seen->x, seen->y);
     if (!still(a)) return a;
   }
-  if (f.tile(h.x, h.y) == STAIRS) return {{"t", "down"}};
+  if (way_down(f.tile(h.x, h.y))) return {{"t", "down"}};
   const FloorItem* loot = nullptr;
   // things it stands on and could not take (a full belt or pack): leave them be
   static std::set<std::tuple<int, int, int>> left;
@@ -162,6 +163,9 @@ static json choose(Game& g, Hero& h) {
   for (auto& fi : f.items)
     if (!left.count({f.id, fi.x, fi.y}) && (!fi.owner || fi.owner == h.pid) && cheb(h.x, h.y, fi.x, fi.y) < 14 && (!loot || cheb(h.x, h.y, fi.x, fi.y) < cheb(h.x, h.y, loot->x, loot->y))) loot = &fi;
   if (std::getenv("BOTDBG2")) std::printf("seen=%d loot=%d,%d down=%d,%d tile=%d\n", seen?1:0, loot?loot->x:-1, loot?loot->y:-1, f.down.x, f.down.y, f.tile(f.down.x,f.down.y));
+  // a thing it has walked toward for long without getting there lies the long way round (the Deep's maze): let it be
+  static std::map<std::tuple<int, int, int>, int> chased;
+  if (loot && ++chased[{f.id, loot->x, loot->y}] > 40) { left.insert({f.id, loot->x, loot->y}); loot = nullptr; }
   if (loot) { auto a = toward(g, h, loot->x, loot->y); if (!still(a)) return a; }
   auto a = toward(g, h, f.down.x, f.down.y);
   if (still(a)) return {{"t", "move"}, {"dx", g.rnd.range(-1, 1)}, {"dy", g.rnd.range(-1, 1)}};
