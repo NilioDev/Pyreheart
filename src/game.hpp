@@ -14,7 +14,29 @@ constexpr int CITY = 5, VAULTS = 6, BARRACKS = 7, PRISON = 8, SANCTUM = 9;
 constexpr int W = 120;  // the largest map; a zone's floors use the top left w x h of it (ACTS[].w, .h)
 constexpr int H = 66;
 constexpr int SIGHT = 9;
-constexpr char TILE0 = ' ';  // a map is sent as one character a cell: TILE0 + its tile
+// A map goes over the wire as printable text, one character a cell: TILE0 + its tile, and for the tiles past what
+// that reaches, '~' then TILE0 + (tile - TILE_ESC). Decoded, it is one byte a cell, TILE0 + tile; tile_of() reads one.
+constexpr char TILE0 = ' ';
+constexpr int TILE_ESC = 94;  // ' ' + 94 = '~', the escape
+inline int tile_of(char c) { return int((unsigned char)c) - TILE0; }
+inline std::string encode_map(const std::vector<int>& t) {
+  std::string m;
+  m.reserve(t.size());
+  for (int v : t) {
+    if (v < TILE_ESC) m += char(TILE0 + v);
+    else { m += '~'; m += char(TILE0 + v - TILE_ESC); }
+  }
+  return m;
+}
+inline std::string decode_map(const std::string& s) {
+  std::string m;
+  m.reserve(s.size());
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '~' && i + 1 < s.size()) { m += char((unsigned char)(TILE0 + TILE_ESC + (s[i + 1] - TILE0))); ++i; }
+    else m += s[i];
+  }
+  return m;
+}
 
 struct Item {
   int id = 0;
@@ -126,6 +148,9 @@ struct Floor {
   std::vector<MonP> mons;
   P up, down;
   int keys = 0;  // vault keys the party carries (the Vaults' guardians drop them)
+  std::vector<P> open_graves;  // Charnfen: where the dead climb out
+  int risen = 0;
+  bool warned = false;
   bool has_merchant = false;
   P merchant;
   std::vector<ItemP> shop;
@@ -273,6 +298,7 @@ class Game {
   void melee(Hero& h, Mon& m);
   void hurt(Mon& m, int dmg, Hero* by, const std::string& text = "");
   void kill(Mon& m, Hero* by);
+  void town_tick();
   void gain_xp(Hero& h, int xp);
   void choose_perk(Hero& h, const std::string& k);
   void drops(const Mon& m);

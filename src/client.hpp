@@ -126,6 +126,8 @@ class Client {
   std::set<std::string> claimed_;
   void claim_sparks(const json& s);
   void draw_pyre();
+  void draw_town();  // Charnfen (town.cpp)
+  P town_fire_{-99, -99};
   void pyre_key(SDL_Keycode k);
   void queue_epigraph(const std::string& zone);
   void draw_epigraph();

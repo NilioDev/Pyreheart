@@ -277,7 +277,7 @@ void Client::poll() {
 
 void Client::apply(const json& s) {
   int fl = s["floor"];
-  if (s.contains("map")) maps_[fl] = s["map"];
+  if (s.contains("map")) maps_[fl] = decode_map(s["map"].get<std::string>());
   auto& seen = seen_[fl];
   if (seen.empty()) seen.assign(W * H, 0);
   const std::string& vis = s["vis"].get_ref<const std::string&>();
@@ -572,7 +572,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case SDLK_L: act("look"); break;
     case SDLK_R: if (snap_.value("forge", false)) send({{"t", "forge"}}); break;
     case SDLK_RETURN: case SDLK_KP_ENTER: {
-      int t = maps_.count(snap_["floor"]) ? maps_[snap_["floor"]][me["y"].get<int>() * W + me["x"].get<int>()] - TILE0 : -1;
+      int t = maps_.count(snap_["floor"]) ? tile_of(maps_[snap_["floor"]][me["y"].get<int>() * W + me["x"].get<int>()]) : -1;
       if (t == data::STAIRS || t == data::EDGE) act("down");
       break;
     }
@@ -1007,7 +1007,7 @@ void Client::draw_game() {
     case Over::Epigraph: draw_epigraph(); break;
     default: break;
   }
-  if (over_ == Over::None && snap_.value("rest", false) && layout_ != Layout::Watch) draw_route();
+  if (over_ == Over::None && snap_.value("rest", false) && !snap_.value("town", false) && layout_ != Layout::Watch) draw_route();
   if (snap_.value("state", "play") != "play") draw_end();
 }
 
@@ -1114,7 +1114,7 @@ void Client::draw_map() {
   if (vh_ >= mh) camy_ = -(vh_ - mh) / 2;
   auto sx = [&](int x) { return x - camx_ + vx_; };
   auto sy = [&](int y) { return y - camy_ + vy_; };
-  draw_tiles();
+  if (s.value("town", false)) draw_town(); else draw_tiles();
   for (auto& w : s["writ"]) { int i = w; put(sx(i % W), sy(i / W), '?', 0xE6D2A0); }
   // runes and burning or hallowed ground
   if (s.contains("ground"))
@@ -1191,7 +1191,7 @@ void Client::draw_map() {
       int X = sx(c.x), Y = sy(c.y);
       if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
       if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H) continue;
-      if (!numb && (!seen[c.y * W + c.x] || (map[c.y * W + c.x] - TILE0) == data::WALL)) continue;
+      if (!numb && (!seen[c.y * W + c.x] || tile_of(map[c.y * W + c.x]) == data::WALL)) continue;
       put(X, Y, c.ch, (c.col.r << 16) | (c.col.g << 8) | c.col.b);
     }
   }
@@ -1223,7 +1223,7 @@ void Client::draw_map() {
           }
         }
       }
-    if (what.empty() && seen[ty_ * W + tx_]) what = data::TILES[map[ty_ * W + tx_] - TILE0].name;
+    if (what.empty() && seen[ty_ * W + tx_]) what = data::TILES[tile_of(map[ty_ * W + tx_])].name;
     if (snap_.contains("exits"))
       for (auto& e : snap_["exits"])
         if (e[0].get<int>() == tx_ && e[1].get<int>() == ty_) what = "stairs down to " + data::ACTS[e[2].get<int>()].name;
@@ -1262,9 +1262,9 @@ void Client::draw_side(int x, int y, int w, int h) {
   if (me.value("dazed", false)) st += "dazed ";
   if (!st.empty()) text(x + 1, r, st, 0x96E65A);
   ++r;
-  std::string where = snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
+  std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
   text(x + 1, r++, where, GOLD);
-  text(x + 1, r++, data::ACTS[snap_["act"].get<int>()].name, GREY);
+  text(x + 1, r++, snap_.value("town", false) ? "the last village" : data::ACTS[snap_["act"].get<int>()].name, GREY);
   text(x + 1, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
   ++r;
   text(x + 1, r, "[q]", KEY); text(x + 5, r++, "heal x" + std::to_string(me["heal"].get<int>()), 0xFF7070);
@@ -1318,7 +1318,7 @@ void Client::draw_status_tall(int y) {
   int cw = con_.get_width();
   bar(0, y, cw / 2 - 1, me["hp"], me["maxhp"], RED, std::to_string(me["hp"].get<int>()) + "/" + std::to_string(me["maxhp"].get<int>()));
   bar(cw / 2, y, cw - cw / 2, me["mana"], me["maxmana"], me.value("pool", "mana") == "fury" ? 0xC05020 : BLUE, std::to_string(me["mana"].get<int>()) + "/" + std::to_string(me["maxmana"].get<int>()));
-  std::string where = snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
+  std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
   text(0, y + 1, where + "  lvl " + std::to_string(me["lvl"].get<int>()) + "  " + std::to_string(me["gold"].get<int>()) + "g", GOLD);
 }
 

@@ -62,6 +62,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["depth"] = g.depth;
   out["act"] = f.act;
   out["rest"] = f.rest;
+  out["town"] = f.depth == 0;
   out["floor"] = f.id;
   out["mw"] = f.w;
   out["mh"] = f.h;
@@ -74,15 +75,13 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     out["exits"] = ex;
   }
   if (with_map) {
-    std::string m(W * H, '0');
-    for (int i = 0; i < W * H; ++i) m[i] = char(TILE0 + f.t[i]);
-    out["map"] = m;
+    out["map"] = encode_map(f.t);
     std::string seen(W * H, '0');
     for (int i = 0; i < W * H; ++i) if (h.seen[i]) seen[i] = '1';
     out["seen"] = seen;
   }
   std::string vis(W * H, '0');
-  for (int i = 0; i < W * H; ++i) if (h.vis[i]) vis[i] = '1';
+  for (int i = 0; i < W * H; ++i) if (h.vis[i] || f.depth == 0) vis[i] = '1';
   out["vis"] = vis;
   json ents = json::array();
   for (auto& m : f.mons) {

@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <deque>
+#include <fstream>
 
 #include "k5.hpp"
 #include "pyre.hpp"
@@ -79,6 +80,35 @@ Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, pyre::FROST_
   }
   if (std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_REST")) { zfloor = ACTS[route.back()].floors - 1; depth += zfloor; }
   floor = make_floor(depth, std::getenv("PYREHEART_REST") != nullptr);  // PYREHEART_REST=1: the waystation after it
+  // a first look at Charnfen, drawn by hand: PYREHEART_TOWN=ref/charnfen.txt
+  if (const char* town = std::getenv("PYREHEART_TOWN")) {
+    std::ifstream in(town);
+    std::string line;
+    auto f = std::make_unique<Floor>();
+    f->depth = 0; f->act = 0; f->rest = true; f->id = floor_ids_++; f->w = W; f->h = H;
+    static const std::map<std::string, int> KEY = {
+        {"#", WALL}, {".", SNOW}, {":", PATH}, {"+", DOOR}, {"n", GRAVE}, {"t", CROSS}, {"\u2663", TREE}, {"\u2261", PEW},
+        {"\u2021", ALTAR}, {"E", EMBER}, {"O", WELL}, {"?", BOARD}, {"w", WINDOW}, {"L", LIT}, {"\u2248", ICE}, {"%", CRACK},
+        {">", STAIRS}, {"<", UPSTAIRS}, {"o", PILLAR}, {"_", FLAGS}, {"F", FIRE}, {"r", STONES}, {"C", CHIMNEY}, {"h", HEALER},
+        {"b", SMITH}, {"g", DIGGER}, {"T", TORCH}, {"i", CANDLE}, {"U", OPENGRAVE}, {"G", GUARD}, {"X", BARRICADE}, {",", RUBBLE},
+        {"$", PATH}, {"@", PATH}};
+    for (int y = 0; y < H && std::getline(in, line); ++y) {
+      int x = 0;
+      for (size_t i = 0; i < line.size() && x < W; ++x) {
+        size_t n = (line[i] & 0x80) == 0 ? 1 : (line[i] & 0xE0) == 0xC0 ? 2 : (line[i] & 0xF0) == 0xE0 ? 3 : 4;
+        std::string c = line.substr(i, n);
+        i += n;
+        auto k = KEY.find(c);
+        f->t[y * W + x] = k == KEY.end() ? SNOW : k->second;
+        if (c == "$") { f->has_merchant = true; f->merchant = {x, y}; }
+        if (c == "@") f->up = {x, y};
+        if (c == ">") f->down = {x, y};
+        if (c == "U") f->open_graves.push_back({x, y});
+      }
+    }
+    floor = std::move(f);
+    depth = 0;
+  }
 }
 
 bool Game::final_floor() const { return route.back() == DEEP && zfloor == ACTS[DEEP].floors - 1 && !floor->rest; }
@@ -126,9 +156,14 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
   heroes[pid] = std::move(h);
   rescale();
   place(r);
-  if (depth == 1) r.say("Charnfen, at the edge of ruin. The way down is through the graveyard.", 0xD2B48C);
-  auto& open = lore::ACT_OPEN[floor->act];
-  r.say(open[0] + ": " + open[1], 0xFFD27F);
+  if (floor->depth == 0) {
+    r.say("Charnfen. The great fire burns on the square; beyond it snow falls on the graves of the many who went down.", 0xD2B48C);
+    r.say("The cathedral is a ruin; its portal fell in. Go round through the graves to the broken transept. Under the choir a hole leads down.", 0xFFD27F);
+  } else {
+    if (depth == 1) r.say("Charnfen, at the edge of ruin. The way down is through the graveyard.", 0xD2B48C);
+    auto& open = lore::ACT_OPEN[floor->act];
+    r.say(open[0] + ": " + open[1], 0xFFD27F);
+  }
   r.say("Walk with the arrow keys or the number pad. Bump a foe to fight it. Help: [?].", 0x9CC89C);
   if (heroes.size() > 1) say_all(r.name + " the " + r.cls->name + " joins the dive.", 0xB4DCB4);
   look();
@@ -145,6 +180,7 @@ void Game::leave(int pid) {
 
 void Game::place(Hero& h) {
   P s;
+  if (floor->depth == 0) { h.x = floor->up.x; h.y = floor->up.y; h.seen.assign(W * H, 1); return; }
   if (std::getenv("PYREHEART_BOSS") && floor->boss) {
     auto& b = *floor->boss;
     if (free_near(b.x, b.y, 8, s, [&](int x, int y) { return floor->walk(x, y) && cheb(x, y, b.x, b.y) >= 4; })) { h.x = s.x; h.y = s.y; return; }
@@ -655,7 +691,7 @@ void Game::step(const std::map<int, json>& actions) {
     if (state != "play") return;
   }
   check_stairs();
-  if (!floor->rest) monsters();
+  if (!floor->rest || floor->depth == 0) monsters();
   tick();
   look();
   if (!floor->rest) { wake_dead(); look(); }
@@ -1767,6 +1803,7 @@ void Game::compute_dist() {
 
 void Game::monsters() {
   if (active().empty()) return;
+  if (floor->depth == 0) town_tick();
   compute_dist();
   auto ms = floor->mons;
   for (auto& m : ms) {
@@ -2153,4 +2190,43 @@ void Game::forge(Hero& h) {
   wi->second = best;
   add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xFFB040}});
   h.say("The Spark reforges " + old->name + " into " + best->name + ".", rarity_col(best->rarity));
+}
+
+// Charnfen: the dead climb from the open graves as heroes pass, and the guards at the gate shoot what comes near
+void Game::town_tick() {
+  Floor& f = *floor;
+  int most = 1 + int(living().size());  // one or two alone, one more for each friend
+  for (auto& h : living()) {
+    if (!f.warned)
+      for (int i = 0; i < W * H; ++i)
+        if (f.t[i] == GUARD && cheb(i % W, i / W, h->x, h->y) <= 3) {
+          f.warned = true;
+          say_all("A guard calls out: \"They rise every night now. Mind the open graves.\"", 0xA8C0E0);
+          break;
+        }
+    for (auto& g : f.open_graves) {
+      if (f.risen >= most || cheb(g.x, g.y, h->x, h->y) > 5 || mon_at(g.x, g.y) || rnd.below(100) >= 35) continue;
+      if (auto m = spawn("shambler", g.x, g.y)) {
+        m->awake = true;
+        ++f.risen;
+        add_fx({{"k", "rise"}, {"x", g.x}, {"y", g.y}, {"col", 0x8CA070}});
+        say_all("The earth of an open grave heaves. A bloated corpse claws its way out.", 0xC0B090);
+      }
+    }
+  }
+  // the guards hold the gate: anything dead that comes within a few steps of them takes a bolt
+  for (int i = 0; i < W * H; ++i) {
+    if (f.t[i] != GUARD) continue;
+    int gx = i % W, gy = i / W;
+    for (auto& m : std::vector<MonP>(f.mons)) {
+      if (m->hp <= 0 || cheb(m->x, m->y, gx, gy) > 4) continue;
+      std::vector<P> cells;
+      int n = std::max(std::abs(m->x - gx), std::abs(m->y - gy));
+      for (int k = 1; k <= n; ++k) cells.push_back({gx + (m->x - gx) * k / n, gy + (m->y - gy) * k / n});
+      add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", 0xDCDCC8}, {"ch", "-"}, {"src", xy(gx, gy)}});
+      say_near(m->x, m->y, "A guard's bolt strikes " + the(*m) + ".", 0xA8C0E0);
+      hurt(*m, 6 + int(rnd.below(5)), nullptr, "");
+      break;
+    }
+  }
 }

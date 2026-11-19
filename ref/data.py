@@ -8,7 +8,9 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, \
     BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, \
     TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, \
-    FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT = range(87)
+    FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT, \
+    SNOW, PATH, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, \
+    DIGGER, OPENGRAVE, GUARD, BARRICADE = range(109)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -104,12 +106,36 @@ TILES = [
     ('▪', (135, 105, 65), False, True, 'crate'),
     ('≡', (135, 95, 60), False, False, 'shelf of scrolls'),
     ('○', (125, 125, 135), False, True, 'dry fountain'),
+    # Charnfen, the last village, at night in the grey snow
+    ('.', (120, 128, 148), True, True, 'snow'),
+    ('·', (130, 105, 80), True, True, 'trodden mud'),
+    ('∩', (120, 120, 130), False, True, 'a gravestone'),
+    ('†', (140, 140, 150), False, True, 'a grave cross'),
+    ('♣', (80, 65, 55), False, True, 'a dead tree'),
+    ('&', (130, 60, 40), False, True, 'the Ember Altar, cold'),
+    ('O', (150, 170, 190), False, True, 'the warm well'),
+    ('?', (200, 170, 110), False, True, 'the notice board'),
+    ('▒', (110, 60, 160), False, False, 'stained glass'),
+    ('▒', (230, 180, 90), False, False, 'a lit window'),
+    ('≈', (150, 190, 220), True, True, 'a frozen pond'),
+    (',', (230, 110, 40), True, True, 'a warm crack in the ground'),
+    ('.', (75, 70, 66), True, True, 'worn flagstones'),
+    ('▲', (255, 160, 40), False, True, 'the great fire of Charnfen'),
+    ('∙', (120, 110, 100), False, True, 'the ring of hearth stones'),
+    ('■', (90, 70, 60), False, False, 'a chimney'),
+    ('@', (170, 220, 170), False, True, 'Ysolde, the healer'),
+    ('@', (200, 150, 110), False, True, 'Brann, the smith'),
+    ('@', (150, 150, 170), False, True, 'old Ebb, the gravedigger'),
+    ('▄', (110, 80, 60), True, True, 'an open grave, its earth thrown out'),
+    ('@', (150, 175, 210), False, True, 'a guard of Charnfen with a crossbow'),
+    ('╪', (120, 90, 60), False, True, 'a barricade of overturned carts'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
                OBSIDIAN, STATUE, BANNER, FALLEN, SLUDGE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER,
                EGG, TIDESTATUE, BASIN, CHASM, SHAFT, SPOUT, LAMP, PROP, BARS, VAULTDOOR, BUNK, TABLE, RACK, DUMMY, STALL,
-               CRATE, BOOKS, DRYFOUNT}
+               CRATE, BOOKS, DRYFOUNT, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, FIRE, STONES, CHIMNEY, HEALER,
+               SMITH, DIGGER, GUARD, BARRICADE}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:
