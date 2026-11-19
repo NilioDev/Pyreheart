@@ -24,9 +24,9 @@ static void wav(const std::string& path, const std::vector<float>& s, int rate) 
 int main(int argc, char** argv) {
   std::string dir = argc > 1 ? argv[1] : ".";
   int secs = argc > 2 ? std::atoi(argv[2]) : 60, rate = 44100;
-  const char* names[] = {"title", "crypt", "caves", "forge", "deep", "rest"};
+  const char* names[] = {"title", "crypt", "caves", "forge", "deep", "rest", "cistern", "city", "vaults", "barracks", "prison", "sanctum"};
   for (int m = 0; m < music::MOODS; ++m)
-    for (int fight = 0; fight < (m >= 1 && m <= 4 ? 2 : 1); ++fight) {
+    for (int fight = 0; fight < (m != music::TITLE && m != music::REST ? 2 : 1); ++fight) {
       std::vector<float> s(size_t(rate) * secs * 2);
       music::render(music::Mood(m), fight, rate, secs, 1234 + m, s.data());
       double sum = 0, peak = 0;

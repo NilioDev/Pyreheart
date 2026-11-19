@@ -8,7 +8,8 @@
 
 namespace music {
 
-enum Mood { TITLE, CRYPT, CAVES, FORGE, DEEP, REST, MOODS };
+// the first six are the old acts and keep their places; the zones after them came later
+enum Mood { TITLE, CRYPT, CAVES, FORGE, DEEP, REST, CISTERN, CITY, VAULTS, BARRACKS, PRISON, SANCTUM, MOODS };
 
 class Composer;
 

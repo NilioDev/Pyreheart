@@ -211,7 +211,8 @@ struct MoodDef {
   int roots[4];          // keys to choose from (MIDI note of the key's low root)
   float drone, pad, harp, flute, bells, drums, room, pad_cutoff;
   bool tritone;          // the drone's second note: a fifth, or the devil's interval
-  int drum_kind;         // 0 none, 1 slow tom, 2 anvil and tom, 3 heartbeat, 4 drips
+  int drum_kind;         // 0 none, 1 slow tom, 2 anvil and tom, 3 heartbeat, 4 drips; the later zones:
+                         // 5 cistern, 6 city, 7 vaults, 8 barracks, 9 prison, 10 sanctum (see zone_sounds)
   std::vector<std::vector<int>> progressions;
 };
 
@@ -234,6 +235,24 @@ const MoodDef MOODS_DEF[MOODS] = {
     // the waystation: dorian, warmer, a harp to rest by
     {{0, 2, 3, 5, 7, 9, 10}, 66, {50, 52, 55, 48}, .35f, .55f, 1.f, .7f, 0, 0, .7f, 1400, false, 0,
      {{0, 3, 0, 6}, {0, 6, 3, 0}, {0, 2, 3, 6}}},
+    // the cistern: still black water in a vast hall; slow drops fall far, a broken wheel turns in threes
+    {{0, 2, 3, 5, 7, 8, 10}, 44, {43, 45, 41, 46}, .75f, .7f, .25f, .45f, 0, .35f, 1.f, 700, false, 5,
+     {{0, 5, 6, 0}, {0, 3, 5, 0}, {0, 6, 3, 4}, {0, 5, 3, 6}}},
+    // the city: the dorian of a proud people, a slow procession through empty streets, a far great bell
+    {{0, 2, 3, 5, 7, 9, 10}, 54, {48, 50, 46, 45}, .42f, .68f, .55f, .7f, 0, .45f, 1.f, 1300, false, 6,
+     {{0, 3, 6, 4}, {0, 6, 3, 0}, {0, 4, 3, 6}, {0, 2, 3, 4}}},
+    // the vaults: a strange minor behind locked doors, a mechanism ticking, gold glinting in the dark
+    {{0, 2, 3, 6, 7, 8, 11}, 60, {45, 47, 44, 46}, .7f, .8f, .9f, .55f, 0, .3f, .6f, 900, false, 7,
+     {{0, 3, 4, 0}, {0, 5, 4, 0}, {0, 1, 0, 4}, {0, 3, 1, 4}}},
+    // the barracks: the minor of old soldiers, a march drum that never sounded the retreat, a fife
+    {{0, 2, 3, 5, 7, 8, 10}, 74, {45, 43, 47, 48}, .6f, .75f, 0, .65f, 0, .8f, .75f, 1000, false, 8,
+     {{0, 6, 5, 4}, {0, 5, 6, 4}, {0, 3, 4, 4}, {0, 6, 0, 4}}},
+    // the prison: locrian and the devil's interval, chains dragged over stone, a heavy door far away
+    {{0, 1, 3, 5, 6, 8, 10}, 40, {42, 43, 41, 44}, .9f, .55f, .15f, .3f, 0, .6f, .95f, 550, true, 9,
+     {{0, 1, 0, 4}, {0, 4, 1, 0}, {0, 6, 1, 0}, {0, 1, 4, 1}}},
+    // the sanctum: a choir in black stone around an empty altar, temple bells, no drum but the bells
+    {{0, 2, 3, 5, 7, 8, 10}, 44, {50, 48, 52, 47}, .48f, .75f, .3f, .55f, 0, .5f, 1.f, 1500, false, 10,
+     {{0, 5, 3, 4}, {0, 3, 5, 6}, {0, 6, 5, 0}, {0, 5, 1, 0}}},
 };
 
 // arpeggio patterns over one bar of eight steps: 0..2 the chord's notes, 3 the root an octave up, -1 rest
@@ -304,6 +323,8 @@ class Composer {
   Flute flute_;
   std::array<Bell, 4> bells_;
   int next_bell_ = 0;
+  std::array<Bell, 8> zbells_;  // the later zones' own bells, chains and coins
+  int next_zbell_ = 0, rattle_ = 0, wheel_ = 0;
   std::array<Drum, 4> drums_;
   int next_drum_ = 0;
   Room room_;
@@ -418,7 +439,7 @@ class Composer {
     }
 
     // bells: a low tolling in the crypt, water dripping in the caves
-    if (m_->bells > 0) {
+    if (m_->bells > 0 && m_->drum_kind < 5) {
       if (m_->drum_kind == 4) {
         if (r_.chance(.12f * m_->bells)) {
           int n = note(r_.below(7), 4);
@@ -461,10 +482,59 @@ class Composer {
         case 4:  // the caves: a far drum now and then
           if (s == 0 && r_.chance(.25f)) hit(90, 42, 2.5f, .4f, .6f);
           break;
-        default: break;
+        default: zone_sounds(s, hit); break;
       }
     }
     ++step_;
+  }
+
+  void zbell(float f, float ratio, float index, float decay, float amp) {
+    zbells_[next_zbell_].start(f, ratio, index, decay, amp);
+    next_zbell_ = (next_zbell_ + 1) % int(zbells_.size());
+  }
+  // the drums and noises of the later zones
+  template <class Hit>
+  void zone_sounds(int s, Hit& hit) {
+    switch (m_->drum_kind) {
+      case 5:  // the cistern: a drop into deep water, far off; a broken wheel knocking in threes
+        if (r_.chance(.07f)) zbell(mtof(float(note(r_.below(5), 3))), 2.f, .8f, 1.6f, .1f);
+        if (r_.chance(.03f)) zbell(mtof(float(note(0, 0))), .5f, 2.f, 2.5f, .1f);  // the sludge gives a bubble
+        if (++wheel_ % 3 == 0 && (wheel_ % 24 < 12 || fight_)) hit(85, 40, 3.f, .5f, .55f);
+        if (fight_ && s == 0) hit(105, 45, 3.5f, .6f, .9f);
+        break;
+      case 6:  // the city: a slow procession on one and three, a great bell far away every other bar
+        if (s == 0) hit(95, 44, 2.8f, .5f, .8f);
+        if (s == 4) hit(85, 42, 3.2f, .4f, .5f);
+        if (s == 0 && bar_ % 2 == 0) zbell(mtof(float(note(0, 0))), 1.41f, 2.2f, .45f, .13f);
+        if (fight_ && (s == 6 || s == 7)) hit(130, 60, 6, .6f, .45f);
+        break;
+      case 7:  // the vaults: the lock ticks, and now and then gold glints
+        zbell(s % 2 ? 2600.f : 3100.f, 1.f, .2f, 60, s % 4 == 0 ? .05f : .025f);
+        if (r_.chance(.06f)) zbell(mtof(float(note(r_.below(7), 4))), 3.01f, 1.5f, 2.2f, .08f);
+        if (s == 0 && bar_ % 2 == 0) hit(70, 40, 2.5f, .3f, .7f);  // a heavy door
+        if (fight_ && (s == 0 || s == 3 || s == 6)) hit(110, 50, 4, .5f, .7f);
+        break;
+      case 8: {  // the barracks: a march, the big drum on one and five, the snare between, rolls into the bar
+        if (s == 0 || s == 4) hit(100, 46, 3.5f, .6f, .9f);
+        bool roll = bar_ % 4 == 3 && s >= 5;
+        if (s == 2 || s == 6 || roll || (fight_ && (s == 3 || s == 7)))
+          hit(230, 190, 14, 2.5f, roll ? .3f + .1f * (s - 5) : .35f);
+        break;
+      }
+      case 9:  // the prison: chains dragged in bursts, a heavy door now and then
+        if (rattle_ == 0 && r_.chance(fight_ ? .1f : .04f)) rattle_ = 3 + r_.below(4);
+        if (rattle_ > 0) { --rattle_; zbell(900 + 500 * r_.uni(), 3.71f, 4.f, 9, .06f + .03f * r_.uni()); }
+        if (s == 0 && bar_ % 4 == 0) hit(60, 32, 2.f, .5f, 1.f);
+        if (fight_ && s == 0) hit(75, 36, 3, .4f, .8f);
+        if (fight_ && s == 3) hit(75, 36, 3, .4f, .6f);
+        break;
+      case 10:  // the sanctum: the temple bell on the bar, a small bell answers it
+        if (s == 0) zbell(mtof(float(note(0, 1))), 1.41f, 2.5f, .5f, bar_ % 2 ? .08f : .14f);
+        if (s == 4 && r_.chance(.5f)) zbell(mtof(float(note(r_.chance(.5f) ? 4 : 2, 3))), 2.76f, 1.2f, 1.2f, .06f);
+        if (fight_ && (s == 0 || s == 4)) hit(80, 40, 2.5f, .5f, .9f);
+        break;
+      default: break;
+    }
   }
 
   void voice(float& outl, float& outr) {
@@ -485,6 +555,7 @@ class Composer {
     float fl = flute_.tick(rate, r_) * m_->flute;
     float bell = 0;
     for (auto& b : bells_) bell += b.tick(rate);
+    for (auto& b : zbells_) bell += b.tick(rate);
     float drum = 0;
     for (auto& d : drums_) drum += d.tick(rate, r_);
     drum *= .5f;
@@ -542,7 +613,8 @@ void Player::renew() {
 std::string Player::describe() const {
   if (!c_) return "";
   static const char* names[] = {"C", "C sharp", "D", "E flat", "E", "F", "F sharp", "G", "A flat", "A", "B flat", "B"};
-  static const char* modes[MOODS] = {"minor", "minor", "phrygian", "harmonic minor", "phrygian dominant", "dorian"};
+  static const char* modes[MOODS] = {"minor", "minor", "phrygian", "harmonic minor", "phrygian dominant", "dorian",
+                                     "minor", "dorian", "hungarian minor", "minor", "locrian", "minor"};
   int root = c_->playing_root_, mood = std::clamp(int(c_->playing_mood_), 0, MOODS - 1);
   return std::string(names[root % 12]) + " " + modes[mood] + ", " + std::to_string(int(c_->playing_bpm_)) + " beats a minute";
 }
