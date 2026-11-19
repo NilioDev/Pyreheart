@@ -524,7 +524,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case SDLK_P: act("perk"); break;
     case SDLK_L: act("look"); break;
     case SDLK_RETURN: case SDLK_KP_ENTER: {
-      int t = maps_.count(snap_["floor"]) ? maps_[snap_["floor"]][me["y"].get<int>() * W + me["x"].get<int>()] - '0' : -1;
+      int t = maps_.count(snap_["floor"]) ? maps_[snap_["floor"]][me["y"].get<int>() * W + me["x"].get<int>()] - TILE0 : -1;
       if (t == data::STAIRS || t == data::EDGE) act("down");
       break;
     }
@@ -1115,7 +1115,7 @@ void Client::draw_map() {
     for (auto& c : fx::cells(f.kw, t - f.start)) {
       int X = sx(c.x), Y = sy(c.y);
       if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
-      if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H || !seen[c.y * W + c.x] || (map[c.y * W + c.x] - '0') == data::WALL) continue;
+      if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H || !seen[c.y * W + c.x] || (map[c.y * W + c.x] - TILE0) == data::WALL) continue;
       put(X, Y, c.ch, (c.col.r << 16) | (c.col.g << 8) | c.col.b);
     }
   if (over_ == Over::Target) {
@@ -1146,7 +1146,7 @@ void Client::draw_map() {
           }
         }
       }
-    if (what.empty() && seen[ty_ * W + tx_]) what = data::TILES[map[ty_ * W + tx_] - '0'].name;
+    if (what.empty() && seen[ty_ * W + tx_]) what = data::TILES[map[ty_ * W + tx_] - TILE0].name;
     if (snap_.contains("exits"))
       for (auto& e : snap_["exits"])
         if (e[0].get<int>() == tx_ && e[1].get<int>() == ty_) what = "stairs down to " + data::ACTS[e[2].get<int>()].name;

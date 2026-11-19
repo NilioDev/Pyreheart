@@ -75,7 +75,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   }
   if (with_map) {
     std::string m(W * H, '0');
-    for (int i = 0; i < W * H; ++i) m[i] = char('0' + f.t[i]);
+    for (int i = 0; i < W * H; ++i) m[i] = char(TILE0 + f.t[i]);
     out["map"] = m;
     std::string seen(W * H, '0');
     for (int i = 0; i < W * H; ++i) if (h.seen[i]) seen[i] = '1';
@@ -101,6 +101,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     if (m->brace > 0) e["braced"] = true;
     if (m->awake && m->can("chill")) e["chill"] = true;
     if (m->dormant) e["dormant"] = true;
+    if (m->sleep) e["asleep"] = true;
     ents.push_back(e);
   }
   json runes = json::array();

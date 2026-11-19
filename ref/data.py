@@ -7,7 +7,8 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, \
     EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, \
     BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, \
-    TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME = range(73)
+    TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, \
+    FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT = range(87)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -86,11 +87,29 @@ TILES = [
     ('▼', (122, 90, 58), False, False, 'broken pipe'),
     ('¡', (255, 192, 96), False, True, 'dwarf lamp'),
     ('∙', (90, 106, 74), True, True, 'slime trail'),
+    # the other zones: a glowing crack in the cave floor, a timber prop, iron bars, a vault door (it wants the key a
+    # guardian carries) shut and torn open, bunks, tables, weapon racks, a drill dummy, a market stall, the paving of
+    # the plaza, crates, shelves of books, a dry fountain
+    ('≈', (200, 70, 25), True, True, 'glowing crack'),
+    ('Π', (130, 95, 60), False, True, 'timber prop'),
+    ('║', (150, 150, 160), False, True, 'iron bars'),
+    ('+', (225, 185, 80), False, False, 'vault door'),
+    ("'", (165, 135, 75), True, True, 'open vault door'),
+    ('=', (125, 95, 65), False, True, 'bunk'),
+    ('π', (135, 105, 70), False, True, 'table'),
+    ('¥', (165, 165, 175), False, True, 'weapon rack'),
+    ('Ψ', (145, 115, 80), False, True, 'drill dummy'),
+    ('∩', (155, 115, 70), False, True, 'market stall'),
+    ('·', (100, 95, 88), True, True, 'paving'),
+    ('▪', (135, 105, 65), False, True, 'crate'),
+    ('≡', (135, 95, 60), False, False, 'shelf of scrolls'),
+    ('○', (125, 125, 135), False, True, 'dry fountain'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
                OBSIDIAN, STATUE, BANNER, FALLEN, SLUDGE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER,
-               EGG, TIDESTATUE, BASIN, CHASM, SHAFT, SPOUT, LAMP}
+               EGG, TIDESTATUE, BASIN, CHASM, SHAFT, SPOUT, LAMP, PROP, BARS, VAULTDOOR, BUNK, TABLE, RACK, DUMMY, STALL,
+               CRATE, BOOKS, DRYFOUNT}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:

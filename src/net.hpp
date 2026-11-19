@@ -17,7 +17,7 @@
 #include "game.hpp"
 
 constexpr int PORT = 7777;
-constexpr int NET_VERSION = 1;
+constexpr int NET_VERSION = 2;
 constexpr int AUTO_WAIT_MS = 4000;
 
 class Link {

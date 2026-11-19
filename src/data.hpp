@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -78,8 +78,22 @@ inline const TileDef TILES[] = {
     {0x25BC, 0x7A5A3A, false, false, "broken pipe"},
     {0xA1, 0xFFC060, false, true, "dwarf lamp"},
     {0x2219, 0x5A6A4A, true, true, "slime trail"},
+    {0x2248, 0xC84619, true, true, "glowing crack"},
+    {0x3A0, 0x825F3C, false, true, "timber prop"},
+    {0x2551, 0x9696A0, false, true, "iron bars"},
+    {0x2B, 0xE1B950, false, false, "vault door"},
+    {0x27, 0xA5874B, true, true, "open vault door"},
+    {0x3D, 0x7D5F41, false, true, "bunk"},
+    {0x3C0, 0x876946, false, true, "table"},
+    {0xA5, 0xA5A5AF, false, true, "weapon rack"},
+    {0x3A8, 0x917350, false, true, "drill dummy"},
+    {0x2229, 0x9B7346, false, true, "market stall"},
+    {0xB7, 0x645F58, true, true, "paving"},
+    {0x25AA, 0x876941, false, true, "crate"},
+    {0x2261, 0x875F3C, false, false, "shelf of scrolls"},
+    {0x25CB, 0x7D7D87, false, true, "dry fountain"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: case SLUDGE: case FLOODGATE: case GEAR: case WHEEL: case HUB: case MOSSWALL: case PIPE: case PUMP: case LEVER: case FLOATER: case EGG: case TIDESTATUE: case BASIN: case CHASM: case SHAFT: case SPOUT: case LAMP: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: case SLUDGE: case FLOODGATE: case GEAR: case WHEEL: case HUB: case MOSSWALL: case PIPE: case PUMP: case LEVER: case FLOATER: case EGG: case TIDESTATUE: case BASIN: case CHASM: case SHAFT: case SPOUT: case LAMP: case PROP: case BARS: case VAULTDOOR: case BUNK: case TABLE: case RACK: case DUMMY: case STALL: case CRATE: case BOOKS: case DRYFOUNT: return true; default: return false; } }
 constexpr int STEPS = 6;
 constexpr int ZONES = 10;
 inline const ActDef ACTS[] = {

@@ -34,7 +34,7 @@ bool whole(const Floor& f) {
   std::deque<int> q{f.up.y * W + f.up.x};
   seen[q.front()] = 1;
   int n = 1;
-  auto open = [&](int x, int y) { int t = f.tile(x, y); return !data::blocks(t) || t == data::DOOR; };
+  auto open = [&](int x, int y) { int t = f.tile(x, y); return !data::blocks(t) || t == data::DOOR || t == data::VAULTDOOR; };
   while (!q.empty()) {
     int i = q.front(); q.pop_front();
     for (int dy = -1; dy <= 1; ++dy)
@@ -375,12 +375,24 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
     for (int i = 0; i < n; ++i) spawn_near(kind, c);
     budget -= n;
   }
+  zone_foes(fl);
   return std::move(floor);
 }
 
 // a floor of rooms and halls (k5), dressed, with treasure, a shrine and a writing now and then
 void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
   int act = fl.act;
+  {
+    std::vector<std::vector<P>> rooms, treasure;
+    if (build_zone(fl, boss_floor, rooms, treasure)) {  // zones.cpp
+      fl.t[fl.up.y * W + fl.up.x] = UPSTAIRS;
+      if (!boss_floor) fl.t[fl.down.y * W + fl.down.x] = STAIRS;
+      furnish(fl, rooms, treasure);
+      return;
+    }
+    fl.t.assign(W * H, WALL);
+    fl.ground.clear();
+  }
   k5::Plan plan;
   bool have = false;
   for (int i = 0; i < 30; ++i) {
@@ -411,21 +423,26 @@ void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
   if (!boss_floor) fl.t[plan.down.y * W + plan.down.x] = STAIRS;
   dress(fl, plan);
   if (act == CISTERN) dress_cistern(fl, plan);
-  std::vector<const k5::Room*> rooms;
+  std::vector<std::vector<P>> rooms, treasure;
   for (auto& r : plan.rooms)
-    if (r.kind != "hall" && !r.cells.empty() && !r.cells.count(plan.up)) rooms.push_back(&r);
-  auto floor_cells = [&](const k5::Room& r) {
+    if (r.kind != "hall" && !r.cells.empty() && !r.cells.count(plan.up)) rooms.push_back(std::vector<P>(r.cells.begin(), r.cells.end()));
+  for (size_t i = 0; i < plan.themes.size() && i < 2; ++i)
+    treasure.push_back(std::vector<P>(plan.rooms[plan.themes[i]].cells.begin(), plan.rooms[plan.themes[i]].cells.end()));
+  furnish(fl, rooms, treasure);
+}
+
+// treasure in the rooms (the ones behind a single way in first), now and then a shrine, and a writing to find
+void Game::furnish(Floor& fl, const std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>> treasure) {
+  auto floor_cells = [&](const std::vector<P>& r) {
     std::vector<P> v;
-    for (auto c : r.cells) if (fl.tile(c.x, c.y) == FLOOR) v.push_back(c);
+    for (auto c : r) if (fl.tile(c.x, c.y) == FLOOR && c != fl.up && c != fl.down) v.push_back(c);
     std::sort(v.begin(), v.end(), [](P a, P b) { return a.y != b.y ? a.y < b.y : a.x < b.x; });
     return v;
   };
-  // treasure: chests in the rooms behind one way in, and now and then elsewhere
-  std::vector<const k5::Room*> chest_rooms;
-  for (size_t i = 0; i < plan.themes.size() && i < 2; ++i) chest_rooms.push_back(&plan.rooms[plan.themes[i]]);
-  if (!rooms.empty() && rnd.real() < .5) chest_rooms.push_back(rnd.pick(rooms));
-  for (auto* r : chest_rooms) {
-    auto cs = floor_cells(*r);
+  double room = std::max(1.0, fl.w * fl.h / double(76 * 42));
+  if (!rooms.empty()) for (int i = 0; i < int(room); ++i) if (rnd.real() < .5) treasure.push_back(rnd.pick(rooms));
+  for (auto& r : treasure) {
+    auto cs = floor_cells(r);
     std::vector<P> corners;
     for (auto c : cs) {
       int walls = 0;
@@ -438,22 +455,26 @@ void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
     fl.set(c.x, c.y, CHEST);
     if (!whole(fl)) fl.set(c.x, c.y, FLOOR);
   }
-  if (!rooms.empty() && rnd.real() < .35) {
-    P c = rnd.pick(rooms)->middle(plan.floor);
-    if (fl.tile(c.x, c.y) == FLOOR) { fl.set(c.x, c.y, SHRINE); if (!whole(fl)) fl.set(c.x, c.y, FLOOR); }
+  // shrines: the Sanctum is full of them (and not all of them kind)
+  int shrines = fl.act == SANCTUM ? 4 + int(room) : rnd.real() < .35 * room ? 1 : 0;
+  for (int i = 0; i < shrines && !rooms.empty(); ++i) {
+    auto cs = floor_cells(rnd.pick(rooms));
+    if (cs.empty()) continue;
+    P c = cs[cs.size() / 2];
+    fl.set(c.x, c.y, SHRINE);
+    if (!whole(fl)) fl.set(c.x, c.y, FLOOR);
   }
-  if (!rooms.empty() && rnd.real() < .7) {
+  for (int i = 0; i < int(room + .5) && !rooms.empty(); ++i) {
+    if (rnd.real() > .7) continue;
     std::vector<std::string> left;
-    for (auto& w : lore::WRITINGS[act]) if (!used_writings_.count(w)) left.push_back(w);
-    if (!left.empty()) {
-      auto cs = floor_cells(*rnd.pick(rooms));
-      if (!cs.empty()) {
-        P c = rnd.pick(cs);
-        std::string w = rnd.pick(left);
-        fl.writings[c.y * W + c.x] = w;
-        used_writings_.insert(w);
-      }
-    }
+    for (auto& w : lore::WRITINGS[fl.act]) if (!used_writings_.count(w)) left.push_back(w);
+    if (left.empty()) break;
+    auto cs = floor_cells(rnd.pick(rooms));
+    if (cs.empty()) continue;
+    P c = rnd.pick(cs);
+    std::string w = rnd.pick(left);
+    fl.writings[c.y * W + c.x] = w;
+    used_writings_.insert(w);
   }
 }
 
@@ -648,6 +669,16 @@ void Game::move(Hero& h, int dx, int dy) {
     case SHRINE: shrine(h, nx, ny); return;
     case TOMB: case CRACKED: case BIER: case RESTLESS: case FALLEN: case FLOATER: case EGG: smash_dead(h, nx, ny); return;
     case LEVER: pull_lever(h, nx, ny); return;
+    case VAULTDOOR:
+      if (floor->keys > 0) {
+        --floor->keys;
+        floor->set(nx, ny, OPENVAULT);
+        say_all(h.name + " turns a heavy key, and the vault door grinds open.", 0xE0C060);
+      } else {
+        h.say("The vault door is locked. A brass-bound guardian keeps the key.", 0xC0A060);
+        tip(h, "vault", "Locked vaults hold the best things. The brass guardians standing near them carry the keys.");
+      }
+      return;
     default: break;
   }
   if (!floor->walk(nx, ny)) return;
@@ -757,6 +788,11 @@ void Game::bleed(Hero& h, Mon& m, int dmg) {
 
 bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   Stats st = stats(h);
+  if (floor->act == PRISON) {  // the Prison's sleepers wake to the noise of a fight
+    bool woke = false;
+    for (auto& o : floor->mons) if (o->sleep && cheb(o->x, o->y, h.x, h.y) <= 8) { o->sleep = 0; o->awake = true; woke = true; }
+    if (woke) { say_near(h.x, h.y, "The noise wakes the cells. Chains rattle all around.", 0xC0A080); tip(h, "noise", "In the Prison the sleepers in the cells wake to the noise of a fight."); }
+  }
   bool opening = h.cls->key == "cutthroat" && !ranged && busy(m, h);
   m.awake = true;
   m.open = 0;
@@ -1113,6 +1149,19 @@ void Game::open_chest(Hero& h, int x, int y) {
 
 void Game::shrine(Hero& h, int x, int y) {
   floor->set(x, y, USED);
+  if (floor->act == SANCTUM && rnd.real() < .35) {
+    // a shrine of the fallen god: it curses instead
+    if (rnd.coin()) {
+      for (auto* o : active()) { o->hp = std::max(1, o->hp - stats(*o).maxhp / 4); o->numb = 4; }
+      say_all(h.name + " touches the altar. A cold voice answers, and frost bites into you all.", 0x9CD2FF);
+    } else {
+      for (int i = 0; i < 3; ++i) { P c; if (free_near(x, y, 3, c)) if (auto z = spawn("zealot", c.x, c.y)) z->awake = true; }
+      say_all(h.name + " touches the altar. Zealots come running at the sound.", 0xFF8C6A);
+    }
+    tip(h, "curse", "In the Sanctum some altars belong to the fallen god: they curse instead of bless.");
+    add_fx({{"k", "wave"}, {"x", x}, {"y", y}, {"r", 3}, {"col", 0x9CD2FF}, {"sign", "*"}});
+    return;
+  }
   switch (rnd.below(3)) {
     case 0:
       for (auto* o : active()) { o->hp = stats(*o).maxhp; o->poison = 0; }
@@ -1714,6 +1763,10 @@ void Game::mon_turn(Mon& m) {
     if (d <= (m.hidden ? 1 : 2)) wake(m, "");
     return;
   }
+  if (m.sleep) {
+    if (d <= 1) { m.sleep = 0; say_near(m.x, m.y, cap(the(m)) + " wakes with a start.", 0xC0A080); }
+    return;
+  }
   if (m.rank == "boss" && !m.def->moves.empty() && sees && --m.cool <= 0) {
     if (m.deck.empty()) {
       auto it = BOSS_DECKS.find(m.def->key);
@@ -1949,7 +2002,7 @@ void Game::look() {
       }
     if (!h.present()) continue;
     for (auto& m : floor->mons)
-      if (!m->awake && !m->dormant && !m->hidden && !whole_view && h.sees(m->x, m->y)) {
+      if (!m->awake && !m->dormant && !m->hidden && !m->sleep && !whole_view && h.sees(m->x, m->y)) {
         m->awake = true;
         if (m->rank == "champion") tip(h, "champion", "Blue foes are champions: stronger, and they carry better things.");
         if (m->rank == "unique") tip(h, "unique", "A gold name is a unique foe. Look at foes with [l].");

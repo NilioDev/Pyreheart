@@ -289,6 +289,7 @@ void Game::trait_death(Mon& m) {
   if (m.can("dim"))
     for (auto* o : active()) if (o->dimmed && o->sees(m.x, m.y)) o->say("Your light flares up again.", 0xFFE0A0);
   if (m.can("rich")) floor->items.push_back({m.x, m.y, nullptr, lvl * rnd.range(6, 12), "", 0});
+  if (m.can("key")) { ++floor->keys; say_all("A heavy iron key falls from the guardian's chest. It opens a vault.", 0xE0C060); }
   // the heroes it held let go
   for (auto* o : active()) if (o->latched == m.id) o->latched = 0;
 }
@@ -345,6 +346,12 @@ bool Game::trait_step(Mon& m, Hero& h) {
 // every turn: the ground of the foes, leeches drinking, a chill around the cold dead, the marks the tricks left
 void Game::traits_tick() {
   for (auto* h : active()) {
+    // the Cistern's shallow sludge is acid: it poisons whoever wades in it
+    if (floor->tile(h->x, h->y) == MIRE && floor->act == CISTERN) {
+      h->poison = std::max(h->poison, 2);
+      h->poison_dmg = std::max(h->poison_dmg, rnd_i((1 + lvl / 4) * (1 - stats(*h).res_p / 100.0)));
+      tip(*h, "mire", "The sludge is acid: wading in it poisons you. Keep to the walkways.");
+    }
     if (auto* g = floor->ground_at(h->x, h->y)) {
       if (g->kind == G_GAS) {
         h->poison = std::max(h->poison, 3);

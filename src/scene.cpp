@@ -59,7 +59,7 @@ void Client::draw_tiles() {
   bool rest = s.value("rest", false);
   double tt = now();
   emits_.clear();
-  auto tile = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : map[y * W + x] - '0'; };
+  auto tile = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : map[y * W + x] - TILE0; };
   int x0 = std::max(0, camx_), y0 = std::max(0, camy_), x1 = std::min(W, camx_ + vw_), y1 = std::min(H, camy_ + vh_);
   // how far each lava cell lies from land: the lava is one mass, crusted dark at the shore and bright far out
   if (ldist_floor_ != fl || ldist_map_ != map) {
@@ -67,7 +67,7 @@ void Client::draw_tiles() {
     ldist_.assign(W * H, 0);
     std::vector<int> q;
     for (int i = 0; i < W * H; ++i) {
-      if (map[i] - '0' == LAVA) ldist_[i] = 99;
+      if (map[i] - TILE0 == LAVA) ldist_[i] = 99;
       else q.push_back(i);
     }
     for (size_t k = 0; k < q.size(); ++k) {
@@ -580,7 +580,7 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         for (int j = 0; j < 7; ++j) {
           double ph = std::fmod(tt * .07 + nz(sd * 5 + j), 1.0);
           double x = ex + (nz(sd + j * 13) - .5) * 6 + std::sin(tt * .4 + j) * .6, y = ey + (nz(sd + j * 29) - .5) * 5 - ph * 1.5;
-          if (!open_at(x, y) || blocks(map[int(y) * W + int(x)] - '0')) continue;
+          if (!open_at(x, y) || blocks(map[int(y) * W + int(x)] - TILE0)) continue;
           dot(x, y, mixc(0x6A5A40, 0xE8D8B0, std::sin(ph * PI)), .8 * std::sin(ph * PI));
         }
         break;
@@ -614,7 +614,7 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         for (int j = 0; j < 5; ++j) {
           double ph = std::fmod(tt * .12 + j / 5.0 + nz(sd + j) * .4, 1.0);
           int fx = 0, fy = 0;
-          for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) if (!blocks(map[(int(ey) + d4.y) * W + int(ex) + d4.x] - '0')) { fx = d4.x; fy = d4.y; break; }
+          for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) if (!blocks(map[(int(ey) + d4.y) * W + int(ex) + d4.x] - TILE0)) { fx = d4.x; fy = d4.y; break; }
           double x = ex + .5 + fx * ph * 1.8 + std::sin(tt * 1.5 + j) * .3, y = ey + .5 + fy * ph * 1.8 - ph * 1.6 + (nz(sd * 3 + j) - .5) * 1.5;
           dot(x, y, mixc(0xB0FFE0, 0x2A5A4A, ph), .9 * (1 - ph));
         }

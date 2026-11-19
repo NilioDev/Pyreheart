@@ -14,6 +14,7 @@ constexpr int CITY = 5, VAULTS = 6, BARRACKS = 7, PRISON = 8, SANCTUM = 9;
 constexpr int W = 120;  // the largest map; a zone's floors use the top left w x h of it (ACTS[].w, .h)
 constexpr int H = 66;
 constexpr int SIGHT = 9;
+constexpr char TILE0 = ' ';  // a map is sent as one character a cell: TILE0 + its tile
 
 struct Item {
   int id = 0;
@@ -90,7 +91,7 @@ struct Mon {
   int spent = 0, phase = 0;        // spent: turns it stands open after a great blow
   // its trick: dormant (a statue until you come near), hidden (a heap of gold), braced (a quarter of the harm), listening
   // (a blind foe that has lost you), flee (turns it runs off), tcool (turns before the trick again), split (a swarm broken)
-  int dormant = 0, hidden = 0, brace = 0, listen = 0, flee = 0, tcool = 0;
+  int dormant = 0, hidden = 0, brace = 0, listen = 0, flee = 0, tcool = 0, sleep = 0;  // sleep: until a noise
   bool split = false, swum = false;
   bool can(const std::string& t) const { return def->has(t); }
   std::string trick(const std::string& t) const;  // the part after the colon of a trait like "lob:acid", or 
@@ -119,6 +120,7 @@ struct Floor {
   std::vector<FloorItem> items;
   std::vector<MonP> mons;
   P up, down;
+  int keys = 0;  // vault keys the party carries (the Vaults' guardians drop them)
   bool has_merchant = false;
   P merchant;
   std::vector<ItemP> shop;
@@ -194,6 +196,9 @@ class Game {
   std::unique_ptr<Floor> make_floor(int depth, bool rest);
   void build_waystation(Floor& f);
   void build_rooms(Floor& fl, int d, bool boss_floor);
+  void furnish(Floor& fl, const std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>> treasure);
+  void zone_foes(Floor& fl);  // zones.cpp
+  bool build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>>& treasure);  // zones.cpp
   bool build_deep(Floor& fl, char entry, bool last, char& exit_side);  // deep.cpp
   char deep_exit_ = 'N';
   int chosen_ = -1;      // the zone the party took the stairs to, from a waystation
