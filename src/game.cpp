@@ -57,12 +57,35 @@ json cells_json(const std::vector<P>& cs) { json a = json::array(); for (auto c 
 }  // namespace
 
 Game::Game(uint64_t seed) : rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
-  // for screenshots and tests: PYREHEART_BOSS=4 starts on that boss's floor, next to it
-  if (const char* b = std::getenv("PYREHEART_BOSS")) depth = std::clamp(std::atoi(b), 1, FLOORS);
-  // after the Crypt a dive goes down through the Caves or through the Cistern; PYREHEART_CISTERN=1 or 0 picks one
-  const char* cs = std::getenv("PYREHEART_CISTERN");
-  cistern_ = cs ? cs[0] == '1' : rnd.coin();
-  floor = make_floor(depth, false);
+  // for screenshots and tests: PYREHEART_ZONE=vaults starts the dive in that zone (by the first way there), and
+  // PYREHEART_BOSS=1 on its boss's map, next to it; PYREHEART_ROUTE=cistern,vaults,prison picks the ways a whole dive takes
+  route = {0};
+  auto zone_of = [](const std::string& k) { for (int i = 0; i < ZONES; ++i) if (ACTS[i].key == k) return i; return -1; };
+  if (const char* z = std::getenv("PYREHEART_ZONE"); z && zone_of(z) > 0) {
+    int want = zone_of(z);
+    // the first way down to it: walk the route steps, taking the first link that can still lead there
+    std::function<bool(int, std::vector<int>&)> find = [&](int at, std::vector<int>& path) {
+      path.push_back(at);
+      if (at == want) return true;
+      for (int n : ACTS[at].next) if (find(n, path)) return true;
+      path.pop_back();
+      return false;
+    };
+    std::vector<int> path;
+    if (find(0, path)) route = path;
+    depth = 1;
+    for (size_t i = 0; i + 1 < route.size(); ++i) depth += ACTS[route[i]].floors;
+  }
+  if (std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_REST")) { zfloor = ACTS[route.back()].floors - 1; depth += zfloor; }
+  floor = make_floor(depth, std::getenv("PYREHEART_REST") != nullptr);  // PYREHEART_REST=1: the waystation after it
+}
+
+bool Game::final_floor() const { return route.back() == DEEP && zfloor == ACTS[DEEP].floors - 1 && !floor->rest; }
+
+void Game::set_level() {
+  const ActDef& z = ACTS[route.back()];
+  double at = z.step + double(zfloor) / z.floors;
+  lvl = std::clamp(1 + int(std::lround(15 * at / (STEPS - .5))), 1, 16);
 }
 
 // ------------------------------------------------------------------ players
@@ -89,7 +112,7 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls) {
   // for screenshots and tests: start with a full pack of things to compare
   if (const char* g = std::getenv("PYREHEART_GIFTS"))
     for (int i = 0; i < std::atoi(g) && int(h->pack.size()) < PACK_MAX; ++i) h->pack.push_back(loot::roll(3, rnd, h->cls->kinds));
-  if (std::getenv("PYREHEART_BOSS")) h->lvl = std::max(1, depth * 2 - 1);
+  if (std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_ZONE")) h->lvl = std::max(1, lvl * 2 - 1);
   h->hp = stats(*h).maxhp;
   h->mana = stats(*h).maxmana;
   Hero& r = *h;
@@ -260,30 +283,31 @@ void Game::rescale() {
 // ------------------------------------------------------------------ the floors
 std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   auto f = std::make_unique<Floor>();
-  f->depth = d; f->act = std::clamp((d - 1) / 4, 0, 3); f->rest = rest; f->id = floor_ids_++;
-  if (f->act == 1 && cistern_) f->act = CISTERN;
+  f->depth = d; f->act = route.back(); f->rest = rest; f->id = floor_ids_++;
   Floor* old = floor.release();
   floor.reset(f.release());
   delete old;
   Floor& fl = *floor;
+  set_level();
   if (rest) { build_waystation(fl); return std::move(floor); }
   int act = fl.act;
-  bool boss_floor = d % 4 == 0;
-  // the last two floors are the Deep's crust maze: no stairs, the way on lies at an edge of the map
-  bool deep = act == 3 && d >= FLOORS - 1;
+  const ActDef& zone = ACTS[act];
+  bool boss_floor = zfloor == zone.floors - 1;
+  // the Deep's maps are a crust maze: no stairs, the way on lies at an edge of the map
   bool built = false;
-  if (deep) {
-    char entry = d == FLOORS - 1 ? 'S' : deep_exit_ == 'N' ? 'S' : deep_exit_ == 'E' ? 'W' : 'E';
+  if (act == DEEP) {
+    char entry = zfloor == 0 || deep_exit_ == 'N' ? 'S' : deep_exit_ == 'E' ? 'W' : 'E';
     for (int i = 0; i < 40 && !built; ++i) {
       fl.t.assign(W * H, WALL);
       char out = 0;
-      built = build_deep(fl, entry, d == FLOORS, out);
+      built = build_deep(fl, entry, boss_floor, out);
       if (built) deep_exit_ = out;
     }
   }
   if (!built) {
     fl.t.assign(W * H, WALL);
     fl.deep = false;
+    fl.w = zone.w; fl.h = zone.h;
     build_rooms(fl, d, boss_floor);
   }
   // creatures
@@ -309,7 +333,9 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
       if (dist[i] > 12 && (t == FLOOR || t == CRUST)) far.push_back({i % W, i / W});
     }
   }
-  int budget = 14 + int(d * 1.5) - int(fl.sleepers.size());
+  // as many foes for the room there is: a big map holds more of them
+  double room = std::max(1.0, .85 * fl.w * fl.h / double(76 * 42));
+  int budget = int((14 + lvl * 1.5) * room) - int(fl.sleepers.size());
   auto& spawns = SPAWNS[act];
   auto pick_kind = [&]() {
     int sum = 0;
@@ -320,17 +346,18 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
   };
   scaled_ = 1.0;
   if (boss_floor) {
-    fl.boss = spawn(ACTS[act].boss, fl.down.x, fl.down.y);
+    fl.boss = spawn(zone.boss, fl.down.x, fl.down.y);
     budget -= 4;
   }
-  if (d >= 2 && rnd.real() < .65 && !far.empty()) {
+  for (int pack = 0; pack < int(room + .5); ++pack) {
+  if (lvl >= 2 && rnd.real() < .65 && !far.empty()) {
     std::string kind = pick_kind();
     std::string aff = rnd.pick(AFFIXES).first;
     P c = rnd.pick(far);
     for (int i = 0; i < 3; ++i) if (auto m = spawn_near(kind, c)) champion(*m, {aff});
     budget -= 4;
   }
-  if (d >= 3 && rnd.real() < .5 && !far.empty()) {
+  if (lvl >= 3 && rnd.real() < .5 && !far.empty()) {
     std::string kind = pick_kind();
     P c = rnd.pick(far);
     if (auto m = spawn_near(kind, c)) unique(*m);
@@ -338,11 +365,11 @@ std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
     for (int i = 0; i < n; ++i) spawn_near(kind, c);
     budget -= 5;
   }
+  }
   while (budget > 0 && !far.empty()) {
     std::string kind = pick_kind();
-    int n = (kind == "rat" || kind == "bat" || kind == "spider" || kind == "leech" || kind == "newt") ? rnd.range(2, 4)
-          : (kind == "bonearcher" || kind == "spitter" || kind == "imp" || kind == "caller" || kind == "acidspitter") ? rnd.range(1, 2)
-                                                                                                                    : rnd.range(1, 3);
+    auto pk = PACKS.find(kind);
+    int n = pk == PACKS.end() ? rnd.range(1, 3) : rnd.range(pk->second.first, pk->second.second);
     P c = rnd.pick(far);
     for (int i = 0; i < n; ++i) spawn_near(kind, c);
     budget -= n;
@@ -356,11 +383,12 @@ void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
   k5::Plan plan;
   bool have = false;
   for (int i = 0; i < 30; ++i) {
-    auto p = k5::make(ZONE_W, ZONE_H, rnd, ACTS[act].mood, 13);
+    double room = fl.w * fl.h / double(76 * 42);
+    auto p = k5::make(fl.w, fl.h, rnd, ACTS[act].mood, int(13 * room));
     if (p.up == p.down || !p.floor.count(p.down)) continue;  // a level too small to have two ends
     int rooms = 0;
     for (auto& r : p.rooms) if (r.kind != "hall") ++rooms;
-    if (p.floor.size() >= 750 && rooms >= 6) { plan = std::move(p); have = true; break; }
+    if (p.floor.size() >= 750 * room && rooms >= 6 * room) { plan = std::move(p); have = true; break; }
     if (!have || p.floor.size() > plan.floor.size()) { plan = std::move(p); have = true; }
   }
   for (auto& [c, k] : plan.floor)
@@ -429,27 +457,35 @@ void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
 }
 
 void Game::build_waystation(Floor& f) {
-  static const std::vector<std::string> art = {
+  // one stair down for each way on from the zone behind you; '1' and '2' are the stairs to the first and second
+  const auto& next = ACTS[route.back()].next;
+  std::vector<std::string> art = {
       "##########################",
+      "#...........M............#",
+      "#..{....................1#",
       "#........................#",
-      "#..{................M....#",
+      "#<.......................#",
       "#........................#",
-      "#<......................>#",
-      "#........................#",
-      "#........................#",
+      "#.......................2#",
       "##########################"};
+  if (next.size() < 2) { art[2][24] = '.'; art[6][24] = '.'; art[4][24] = '1'; }
   int ox = (W - int(art[0].size())) / 2, oy = (H - int(art.size())) / 2;
+  f.w = W; f.h = H;
   for (int j = 0; j < int(art.size()); ++j)
     for (int i = 0; i < int(art[j].size()); ++i) {
       int x = ox + i, y = oy + j;
       char ch = art[j][i];
-      f.t[y * W + x] = ch == '#' ? WALL : ch == '{' ? FOUNTAIN : ch == '<' ? UPSTAIRS : ch == '>' ? STAIRS : FLOOR;
+      f.t[y * W + x] = ch == '#' ? WALL : ch == '{' ? FOUNTAIN : ch == '<' ? UPSTAIRS : (ch == '1' || ch == '2') ? STAIRS : FLOOR;
       if (ch == '<') f.up = {x, y};
-      if (ch == '>') f.down = {x, y};
+      if (ch == '1' || ch == '2') {
+        int k = ch - '1';
+        if (k < int(next.size())) f.exits[y * W + x] = next[k];
+        if (k == 0) f.down = {x, y};
+      }
       if (ch == 'M') { f.merchant = {x, y}; f.has_merchant = true; }
     }
   auto kinds = party_kinds();
-  for (int i = 0; i < 5; ++i) f.shop.push_back(loot::roll(f.depth + 1, rnd, kinds, "", "magic"));
+  for (int i = 0; i < 5; ++i) f.shop.push_back(loot::roll(lvl + 1, rnd, kinds, "", "magic"));
 }
 
 MonP Game::spawn(const std::string& key, int x, int y) {
@@ -505,7 +541,14 @@ void Game::unique(Mon& m) {
 
 void Game::next_floor() {
   bool was_rest = floor->rest;
-  bool to_rest = !was_rest && rest_after(depth);
+  const ActDef& zone = ACTS[route.back()];
+  // after a zone's boss comes a waystation, and from there the stairs the party took lead into the next zone
+  bool to_rest = !was_rest && zfloor == zone.floors - 1;
+  if (was_rest) {
+    route.push_back(chosen_ >= 0 ? chosen_ : zone.next.empty() ? route.back() : zone.next[0]);
+    zfloor = 0;
+    chosen_ = -1;
+  } else if (!to_rest) ++zfloor;
   if (!to_rest) ++depth;
   floor = make_floor(depth, to_rest);
   scaled_ = 1.0;
@@ -519,9 +562,14 @@ void Game::next_floor() {
     }
     if (!h->away && !h->dead) place(*h);
   }
-  if (to_rest) say_all(lore::WAYSTATION, 0xD2B48C);
-  else {
-    if ((depth - 1) % 4 == 0) {
+  if (to_rest) {
+    say_all(lore::WAYSTATION, 0xD2B48C);
+    auto& next = ACTS[route.back()].next;
+    if (next.size() > 1)
+      say_all("Two stairs lead on: to " + ACTS[next[0]].name + " and to " + ACTS[next[1]].name + ". Look at them with [l].",
+              0xA0A0A0);
+  } else {
+    if (zfloor == 0) {
       auto& open = lore::ACT_OPEN[floor->act];
       say_all(open[0] + ": " + open[1], 0xFFD27F);
     }
@@ -660,6 +708,22 @@ void Game::check_stairs() {
   auto alive = living();
   if (alive.empty()) return;
   for (auto* h : alive) if (!h->gone) return;
+  if (floor->exits.size() > 1) {
+    // two ways down: the party goes together, the way most of them stand on (the first hero's if it is even)
+    std::map<int, int> votes;
+    for (auto* h : alive) ++votes[floor->exits.count(h->y * W + h->x) ? floor->exits[h->y * W + h->x] : -1];
+    int way = floor->exits.count(alive[0]->y * W + alive[0]->x) ? floor->exits[alive[0]->y * W + alive[0]->x] : -1;
+    for (auto [z, n] : votes) if (n > votes[way]) way = z;
+    bool split = false;
+    for (auto* h : alive)
+      if (!floor->exits.count(h->y * W + h->x) || floor->exits[h->y * W + h->x] != way) {
+        h->gone = false;
+        split = true;
+        h->say("The others are going down to " + ACTS[way].name + ". Take the same stairs to go with them.", 0xD2B48C);
+      }
+    if (split) return;
+    chosen_ = way;
+  }
   next_floor();
 }
 
@@ -884,13 +948,13 @@ void Game::kill(Mon& m, Hero* by) {
   }
   if (m.has("Fire-blooded")) {
     add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", 0xFF8C28}});
-    for (auto* h : active()) if (cheb(h->x, h->y, m.x, m.y) <= 1) hero_hurt(*h, nullptr, 4 + depth, "fire");
+    for (auto* h : active()) if (cheb(h->x, h->y, m.x, m.y) <= 1) hero_hurt(*h, nullptr, 4 + lvl, "fire");
   }
   for (auto* h : living()) gain_xp(*h, m.xp);
   drops(m);
   if (floor->boss.get() == &m) {
     say_all(lore::BOSS_DIES.at(m.def->key), 0xFFD27F);
-    if (depth >= FLOORS) {
+    if (final_floor()) {
       state = "won";
       for (auto& l : lore::VICTORY) say_all(l, 0xFFD27F);
     } else floor->set(floor->down.x, floor->down.y, STAIRS);
@@ -953,22 +1017,22 @@ void Game::drops(const Mon& m) {
   };
   int rank_mul = m.rank == "champion" ? 3 : m.rank == "unique" ? 6 : m.rank == "boss" ? 15 : 1;
   if (rnd.real() < .35 || m.rank != "normal")
-    drop_at({0, 0, nullptr, rnd_i(depth * rnd.range(2, 5) * rank_mul * (m.rank == "normal" ? 1.0 : .6)), "", rnd.pick(owners)->pid});
+    drop_at({0, 0, nullptr, rnd_i(lvl * rnd.range(2, 5) * rank_mul * (m.rank == "normal" ? 1.0 : .6)), "", rnd.pick(owners)->pid});
   if (rnd.real() < (m.rank == "normal" ? .14 : .5))
     drop_at({0, 0, nullptr, 0, rnd.real() < .65 ? "heal" : "mana", rnd.pick(owners)->pid});
   if (m.rank == "boss") {
     // the great foes give each hero two things worth having
     for (auto* o : owners) {
-      drop_at({0, 0, loot::roll(depth + 1, rnd, o->cls->kinds, "", "rare"), 0, "", o->pid});
-      drop_at({0, 0, loot::roll(depth + 1, rnd, kinds, "", "magic"), 0, "", o->pid});
+      drop_at({0, 0, loot::roll(lvl + 1, rnd, o->cls->kinds, "", "rare"), 0, "", o->pid});
+      drop_at({0, 0, loot::roll(lvl + 1, rnd, kinds, "", "magic"), 0, "", o->pid});
     }
-    if (rnd.real() < .3) drop_at({0, 0, loot::roll(depth, rnd, kinds, "unique"), 0, "", rnd.pick(owners)->pid});
+    if (rnd.real() < .3) drop_at({0, 0, loot::roll(lvl, rnd, kinds, "unique"), 0, "", rnd.pick(owners)->pid});
     return;
   }
   std::vector<ItemP> items;
-  if (m.rank == "unique") { items.push_back(loot::roll(depth, rnd, kinds, "", "rare")); items.push_back(loot::roll(depth, rnd, kinds, "", "magic")); }
-  else if (m.rank == "champion") { if (m.def->gear || rnd.real() < .4) items.push_back(loot::roll(depth, rnd, kinds, "", "magic")); }
-  else if (m.def->gear && rnd.real() < .12) items.push_back(loot::roll(depth, rnd, kinds));
+  if (m.rank == "unique") { items.push_back(loot::roll(lvl, rnd, kinds, "", "rare")); items.push_back(loot::roll(lvl, rnd, kinds, "", "magic")); }
+  else if (m.rank == "champion") { if (m.def->gear || rnd.real() < .4) items.push_back(loot::roll(lvl, rnd, kinds, "", "magic")); }
+  else if (m.def->gear && rnd.real() < .12) items.push_back(loot::roll(lvl, rnd, kinds));
   for (auto& it : items) drop_at({0, 0, it, 0, "", rnd.pick(owners)->pid});
 }
 
@@ -983,12 +1047,12 @@ void Game::open_chest(Hero& h, int x, int y) {
     });
   };
   for (auto* o : living()) {  // something for each hero
-    auto it = loot::roll(depth, rnd, o->cls->kinds, rnd.real() < .45 ? "magic" : "");
+    auto it = loot::roll(lvl, rnd, o->cls->kinds, rnd.real() < .45 ? "magic" : "");
     P c;
     if (spot(c)) floor->items.push_back({c.x, c.y, it, 0, "", o->pid});
   }
   P c;
-  if (spot(c)) floor->items.push_back({c.x, c.y, nullptr, depth * rnd.range(4, 10), "", h.pid});
+  if (spot(c)) floor->items.push_back({c.x, c.y, nullptr, lvl * rnd.range(4, 10), "", h.pid});
 }
 
 void Game::shrine(Hero& h, int x, int y) {
@@ -1003,7 +1067,7 @@ void Game::shrine(Hero& h, int x, int y) {
       say_all(h.name + " touches the shrine: your minds fill with light.", 0xBEA0FF);
       break;
     default:
-      for (auto* o : living()) gain_xp(*o, 10 * depth + 10);
+      for (auto* o : living()) gain_xp(*o, 10 * lvl + 10);
       say_all(h.name + " touches the shrine: old knowledge settles in you.", 0xBEA0FF);
   }
   add_fx({{"k", "wave"}, {"x", x}, {"y", y}, {"r", 3}, {"col", 0xBEA0FF}, {"sign", "*"}});
@@ -1498,7 +1562,7 @@ void Game::buy(Hero& h, int i) {
 
 void Game::buy_potion(Hero& h, const std::string& k) {
   if (!h.shopping) return;
-  int price = 25 + 5 * depth;
+  int price = 25 + 5 * lvl;
   if (h.gold < price) { h.say("You cannot pay " + std::to_string(price) + " gold.", 0x909090); return; }
   if (k == "heal" && h.heal < BELT_MAX) { ++h.heal; h.gold -= price; }
   else if (k == "mana" && h.mana_pots < BELT_MAX) { ++h.mana_pots; h.gold -= price; }
@@ -1651,14 +1715,14 @@ void Game::step_toward(Mon& m) {
 
 void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   Stats st = stats(h);
-  int chance = std::clamp(m.acc + depth * 2 - st.armour - (h.cls->key == "cutthroat" && !ranged ? 15 : 0), 20, 95);
+  int chance = std::clamp(m.acc + lvl * 2 - st.armour - (h.cls->key == "cutthroat" && !ranged ? 15 : 0), 20, 95);
   if (!ranged) add_fx({{"k", "swing"}, {"src", xy(m.x, m.y)}, {"cells", json::array({xy(h.x, h.y)})}});
   if (rnd.below(100) >= chance) { if (h.perk("riposte")) m.open = 2; return; }
   int dmg = std::max(1, rnd.range(m.lo, m.hi) - st.armour / 6);
   if (m.def->fire || m.has("Fire-blooded")) dmg += rnd_i(rnd.range(m.lo, m.hi) * .3 * (1 - st.res_f / 100.0));
   hero_hurt(h, &m, dmg, "");
   if (m.def->poison > 0 || m.has("Venomous")) {
-    int p = rnd_i(std::max(m.def->poison, 2 + depth / 2) * (1 - st.res_p / 100.0));
+    int p = rnd_i(std::max(m.def->poison, 2 + lvl / 2) * (1 - st.res_p / 100.0));
     if (p > 0) { h.poison = 4; h.poison_dmg = std::max(h.poison_dmg, p); }
   }
   if ((m.def->cold || m.has("Frost-touched")) && rnd.below(100) >= st.res_c) h.numb = 3;
@@ -1685,7 +1749,7 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
     h.dead = true;
     h.say("You die.", 0xFF4040);
     say_all(h.name + " has fallen.", 0xFF6060);
-    if (!living().empty() && depth < FLOORS) say_all(h.name + " will wake at the next waystation, if the others reach it.", 0xA0A0A0);
+    if (!living().empty() && !final_floor()) say_all(h.name + " will wake at the next waystation, if the others reach it.", 0xA0A0A0);
     check_stairs();
   }
 }

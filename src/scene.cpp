@@ -54,7 +54,7 @@ void Client::draw_tiles() {
   const std::string& map = maps_[fl];
   auto& seen = seen_[fl];
   const std::string& vis = s["vis"].get_ref<const std::string&>();
-  auto& act = ACTS[std::clamp(s["act"].get<int>(), 0, CISTERN)];
+  auto& act = ACTS[std::clamp(s["act"].get<int>(), 0, ZONES - 1)];
   int actn = s["act"].get<int>();
   bool rest = s.value("rest", false);
   double tt = now();

@@ -93,17 +93,35 @@ BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, C
                EGG, TIDESTATUE, BASIN, CHASM, SHAFT, SPOUT, LAMP}
 
 # ------------------------------------------------------------------ the four acts
+# The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:
+#   Crypt -> Caves | Cistern;  Caves -> Forge | City;  Cistern -> City | Vaults;  Forge -> Barracks;
+#   City -> Barracks | Prison;  Vaults -> Prison;  Barracks, Prison -> Sanctum -> Deep.
+# step: how far down the route the zone lies (0..5); the foes there are made for that step, so the danger follows the
+# depth, not the way taken. floors: how many maps the zone has; its boss waits on the last. size: the map's width, height.
+# The indexes stay as they were (0 Crypt, 1 Caves, 2 Forge, 3 Deep, 4 Cistern): the game reads some of them by number.
 ACTS = [
-    {'name': 'The Crypt', 'wall': (120, 110, 100), 'floor': (70, 64, 60), 'mood': 'halls and corridors',
-     'boss': 'gravewarden'},
-    {'name': 'The Caves', 'wall': (110, 90, 70), 'floor': (72, 60, 46), 'mood': 'mixed', 'boss': 'webmother'},
-    {'name': 'The Forge', 'wall': (140, 80, 60), 'floor': (80, 52, 42), 'mood': 'close-packed', 'boss': 'furnace'},
-    {'name': 'The Deep', 'wall': (90, 80, 130), 'floor': (48, 44, 70), 'mood': 'mixed', 'boss': 'ashenking'},
-    # the other way after the Crypt: some dives go down through the Cistern instead of the Caves
-    {'name': 'The Cistern', 'wall': (70, 84, 88), 'floor': (44, 52, 50), 'mood': 'mixed', 'boss': 'sluicekeeper'},
+    {'key': 'crypt', 'name': 'The Crypt', 'wall': (120, 110, 100), 'floor': (70, 64, 60), 'mood': 'halls and corridors',
+     'boss': 'gravewarden', 'step': 0, 'next': ('caves', 'cistern'), 'floors': 2, 'size': (120, 66)},
+    {'key': 'caves', 'name': 'The Caves', 'wall': (110, 90, 70), 'floor': (72, 60, 46), 'mood': 'mixed', 'boss': 'webmother',
+     'step': 1, 'next': ('forge', 'city'), 'floors': 1, 'size': (120, 66)},
+    {'key': 'forge', 'name': 'The Forge', 'wall': (140, 80, 60), 'floor': (80, 52, 42), 'mood': 'close-packed', 'boss': 'furnace',
+     'step': 2, 'next': ('barracks',), 'floors': 1, 'size': (120, 66)},
+    {'key': 'deep', 'name': 'The Deep', 'wall': (90, 80, 130), 'floor': (48, 44, 70), 'mood': 'mixed', 'boss': 'ashenking',
+     'step': 5, 'next': (), 'floors': 2, 'size': (120, 66)},
+    {'key': 'cistern', 'name': 'The Cistern', 'wall': (70, 84, 88), 'floor': (44, 52, 50), 'mood': 'mixed', 'boss': 'sluicekeeper',
+     'step': 1, 'next': ('city', 'vaults'), 'floors': 1, 'size': (120, 66)},
+    {'key': 'city', 'name': 'The City', 'wall': (120, 115, 105), 'floor': (66, 62, 58), 'mood': 'halls and corridors', 'boss': 'ashmayor',
+     'step': 2, 'next': ('barracks', 'prison'), 'floors': 1, 'size': (120, 66)},
+    {'key': 'vaults', 'name': 'The Vaults', 'wall': (125, 110, 80), 'floor': (62, 56, 44), 'mood': 'halls and corridors',
+     'boss': 'hoardwarden', 'step': 2, 'next': ('prison',), 'floors': 1, 'size': (120, 66)},
+    {'key': 'barracks', 'name': 'The Barracks', 'wall': (115, 95, 85), 'floor': (64, 54, 48), 'mood': 'halls and corridors',
+     'boss': 'ironcaptain', 'step': 3, 'next': ('sanctum',), 'floors': 1, 'size': (120, 66)},
+    {'key': 'prison', 'name': 'The Prison', 'wall': (85, 85, 95), 'floor': (48, 46, 52), 'mood': 'close-packed', 'boss': 'headgaoler',
+     'step': 3, 'next': ('sanctum',), 'floors': 1, 'size': (120, 66)},
+    {'key': 'sanctum', 'name': 'The Sanctum', 'wall': (70, 62, 72), 'floor': (40, 36, 42), 'mood': 'halls and corridors',
+     'boss': 'prelate', 'step': 4, 'next': ('deep',), 'floors': 1, 'size': (120, 66)},
 ]
-FLOORS = 16
-REST_AFTER = (4, 8, 12)          # a waystation follows these floors
+STEPS = 6                        # zones on every route
 
 # ------------------------------------------------------------------ creatures
 # hp, dmg (lo, hi), acc, armor, speed (100 = yours), xp, ai, extras
@@ -143,15 +161,15 @@ M = {
                  fire=True),
     'furnace': dict(name='the Furnace Lord', ch='F', col=(255, 170, 60), hp=420, dmg=(9, 17), acc=85, ar=9, spd=100,
                     xp=480, ai='melee', boss=True, fire=True, moves=('flame', 'summon:imp')),
-    # act 4
-    'wraith': dict(undead=True, name='ash wraith', ch='w', col=(170, 190, 230), hp=40, dmg=(7, 12), acc=80, ar=4, spd=130, xp=32, ai='melee',
-                   cold=True),
-    'deepknight': dict(undead=True, name='charred knight', ch='K', col=(140, 140, 200), hp=75, dmg=(9, 16), acc=80, ar=10, spd=100, xp=42,
-                       ai='melee', gear=True),
-    'caller': dict(name='ash caller', ch='v', col=(200, 120, 230), hp=40, dmg=(8, 14), acc=75, ar=3, spd=100, xp=40,
+    # the Deep, the last step
+    'wraith': dict(undead=True, name='ash wraith', ch='w', col=(170, 190, 230), hp=50, dmg=(8, 14), acc=82, ar=5, spd=130, xp=44, ai='melee',
+                   cold=True, traits=('chill', 'ghost')),
+    'deepknight': dict(undead=True, name='charred knight', ch='K', col=(140, 140, 200), hp=95, dmg=(11, 19), acc=82, ar=12, spd=100, xp=56,
+                       ai='melee', gear=True, traits=('heavy',)),
+    'caller': dict(name='ash caller', ch='v', col=(200, 120, 230), hp=50, dmg=(9, 16), acc=78, ar=4, spd=100, xp=52,
                    ai='ranged', rng=7, shot=('*', (200, 120, 255)), cold=True, moves=('summon:wraith',)),
-    'horror': dict(undead=True, name='bone horror', ch='H', col=(190, 90, 150), hp=95, dmg=(10, 18), acc=75, ar=6, spd=110, xp=50,
-                   ai='melee'),
+    'horror': dict(undead=True, name='bone horror', ch='H', col=(190, 90, 150), hp=115, dmg=(12, 20), acc=78, ar=7, spd=110, xp=64,
+                   ai='melee', traits=('sweep',)),
     # act 2, the other way: the Cistern
     'leech': dict(name='sludge leech', ch='l', col=(210, 205, 175), hp=14, dmg=(2, 5), acc=70, ar=1, spd=90, xp=8, ai='melee',
                   poison=3),
@@ -163,16 +181,89 @@ M = {
     'crab': dict(name='rust-shell crab', ch='k', col=(170, 95, 60), hp=34, dmg=(4, 8), acc=65, ar=6, spd=80, xp=15, ai='melee'),
     'sluicekeeper': dict(undead=True, name='the Sluice-Keeper', ch='L', col=(130, 160, 115), hp=280, dmg=(6, 13), acc=80, ar=6,
                          spd=100, xp=280, ai='melee', boss=True, poison=4, moves=('summon:leech', 'spit')),
-    'ashenking': dict(name='the Ashen King', ch='&', col=(255, 120, 40), hp=750, dmg=(12, 22), acc=90, ar=12, spd=110,
+    # the third step, beside the Forge: the City and the Vaults
+    'citizen': dict(undead=True, name='ash-buried citizen', ch='z', col=(170, 165, 150), hp=26, dmg=(4, 8), acc=65, ar=2, spd=80, xp=14,
+                    ai='melee', traits=('cough',)),
+    'stalker': dict(name='roof stalker', ch='c', col=(150, 140, 120), hp=24, dmg=(5, 10), acc=75, ar=2, spd=120, xp=20, ai='melee',
+                    traits=('leap', 'skittish')),
+    'lanternwraith': dict(undead=True, name='lantern wraith', ch='w', col=(255, 190, 90), hp=30, dmg=(5, 10), acc=75, ar=2, spd=110, xp=22,
+                          ai='melee', fire=True, traits=('dim',)),
+    'sentinel': dict(name='stone-carved sentinel', ch='G', col=(165, 160, 150), hp=75, dmg=(8, 15), acc=65, ar=10, spd=70, xp=32,
+                     ai='melee', traits=('sleeper', 'stone')),
+    'beggar': dict(name='cinder-tongue beggar', ch='j', col=(240, 150, 80), hp=22, dmg=(5, 9), acc=70, ar=1, spd=100, xp=18,
+                   ai='ranged', rng=3, shot=('*', (255, 160, 60)), fire=True, traits=('rooted', 'cone')),
+    'ashmayor': dict(undead=True, name='the Ash-Mayor', ch='M', col=(220, 170, 90), hp=440, dmg=(9, 17), acc=84, ar=9, spd=90,
+                     xp=480, ai='melee', boss=True, moves=('ashbreath', 'summon:citizen', 'slam'), traits=('rooted',)),
+    'mimic': dict(name='coin-flesh mimic', ch='m', col=(230, 200, 90), hp=40, dmg=(6, 12), acc=75, ar=4, spd=100, xp=26, ai='melee',
+                  traits=('disguise', 'hold')),
+    'shade': dict(undead=True, name='ash-scroll shade', ch='w', col=(210, 180, 150), hp=28, dmg=(6, 11), acc=78, ar=1, spd=120, xp=22,
+                  ai='melee', fire=True, traits=('ghost',)),
+    'gilded': dict(undead=True, name='gilded skeleton', ch='s', col=(240, 205, 90), hp=40, dmg=(6, 11), acc=72, ar=9, spd=100, xp=26,
+                   ai='melee', gear=True, traits=('rich',)),
+    'jarthrower': dict(name='curse-jar thrower', ch='h', col=(170, 150, 200), hp=24, dmg=(5, 10), acc=70, ar=2, spd=100, xp=22,
+                       ai='ranged', rng=6, shot=('o', (170, 150, 200)), traits=('lob',)),
+    'guardian': dict(name='brass-bound guardian', ch='G', col=(205, 150, 70), hp=85, dmg=(9, 15), acc=70, ar=11, spd=80, xp=36,
+                     ai='melee', traits=('sleeper', 'stone', 'key')),
+    'hoardwarden': dict(undead=True, name='the Hoard-Warden', ch='V', col=(255, 215, 80), hp=460, dmg=(9, 17), acc=84, ar=10, spd=80,
+                        xp=480, ai='melee', boss=True, moves=('ingot', 'arms', 'summon:mimic')),
+    # the fourth step: the Barracks and the Prison
+    'warhound': dict(name='war hound', ch='C', col=(190, 120, 100), hp=36, dmg=(6, 11), acc=78, ar=3, spd=140, xp=26, ai='melee',
+                     traits=('bleed',)),
+    'crossbow': dict(undead=True, name='charred cross-bowman', ch='s', col=(200, 170, 140), hp=34, dmg=(10, 16), acc=74, ar=4, spd=100,
+                     xp=30, ai='ranged', rng=8, shot=('-', (220, 200, 170)), traits=('reload',)),
+    'pikeman': dict(undead=True, name='burned pikeman', ch='p', col=(180, 140, 110), hp=46, dmg=(8, 14), acc=74, ar=6, spd=100, xp=32,
+                    ai='melee', gear=True, traits=('reach',)),
+    'shieldbearer': dict(undead=True, name='soot-shield bearer', ch='d', col=(150, 150, 160), hp=64, dmg=(6, 11), acc=70, ar=10, spd=80,
+                         xp=34, ai='melee', gear=True, traits=('wall',)),
+    'drillbrute': dict(name='drill-yard brute', ch='t', col=(200, 110, 80), hp=85, dmg=(10, 17), acc=68, ar=6, spd=80, xp=40,
+                       ai='melee', traits=('sweep', 'knock')),
+    'ironcaptain': dict(undead=True, name='the Iron-Captain', ch='I', col=(230, 120, 80), hp=540, dmg=(11, 19), acc=86, ar=12, spd=100,
+                        xp=600, ai='melee', boss=True, moves=('rally', 'charge', 'brace')),
+    'prisoner': dict(undead=True, name='chain-dragged prisoner', ch='z', col=(170, 140, 130), hp=44, dmg=(6, 11), acc=70, ar=3, spd=80,
+                     xp=28, ai='melee', traits=('hook',)),
+    'ratswarm': dict(name='cell-rat swarm', ch='r', col=(170, 110, 100), hp=40, dmg=(5, 9), acc=72, ar=1, spd=110, xp=26, ai='melee',
+                     traits=('swarm',)),
+    'turnkey': dict(undead=True, name='scarred turnkey', ch='d', col=(150, 130, 110), hp=56, dmg=(7, 13), acc=72, ar=6, spd=100, xp=32,
+                    ai='melee', gear=True, traits=('hears', 'sweep')),
+    'maiden': dict(name='iron-maiden husk', ch='H', col=(150, 90, 80), hp=90, dmg=(10, 16), acc=70, ar=9, spd=70, xp=40, ai='melee',
+                   traits=('cage',)),
+    'torturer': dict(name='brand-iron torturer', ch='q', col=(230, 130, 90), hp=48, dmg=(8, 13), acc=76, ar=4, spd=100, xp=32,
+                     ai='melee', fire=True, traits=('brand',)),
+    'headgaoler': dict(name='the Head-Gaoler', ch='J', col=(210, 110, 90), hp=560, dmg=(11, 20), acc=86, ar=11, spd=100, xp=600,
+                       ai='melee', boss=True, moves=('chain', 'slam', 'summon:prisoner')),
+    # the fifth step: the Sanctum
+    'zealot': dict(undead=True, name='ash-veiled zealot', ch='p', col=(220, 150, 120), hp=50, dmg=(8, 14), acc=78, ar=4, spd=110, xp=38,
+                   ai='melee', fire=True, traits=('fervour',)),
+    'censer': dict(name='censer swinger', ch='v', col=(190, 170, 130), hp=46, dmg=(7, 12), acc=74, ar=4, spd=100, xp=38, ai='melee',
+                   traits=('incense',)),
+    'altarguard': dict(undead=True, name='altar-guard', ch='K', col=(110, 110, 130), hp=100, dmg=(11, 18), acc=78, ar=12, spd=100, xp=50,
+                       ai='melee', gear=True, traits=('sleeper', 'heavy')),
+    'spirit': dict(undead=True, name='pyre-touched spirit', ch='w', col=(180, 210, 240), hp=40, dmg=(7, 12), acc=80, ar=2, spd=120, xp=38,
+                   ai='melee', cold=True, traits=('chill', 'ghost')),
+    'idol': dict(name='obsidian idol', ch='G', col=(120, 100, 150), hp=95, dmg=(9, 15), acc=70, ar=10, spd=70, xp=48, ai='melee',
+                 traits=('shriek', 'spellproof')),
+    'prelate': dict(undead=True, name='the High Prelate', ch='P', col=(240, 210, 120), hp=640, dmg=(12, 21), acc=88, ar=11, spd=100,
+                    xp=720, ai='melee', boss=True, cold=True, moves=('void', 'nova', 'summon:zealot'), traits=('float',)),
+    'ashenking': dict(name='the Ashen King', ch='&', col=(255, 120, 40), hp=900, dmg=(14, 24), acc=92, ar=13, spd=110,
                     xp=0, ai='melee', boss=True, cold=True, moves=('nova', 'summon:wraith', 'blink')),
 }
-SPAWNS = [   # per act: (creature, weight)
-    [('rat', 4), ('shambler', 5), ('bonearcher', 3), ('bat', 3), ('ghoul', 2)],
-    [('spider', 4), ('giantrat', 4), ('hound', 3), ('trog', 3), ('spitter', 3)],
-    [('imp', 4), ('cinderhound', 4), ('thrall', 3), ('golem', 2), ('slag', 2)],
-    [('wraith', 4), ('deepknight', 3), ('caller', 2), ('horror', 2)],
-    [('leech', 4), ('drowned', 4), ('newt', 3), ('acidspitter', 3), ('crab', 2)],
-]
+SPAWNS = {   # per zone: (creature, weight)
+    'crypt': [('rat', 4), ('shambler', 5), ('bonearcher', 3), ('bat', 3), ('ghoul', 2)],
+    'caves': [('spider', 4), ('giantrat', 4), ('hound', 3), ('trog', 3), ('spitter', 3)],
+    'forge': [('imp', 4), ('cinderhound', 4), ('thrall', 3), ('golem', 2), ('slag', 2)],
+    'deep': [('wraith', 4), ('deepknight', 3), ('caller', 2), ('horror', 2)],
+    'cistern': [('leech', 4), ('drowned', 4), ('newt', 3), ('acidspitter', 3), ('crab', 2)],
+    'city': [('citizen', 6), ('stalker', 3), ('lanternwraith', 3), ('sentinel', 2), ('beggar', 2)],
+    'vaults': [('mimic', 2), ('shade', 4), ('gilded', 4), ('jarthrower', 3), ('guardian', 1)],
+    'barracks': [('warhound', 3), ('crossbow', 3), ('pikeman', 4), ('shieldbearer', 3), ('drillbrute', 2)],
+    'prison': [('prisoner', 4), ('ratswarm', 3), ('turnkey', 3), ('maiden', 2), ('torturer', 3)],
+    'sanctum': [('zealot', 4), ('censer', 3), ('altarguard', 2), ('spirit', 3), ('idol', 2)],
+}
+# how many come together, when not one to three
+PACKS = {'rat': (2, 4), 'bat': (2, 4), 'spider': (2, 4), 'leech': (2, 4), 'newt': (2, 4), 'citizen': (3, 5), 'warhound': (2, 3),
+         'bonearcher': (1, 2), 'spitter': (1, 2), 'imp': (1, 2), 'caller': (1, 2), 'acidspitter': (1, 2), 'beggar': (1, 1),
+         'jarthrower': (1, 2), 'crossbow': (1, 2), 'mimic': (1, 1), 'sentinel': (1, 1), 'guardian': (1, 1), 'altarguard': (1, 1),
+         'idol': (1, 1), 'maiden': (1, 1)}
 
 # champions (blue) carry one of these, uniques (gold) two or three; a pack of champions shares one
 AFFIXES = {

@@ -23,7 +23,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Game };
-  enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring };
+  enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring, Epigraph };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -111,6 +111,15 @@ class Client {
   void draw_menu();
   void draw_ring();
   void draw_end();
+  // a zone's book fragment, shown once when it is first entered; each zone keeps a bag so all five come before one again
+  struct Epi { std::string title, text, source; int col; };
+  std::deque<Epi> epis_;
+  double epi_start_ = 0;
+  int epi_floor_ = -1;
+  std::map<std::string, std::vector<int>> bags_;
+  void queue_epigraph(const std::string& zone);
+  void draw_epigraph();
+  void draw_route();
   void put(int x, int y, int ch, int fg, int bg = -1);
   void text(int x, int y, const std::string& s, int fg, int bg = -1);
   int wrap(int x, int y, int w, const std::string& s, int fg, int max_lines = 99);

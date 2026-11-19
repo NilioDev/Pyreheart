@@ -312,7 +312,7 @@ void Game::dress_cistern(Floor& fl, const k5::Plan& plan) {
   // over open floor; grates cross it now and then, and wherever the level would otherwise be cut in two
   for (int dir = 0; dir < 2; ++dir) {
     bool across = dir == 0;
-    int len = across ? ZONE_W : ZONE_H, span = across ? ZONE_H : ZONE_W;
+    int len = across ? fl.w : fl.h, span = across ? fl.h : fl.w;
     int at = rnd.range(span / 4, span * 3 / 4);
     auto cell = [&](int i, int o) { return across ? P{i, at + o} : P{at + o, i}; };
     auto open_here = [&](int i) {  // the channel and a bank either side of it on plain floor
@@ -356,8 +356,8 @@ void Game::dress_cistern(Floor& fl, const k5::Plan& plan) {
 
   // everywhere: glowing moss on the sweating walls, broken pipes pouring sludge, shafts down to the dead city
   std::vector<P> moss;
-  for (int y = 1; y < ZONE_H - 1; ++y)
-    for (int x = 1; x < ZONE_W - 1; ++x) {
+  for (int y = 1; y < fl.h - 1; ++y)
+    for (int x = 1; x < fl.w - 1; ++x) {
       if (fl.tile(x, y) != WALL) continue;
       bool faces = false;
       for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}})
@@ -368,8 +368,8 @@ void Game::dress_cistern(Floor& fl, const k5::Plan& plan) {
       if (!near && rnd.real() < .06) { fl.set(x, y, MOSSWALL); moss.push_back({x, y}); }
     }
   std::vector<P> spouts;
-  for (int y = 1; y < ZONE_H - 1; ++y)
-    for (int x = 1; x < ZONE_W - 1; ++x) {
+  for (int y = 1; y < fl.h - 1; ++y)
+    for (int x = 1; x < fl.w - 1; ++x) {
       if (fl.tile(x, y) != WALL || fl.tile(x, y + 1) != SLUDGE) continue;
       if (fl.tile(x - 1, y) != WALL || fl.tile(x + 1, y) != WALL) continue;
       bool near = false;
@@ -378,7 +378,7 @@ void Game::dress_cistern(Floor& fl, const k5::Plan& plan) {
     }
   int shafts = rnd.range(1, 2);
   for (int tries = 0; tries < 300 && shafts > 0; ++tries) {
-    P c{rnd.range(3, ZONE_W - 5), rnd.range(3, ZONE_H - 5)};
+    P c{rnd.range(3, fl.w - 5), rnd.range(3, fl.h - 5)};
     bool ok = true;
     for (int dy = -2; dy <= 3 && ok; ++dy)
       for (int dx = -2; dx <= 3; ++dx) {

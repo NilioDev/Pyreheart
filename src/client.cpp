@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <random>
+#include <cctype>
 
 #include "data.hpp"
 #include "fx.hpp"
@@ -102,6 +104,16 @@ void Client::load_settings() {
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
     if (line.rfind("window=", 0) == 0) std::sscanf(line.c_str(), "window=%dx%d", &win_w_, &win_h_);
     if (line.rfind("fullscreen=", 0) == 0) fullscreen_ = line[11] == '1';
+    if (line.rfind("bag_", 0) == 0 && line.find('=') != std::string::npos) {
+      auto eq = line.find('=');
+      auto& bag = bags_[line.substr(4, eq - 4)];
+      for (size_t i = eq + 1; i < line.size();) {
+        size_t j = line.find(',', i);
+        if (j == std::string::npos) j = line.size();
+        if (j > i) bag.push_back(std::atoi(line.substr(i, j - i).c_str()));
+        i = j + 1;
+      }
+    }
   }
 }
 void Client::remember_window() {
@@ -119,6 +131,39 @@ void Client::save_settings() {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
   }
+  for (auto& [k, bag] : bags_) {
+    f << "bag_" << k << "=";
+    for (size_t i = 0; i < bag.size(); ++i) f << (i ? "," : "") << bag[i];
+    f << "\n";
+  }
+}
+
+void Client::queue_epigraph(const std::string& zone) {
+  auto it = lore::EPIGRAPHS.find(zone);
+  if (it == lore::EPIGRAPHS.end() || it->second.empty()) return;
+  int n = int(it->second.size());
+  auto& bag = bags_[zone];  // the ones already shown since the bag was last shaken
+  std::vector<int> left;
+  for (int i = 0; i < n; ++i) if (std::find(bag.begin(), bag.end(), i) == bag.end()) left.push_back(i);
+  if (left.empty()) {  // all have been read: shake the bag, but never the same one twice running
+    int last = bag.empty() ? -1 : bag.back();
+    bag.clear();
+    for (int i = 0; i < n; ++i) if (i != last) left.push_back(i);
+  }
+  static std::mt19937 pick(uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+  int k = left[pick() % left.size()];
+  bag.push_back(k);
+  save_settings();
+  std::string title = "CHARNFEN";
+  int col = 0xD2B48C;
+  for (int i = 0; i < data::ZONES; ++i)
+    if (data::ACTS[i].key == zone) {
+      title = data::ACTS[i].name;
+      for (auto& c : title) c = char(std::toupper(static_cast<unsigned char>(c)));
+      col = data::ACTS[i].wall;
+    }
+  epis_.push_back({title, it->second[k].text, it->second[k].source, col});
+  if (over_ != Over::Epigraph) { over_ = Over::Epigraph; epi_start_ = now(); }
 }
 
 static std::string save_file() {
@@ -208,6 +253,19 @@ void Client::apply(const json& s) {
   for (auto& f : s["fx"]) fx_.push_back({f, t});
   if (s["turn"].get<int>() != sent_turn_) { waiting_ = false; ready_.clear(); }
   bool was_shopping = snap_.is_object() && snap_["me"].value("shopping", false);
+  if (fl != epi_floor_ && !s.value("rest", false) && layout_ != Layout::Watch && !SDL_getenv("PYREHEART_WHOLE")) {
+    // the first map of a zone opens with one of its book fragments; the dive opens with Charnfen's
+    bool first = epi_floor_ < 0;
+    epi_floor_ = fl;
+    int act = s.value("act", 0), zf = s.value("zfloor", 0);
+    bool taken_up = first && s["turn"].get<int>() > 0;  // a dive taken up again: no fragment
+    if (!taken_up) {
+      if (s.value("depth", 1) == 1) {
+        queue_epigraph("charnfen");
+        if (data::ACTS[act].floors == 1) queue_epigraph(data::ACTS[act].key);
+      } else if (zf == 0 || (act == 0 && zf == 1)) queue_epigraph(data::ACTS[act].key);
+    }
+  }
   snap_ = s;
   bool shopping = s["me"].value("shopping", false);
   if (shopping && !was_shopping) { over_ = Over::Shop; sel_ = 0; }
@@ -385,6 +443,15 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   }
   bool enter = k == SDLK_RETURN || k == SDLK_KP_ENTER;
   switch (over_) {
+    case Over::Epigraph:
+      // the first key shows the whole text at once, the next closes it
+      if (!epis_.empty()) {
+        double all = (std::count(epis_.front().text.begin(), epis_.front().text.end(), ' ') + 2) / 12.0;
+        if (now() - epi_start_ < all) { epi_start_ = now() - all; return; }
+      }
+      if (!epis_.empty()) epis_.pop_front();
+      if (epis_.empty()) over_ = Over::None; else epi_start_ = now();
+      return;
     case Over::Help:
       over_ = Over::None;
       return;
@@ -528,6 +595,7 @@ void Client::click(int x, int y, bool down) {
       return;
     }
   if (over_ == Over::Help || over_ == Over::Menu) { over_ = Over::None; return; }
+  if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
   if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk) return;
   // a tap on the map
   int mx = x - vx_ + camx_, my = y - vy_ + camy_;
@@ -642,9 +710,9 @@ void Client::update_music() {
   music_.volume(music_on_ ? .7f : 0);
   if (screen_ != Screen::Game || !snap_.is_object()) { music_.mood(music::TITLE); return; }
   if (snap_.value("rest", false)) { music_.mood(music::REST); return; }
-  int act = snap_.value("act", 0);
-  if (act == CISTERN) act = 1;  // the Cistern has no music of its own yet: the Caves'
-  act = std::clamp(act, 0, 3);
+  // the zones without music of their own yet borrow the nearest: the wet ones the Caves', the halls the Forge's
+  static const int borrow[] = {0, 1, 2, 3, 1, 2, 2, 2, 0, 3};
+  int act = borrow[std::clamp(snap_.value("act", 0), 0, data::ZONES - 1)];
   music_.mood(music::Mood(music::CRYPT + act), snap_.contains("boss"));
 }
 
@@ -866,9 +934,100 @@ void Client::draw_game() {
     case Over::Perk: draw_perk(); break;
     case Over::Menu: draw_menu(); break;
     case Over::Ring: draw_ring(); break;
+    case Over::Epigraph: draw_epigraph(); break;
     default: break;
   }
+  if (over_ == Over::None && snap_.value("rest", false) && layout_ != Layout::Watch) draw_route();
   if (snap_.value("state", "play") != "play") draw_end();
+}
+
+// A zone's book fragment in a dark box in the middle: the zone's name in its colour, the text flowing in word by word
+// as the opening crawl does, and the source dimmed at the foot.
+void Client::draw_epigraph() {
+  if (epis_.empty()) { over_ = Over::None; return; }
+  const Epi& e = epis_.front();
+  int w = std::min(vw_ - 4, 56), inner = w - 6;
+  // the words, wrapped
+  std::vector<std::string> lines;
+  {
+    std::string line, word;
+    for (size_t i = 0; i <= e.text.size(); ++i) {
+      if (i == e.text.size() || e.text[i] == ' ') {
+        if (!line.empty() && int(line.size() + 1 + word.size()) > inner) { lines.push_back(line); line.clear(); }
+        line += (line.empty() ? "" : " ") + word;
+        word.clear();
+      } else word += e.text[i];
+    }
+    if (!line.empty()) lines.push_back(line);
+  }
+  std::vector<std::string> src;
+  {
+    std::string line, word, s2 = "- " + e.source;
+    for (size_t i = 0; i <= s2.size(); ++i) {
+      if (i == s2.size() || s2[i] == ' ') {
+        if (!line.empty() && int(line.size() + 1 + word.size()) > inner) { src.push_back(line); line.clear(); }
+        line += (line.empty() ? "" : " ") + word;
+        word.clear();
+      } else word += s2[i];
+    }
+    if (!line.empty()) src.push_back(line);
+  }
+  int h = int(lines.size() + src.size()) + 7;
+  int x0 = vx_ + (vw_ - w) / 2, y0 = vy_ + std::max(0, (vh_ - h) / 2);
+  for (int y = y0; y < y0 + h; ++y)
+    for (int x = x0; x < x0 + w; ++x) put(x, y, ' ', 0, 0x0C0A0A);
+  for (int x = x0; x < x0 + w; ++x) { put(x, y0, 0x2500, 0x5A4A3A, 0x0C0A0A); put(x, y0 + h - 1, 0x2500, 0x5A4A3A, 0x0C0A0A); }
+  for (int y = y0; y < y0 + h; ++y) { put(x0, y, 0x2502, 0x5A4A3A, 0x0C0A0A); put(x0 + w - 1, y, 0x2502, 0x5A4A3A, 0x0C0A0A); }
+  put(x0, y0, 0x250C, 0x5A4A3A, 0x0C0A0A); put(x0 + w - 1, y0, 0x2510, 0x5A4A3A, 0x0C0A0A);
+  put(x0, y0 + h - 1, 0x2514, 0x5A4A3A, 0x0C0A0A); put(x0 + w - 1, y0 + h - 1, 0x2518, 0x5A4A3A, 0x0C0A0A);
+  // the zone's colour, made bright enough to read
+  int r = (e.col >> 16) & 255, g = (e.col >> 8) & 255, b = e.col & 255, mx = std::max({r, g, b, 1});
+  double k = 230.0 / mx;
+  int tc = (std::min(255, int(r * k)) << 16) | (std::min(255, int(g * k)) << 8) | std::min(255, int(b * k));
+  text(x0 + (w - int(e.title.size())) / 2, y0 + 2, e.title, tc, 0x0C0A0A);
+  // word by word: about twelve words a second
+  int words = int((now() - epi_start_) * 12);
+  int y = y0 + 4;
+  for (auto& l : lines) {
+    std::string shown;
+    for (size_t i = 0; i < l.size() && words > 0; ++i) {
+      shown += l[i];
+      if (l[i] == ' ') --words;
+    }
+    if (words > 0) --words;
+    text(x0 + 3, y++, shown, 0xC8B48C, 0x0C0A0A);
+  }
+  ++y;
+  bool done = words > 0;
+  if (done)
+    for (auto& l : src) { text(x0 + w - 3 - int(l.size()), y++, l, 0x7A6A5A, 0x0C0A0A); }
+  if (done) text(x0 + w - 3 - 7, y0 + h - 1, " [key] ", 0x5A4A3A, 0x0C0A0A);
+}
+
+// In a waystation, a chart of the zones: the way taken so far in gold, the zones the stairs here lead to in white.
+void Client::draw_route() {
+  static const std::vector<std::vector<int>> rows = {{0}, {1, 4}, {2, 5, 6}, {7, 8}, {9}, {3}};
+  std::vector<int> route;
+  if (snap_.contains("route")) for (auto& z : snap_["route"]) route.push_back(z.get<int>());
+  std::vector<int> next;
+  if (snap_.contains("exits")) for (auto& e : snap_["exits"]) next.push_back(e[2].get<int>());
+  int w = std::min(vw_ - 2, 50), h = int(rows.size()) * 2 + 3;
+  int x0 = vx_ + (vw_ - w) / 2, y0 = vy_ + std::max(1, vh_ / 2 - 4 - h - 1);
+  box(x0, y0, w, h, "The way down");
+  for (size_t j = 0; j < rows.size(); ++j) {
+    int n = int(rows[j].size());
+    for (int i = 0; i < n; ++i) {
+      int z = rows[j][i];
+      std::string name = data::ACTS[z].name.substr(4);  // without "The "
+      bool been = std::find(route.begin(), route.end(), z) != route.end();
+      bool open = std::find(next.begin(), next.end(), z) != next.end();
+      int col = been ? GOLD : open ? 0xF0F0F0 : 0x5A5A5A;
+      int cx = x0 + w * (2 * i + 1) / (2 * n);
+      int y = y0 + 2 + int(j) * 2;
+      if (open) name = "> " + name + " <";
+      text(cx - int(name.size()) / 2, y, name, col);
+    }
+  }
 }
 
 void Client::draw_map() {
@@ -968,6 +1127,9 @@ void Client::draw_map() {
         }
       }
     if (what.empty() && seen[ty_ * W + tx_]) what = data::TILES[map[ty_ * W + tx_] - '0'].name;
+    if (snap_.contains("exits"))
+      for (auto& e : snap_["exits"])
+        if (e[0].get<int>() == tx_ && e[1].get<int>() == ty_) what = "stairs down to " + data::ACTS[e[2].get<int>()].name;
     int ly = vy_ + vh_ - 2;
     if (layout_ != Layout::Watch) {
       text(vx_ + 1, ly, what, WHITE, 0);

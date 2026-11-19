@@ -23,6 +23,7 @@ static json toward(Game& g, Hero& h, int tx, int ty) {
         if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
         int t = f.tile(nx, ny);
         if (blocks(t) && t != DOOR) continue;
+        if (f.has_merchant && f.merchant == P{nx, ny}) continue;  // the trader stands in the way
         int j = ny * W + nx;
         if (d[j] > d[i] + 1) { d[j] = d[i] + 1; q.push_back(j); }
       }
@@ -134,7 +135,8 @@ static json choose(Game& g, Hero& h) {
       if (foe_on && M >= 4) return skill(2);
       if (d <= 1 && L >= 6 && mine > 0 && M >= 6) return skill(4);
       if (!on && M >= 3 && d <= 6) return skill(1);
-      if (d >= 2 && on) {  // step back and let them come over it
+      static std::map<int, int> waited;  // a foe that does not come is gone after, runes or not
+      if (d >= 2 && on && ++waited[seen->id] < 16) {  // step back and let them come over it
         int bx = 0, by = 0, bd = d;
         for (int dy = -1; dy <= 1; ++dy)
           for (int dx = -1; dx <= 1; ++dx) {
@@ -167,7 +169,13 @@ static json choose(Game& g, Hero& h) {
   static std::map<std::tuple<int, int, int>, int> chased;
   if (loot && ++chased[{f.id, loot->x, loot->y}] > 40) { left.insert({f.id, loot->x, loot->y}); loot = nullptr; }
   if (loot) { auto a = toward(g, h, loot->x, loot->y); if (!still(a)) return a; }
-  auto a = toward(g, h, f.down.x, f.down.y);
+  P down = f.down;
+  if (f.exits.size() > 1) {  // a waystation with two ways on: the dives spread over the routes
+    auto it = f.exits.begin();
+    std::advance(it, (g.depth + int(g.heroes.begin()->second->cls->key.size())) % 2);
+    down = {it->first % W, it->first / W};
+  }
+  auto a = toward(g, h, down.x, down.y);
   if (still(a)) return {{"t", "move"}, {"dx", g.rnd.range(-1, 1)}, {"dy", g.rnd.range(-1, 1)}};
   return a;
 }
@@ -196,8 +204,11 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
   int kills = 0;
   for (auto& [id, h] : g.heroes) { lvls += std::to_string(h->lvl) + " "; kills += h->kills; }
   for (auto& [s, it] : g.heroes.begin()->second->equip) gear += it->shortname() + ", ";
-  std::printf("%-22s seed %2llu: %-4s depth %2d%s turn %5d lvl %s kills %3d gold %4d | %s\n", names.c_str(), (unsigned long long)seed,
-              g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, gear.c_str());
+  std::string way;
+  for (int z : g.route) way += (way.empty() ? "" : ">") + ACTS[z].key.substr(0, 4);
+  std::printf("%-22s seed %2llu: %-4s depth %2d%s turn %5d lvl %s kills %3d gold %4d | %s | %s\n", names.c_str(), (unsigned long long)seed,
+              g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
+              gear.c_str());
 }
 
 int main() {

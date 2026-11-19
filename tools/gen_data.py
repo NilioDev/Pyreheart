@@ -23,22 +23,26 @@ o.append('inline const TileDef TILES[] = {')
 for t in D.TILES: o.append('    {%s, %s, %s, %s, %s},' % (cp(t[0]), col(t[1]), b(t[2]), b(t[3]), s(t[4])))
 o.append('};')
 o.append('inline bool blocks(int t) { switch (t) { ' + ' '.join('case %s:' % names[i] for i in sorted(D.BLOCKS_MOVE)) + ' return true; default: return false; } }')
-o.append('constexpr int FLOORS = %d;' % D.FLOORS)
-o.append('inline bool rest_after(int d) { return ' + ' || '.join('d == %d' % r for r in D.REST_AFTER) + '; }')
+keys = [a['key'] for a in D.ACTS]
+o.append('constexpr int STEPS = %d;' % D.STEPS)
+o.append('constexpr int ZONES = %d;' % len(D.ACTS))
 o.append('inline const ActDef ACTS[] = {')
-for a in D.ACTS: o.append('    {%s, %s, %s, %s, %s},' % (s(a['name']), col(a['wall']), col(a['floor']), s(a['mood']), s(a['boss'])))
+for a in D.ACTS:
+    o.append('    {%s, %s, %s, %s, %s, %s, %d, {%s}, %d, %d, %d},' % (s(a['name']), col(a['wall']), col(a['floor']), s(a['mood']), s(a['boss']),
+             s(a['key']), a['step'], ', '.join(str(keys.index(n)) for n in a['next']), a['floors'], a['size'][0], a['size'][1]))
 o.append('};')
 o.append('inline const std::vector<MonDef> MONSTERS = {')
 for k, m in D.M.items():
     shot = m.get('shot', ('*', (255, 255, 255)))
-    o.append('    {%s, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %s, %d, %s, %s, %s, %s, %d, %s, %s, %s, %s},' % (
+    o.append('    {%s, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %s, %d, %s, %s, %s, %s, %d, %s, %s, %s, %s, %s},' % (
         s(k), s(m['name']), cp(m['ch']), col(m['col']), m['hp'], m['dmg'][0], m['dmg'][1], m['acc'], m['ar'], m['spd'], m['xp'],
         s(m['ai']), m.get('rng', 1), cp(shot[0]), col(shot[1]), b(m.get('boss')), b(m.get('gear')),
-        m.get('poison', 0), b(m.get('fire')), b(m.get('cold')), lst(m.get('moves', ())), b(m.get('undead'))))
+        m.get('poison', 0), b(m.get('fire')), b(m.get('cold')), lst(m.get('moves', ())), b(m.get('undead')), lst(m.get('traits', ()))))
 o.append('};')
 o.append('inline const std::vector<std::vector<std::pair<std::string, int>>> SPAWNS = {')
-for act in D.SPAWNS: o.append('    {' + ', '.join('{%s, %d}' % (s(k), w) for k, w in act) + '},')
+for a in D.ACTS: o.append('    {' + ', '.join('{%s, %d}' % (s(k), w) for k, w in D.SPAWNS[a['key']]) + '},')
 o.append('};')
+o.append('inline const std::map<std::string, std::pair<int, int>> PACKS = {' + ', '.join('{%s, {%d, %d}}' % (s(k), a, b2) for k, (a, b2) in D.PACKS.items()) + '};')
 o.append('inline const std::vector<std::pair<std::string, std::string>> AFFIXES = {' + ', '.join('{%s, %s}' % (s(k), s(v)) for k, v in D.AFFIXES.items()) + '};')
 o.append('inline const std::vector<std::string> UNIQUE_FIRST = ' + lst(D.UNIQUE_FIRST) + ';')
 o.append('inline const std::vector<std::string> UNIQUE_EPITHET = ' + lst(D.UNIQUE_EPITHET) + ';')

@@ -44,6 +44,13 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["mw"] = f.w;
   out["mh"] = f.h;
   out["deep"] = f.deep;
+  out["zfloor"] = g.zfloor;
+  out["route"] = g.route;
+  if (!f.exits.empty()) {
+    json ex = json::array();
+    for (auto [i, z] : f.exits) ex.push_back({i % W, i / W, z});
+    out["exits"] = ex;
+  }
   if (with_map) {
     std::string m(W * H, '0');
     for (int i = 0; i < W * H; ++i) m[i] = char('0' + f.t[i]);
@@ -139,7 +146,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     for (auto& it : f.shop) { json j = it->to_json(); j["price"] = it->value * 2; j["cmp"] = cmp(g, h, *it); shop.push_back(j); }
     json sell = json::array();
     for (auto& it : h.pack) sell.push_back({it->id, std::max(1, it->value / 3)});
-    out["shop"] = {{"items", shop}, {"potion", 25 + 5 * g.depth}, {"sell", sell}};
+    out["shop"] = {{"items", shop}, {"potion", 25 + 5 * g.lvl}, {"sell", sell}};
   }
   if (f.boss && f.boss_woke && f.boss->hp > 0) {
     auto& b = *f.boss;

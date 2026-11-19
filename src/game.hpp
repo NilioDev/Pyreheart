@@ -8,11 +8,11 @@
 
 using json = nlohmann::json;
 
-constexpr int CISTERN = 4;  // the act index of the Cistern, the other way after the Crypt
-constexpr int W = 120;  // the largest map (the Deep); floors of rooms use the top left ZONE_W x ZONE_H
+constexpr int CISTERN = 4;  // zone indexes the game reads by number (see ACTS in ref/data.py)
+constexpr int DEEP = 3;
+constexpr int CITY = 5, VAULTS = 6, BARRACKS = 7, PRISON = 8, SANCTUM = 9;
+constexpr int W = 120;  // the largest map; a zone's floors use the top left w x h of it (ACTS[].w, .h)
 constexpr int H = 66;
-constexpr int ZONE_W = 76;
-constexpr int ZONE_H = 42;
 constexpr int SIGHT = 9;
 
 struct Item {
@@ -100,7 +100,7 @@ struct FloorItem { int x, y; ItemP item; int gold = 0; std::string pot; int owne
 
 struct Floor {
   int depth = 1, act = 0, id = 0, version = 0;
-  int w = ZONE_W, h = ZONE_H;  // the part of the map in use
+  int w = 76, h = 42;  // the part of the map in use
   bool rest = false, deep = false;
   std::vector<int> t = std::vector<int>(W * H, data::WALL);
   std::map<int, std::string> writings;
@@ -115,6 +115,7 @@ struct Floor {
   std::vector<Rune> runes;
   std::vector<Ground> ground;
   std::vector<Sleeper> sleepers;
+  std::map<int, int> exits;  // in a waystation: the stairs down (cell index) and the zone each leads to
   bool burning(int x, int y) const { for (auto& g : ground) if (g.kind == 0 && g.p == P{x, y}) return true; return false; }
   int tile(int x, int y) const { return x >= 0 && x < W && y >= 0 && y < H ? t[y * W + x] : data::WALL; }
   void set(int x, int y, int v) { t[y * W + x] = v; ++version; }
@@ -148,7 +149,11 @@ class Game {
   Rng rnd;
   std::map<int, std::unique_ptr<Hero>> heroes;  // by player id, in join order
   std::unique_ptr<Floor> floor;
-  int turn = 0, depth = 1;
+  int turn = 0, depth = 1;  // depth: the maps gone down so far, this one too
+  std::vector<int> route;    // the zones of this dive so far; the last is the one you are in
+  int zfloor = 0;            // which of the zone's maps this is, from 0; the boss waits on the last
+  int lvl = 1;               // how hard this map is, 1 at the top to 16 at the King: the depth on the old scale
+  bool final_floor() const;  // the King's
   std::string state = "play";
   std::vector<json> fx;
 
@@ -178,7 +183,8 @@ class Game {
   void build_rooms(Floor& fl, int d, bool boss_floor);
   bool build_deep(Floor& fl, char entry, bool last, char& exit_side);  // deep.cpp
   char deep_exit_ = 'N';
-  bool cistern_ = false;  // this dive goes down through the Cistern instead of the Caves
+  int chosen_ = -1;      // the zone the party took the stairs to, from a waystation
+  void set_level();
   void dress(Floor& fl, const k5::Plan& plan);  // dress.cpp
   void dress_deep(Floor& fl, std::vector<std::vector<P>> plates);
   void dress_cistern(Floor& fl, const k5::Plan& plan);  // cistern.cpp
