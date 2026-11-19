@@ -52,7 +52,11 @@ double vnoise(double x, double y) {
   return a + (b - a) * fy;
 }
 // the Crypt's new air, for the mock-ups: PYREHEART_CRYPTFX=1
-bool crypt_fx() { static bool on = SDL_getenv("PYREHEART_CRYPTFX") != nullptr; return on; }
+// the Crypt's mist and particles; PYREHEART_CRYPTFX=off leaves them out
+bool crypt_fx() {
+  static bool on = !SDL_getenv("PYREHEART_CRYPTFX") || std::string(SDL_getenv("PYREHEART_CRYPTFX")) != "off";
+  return on;
+}
 const int GLASS[] = {0xC83848, 0x3C5AD0, 0xD8A840, 0x6A3CB0};
 double flick(double t, int seed) { return .86 + .08 * std::sin(t * 4.1 + seed * 1.7) + .06 * std::sin(t * 9.7 + seed * 3.1); }
 const int FIREC[] = {0xFFF4C0, 0xFFD050, 0xFFA030, 0xFF7020, 0xE04818, 0xA02810};
