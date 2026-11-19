@@ -51,6 +51,7 @@ struct Hero {
   int focus = 0, standfast = 0, combo_id = 0, combo = 0;  // ranger's focus, warrior's Stand Fast, duelist's run of blows
   // what the foes' tricks leave on a hero, in turns: held fast, dazed (no turn at all), armour split, branded (hurts more),
   // bleeding, coughing in ash (sees less); latched: the id of the leech on it; moved: the turn it last took a step
+  int shown = 0;  // the statuses already floated up over the hero
   int held = 0, dazed = 0, sunder = 0, brand = 0, bleed = 0, bleed_dmg = 0, ashen = 0, latched = 0, moved = 0;
   bool dimmed = false;
   std::vector<char> vis = std::vector<char>(W * H, 0);
@@ -237,6 +238,13 @@ class Game {
   void say_near(int x, int y, const std::string& t, int col);
   void tip(Hero& h, const std::string& key, const std::string& text);
   void add_fx(json j) { fx.push_back(std::move(j)); }
+  // a number or word that floats up from a cell and fades; a second one on the same cell waits its turn
+  void num(int x, int y, const std::string& t, int col) {
+    int n = 0;
+    for (auto& f : fx) if (f.value("k", "") == "num" && f.value("x", -1) == x && f.value("y", -1) == y) ++n;
+    add_fx({{"k", "num"}, {"x", x}, {"y", y}, {"t", t}, {"col", col}, {"delay", .14 * n}});
+  }
+  bool crit_next = false;  // the next harm to a foe was a critical blow: its number is gold
 
   void act(Hero& h, const json& a);
   void move(Hero& h, int dx, int dy);

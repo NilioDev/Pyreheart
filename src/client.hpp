@@ -48,6 +48,7 @@ class Client {
   std::deque<std::pair<std::string, int>> log_;
   struct Fx { json kw; double start; };
   std::vector<Fx> fx_;
+  bool numbers_on_ = true;  // floating combat numbers
   bool waiting_ = false, pending_join_ = false;
   int sent_turn_ = -1;
   std::vector<int> ready_;

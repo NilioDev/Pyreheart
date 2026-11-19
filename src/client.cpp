@@ -113,6 +113,7 @@ void Client::load_settings() {
     if (line.rfind("addr=", 0) == 0) addr_ = line.substr(5);
     if (line.rfind("class=", 0) == 0) cls_ = std::clamp(std::atoi(line.c_str() + 6), 0, int(data::CLASSES.size()) - 1);
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
+    if (line.rfind("numbers=", 0) == 0) numbers_on_ = line[8] != '0';
     if (line.rfind("window=", 0) == 0) std::sscanf(line.c_str(), "window=%dx%d", &win_w_, &win_h_);
     if (line.rfind("fullscreen=", 0) == 0) fullscreen_ = line[11] == '1';
     if (line.rfind("bag_", 0) == 0 && line.find('=') != std::string::npos) {
@@ -137,7 +138,7 @@ void Client::remember_window() {
 
 void Client::save_settings() {
   std::ofstream f(pref_file());
-  f << "name=" << name_ << "\naddr=" << addr_ << "\nclass=" << cls_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\n";
+  f << "name=" << name_ << "\naddr=" << addr_ << "\nclass=" << cls_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\n";
   if (layout_ == Layout::Wide) {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
@@ -474,6 +475,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Menu:
       if (k == SDLK_ESCAPE) over_ = Over::None;
       else if (k == SDLK_M) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
+      else if (k == SDLK_N) { numbers_on_ = !numbers_on_; save_settings(); }
       else if (k == SDLK_Q || enter) { link_.reset(); host_.reset(); screen_ = Screen::Title; over_ = Over::None; menu_ = 0; snap_ = json(); }
       return;
     case Over::Target: {
@@ -1135,13 +1137,20 @@ void Client::draw_map() {
   // effects
   double t = now();
   fx_.erase(std::remove_if(fx_.begin(), fx_.end(), [&](const Fx& f) { return t - f.start > fx::life(f.kw); }), fx_.end());
-  for (auto& f : fx_)
+  for (auto& f : fx_) {
+    bool numb = f.kw.value("k", "") == "num";
+    if (numb) {  // floating numbers: only when wanted, and only from a spot in sight
+      int ox = f.kw.value("x", -1), oy = f.kw.value("y", -1);
+      if (!numbers_on_ || ox < 0 || oy < 0 || ox >= W || oy >= H || !seen[oy * W + ox]) continue;
+    }
     for (auto& c : fx::cells(f.kw, t - f.start)) {
       int X = sx(c.x), Y = sy(c.y);
       if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) continue;
-      if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H || !seen[c.y * W + c.x] || (map[c.y * W + c.x] - TILE0) == data::WALL) continue;
+      if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H) continue;
+      if (!numb && (!seen[c.y * W + c.x] || (map[c.y * W + c.x] - TILE0) == data::WALL)) continue;
       put(X, Y, c.ch, (c.col.r << 16) | (c.col.g << 8) | c.col.b);
     }
+  }
   if (over_ == Over::Target) {
     int X = sx(tx_), Y = sy(ty_);
     if (con_.in_bounds({X, Y})) {
@@ -1474,15 +1483,17 @@ void Client::draw_perk() {
 
 void Client::draw_menu() {
   int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 40), h = 9;
+  int w = std::min(cw, 40), h = 11;
   int x = (cw - w) / 2, y = (chh - h) / 2;
   box(x, y, w, h, "Pyreheart");
   text(x + 2, y + 2, "[Esc] back to the dive", WHITE);
   text(x + 2, y + 4, std::string("[m] music: ") + (music_on_ ? "on" : "off"), WHITE);
-  text(x + 2, y + 6, "[q] leave the dive", WHITE);
+  text(x + 2, y + 6, std::string("[n] floating numbers: ") + (numbers_on_ ? "on" : "off"), WHITE);
+  text(x + 2, y + 8, "[q] leave the dive", WHITE);
   buttons_.push_back({x, y + 2, w, 1, "", "close"});
   buttons_.push_back({x, y + 4, w, 1, "", "key:" + std::to_string(SDLK_M)});
-  buttons_.push_back({x, y + 6, w, 1, "", "key:" + std::to_string(SDLK_Q)});
+  buttons_.push_back({x, y + 6, w, 1, "", "key:" + std::to_string(SDLK_N)});
+  buttons_.push_back({x, y + 8, w, 1, "", "key:" + std::to_string(SDLK_Q)});
 }
 
 void Client::draw_help() {

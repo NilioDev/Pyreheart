@@ -698,7 +698,7 @@ void Game::arrive(Hero& h) {
     FloorItem& fi = floor->items[k];
     if (fi.x != h.x || fi.y != h.y || (fi.owner && fi.owner != h.pid)) { ++k; continue; }
     bool took = true;
-    if (fi.gold > 0) { h.gold += fi.gold; h.say(std::to_string(fi.gold) + " gold.", 0xFFD700); }
+    if (fi.gold > 0) { h.gold += fi.gold; num(h.x, h.y, "+" + std::to_string(fi.gold), 0xFFD700); h.say(std::to_string(fi.gold) + " gold.", 0xFFD700); }
     else if (!fi.pot.empty()) {
       if (fi.pot == "heal" && h.heal < BELT_MAX) { ++h.heal; h.say("A healing potion.", 0xFF7070); }
       else if (fi.pot == "mana" && h.mana_pots < BELT_MAX) { ++h.mana_pots; h.say("A mana potion.", 0x7090FF); }
@@ -797,7 +797,7 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   m.awake = true;
   m.open = 0;
   int chance = std::clamp(st.acc - m.ar * 2 + 12 + (opening ? 30 : 0), 25, 97);
-  if (rnd.below(100) >= chance) { h.say("You miss " + the(m) + ".", 0x909090); return false; }
+  if (rnd.below(100) >= chance) { h.say("You miss " + the(m) + ".", 0x909090); num(m.x, m.y, "miss", 0x808080); return false; }
   double d = rnd.range(st.lo, st.hi) * (1 + st.pct / 100.0) * mult;
   if (h.numb > 0) d *= .75;
   if (h.perk("berserker")) d *= 1 + .03 * h.mana;
@@ -820,6 +820,7 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
     h.mana = std::min(st.maxmana, h.mana + 2);
     tip(h, "opening", "An opening! A busy foe takes a critical blow from you, and bleeds.");
   }
+  crit_next = crit;
   hurt(m, dmg, &h, opening ? "An opening: you cut " + the(m) + " deep (" + std::to_string(dmg) + ")."
                    : crit ? "You strike " + the(m) + " hard (" + std::to_string(dmg) + ")." : "");
   return true;
@@ -834,6 +835,8 @@ void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
   dmg = trait_hurt(m, dmg);
   if (m.spent > 0) dmg = dmg * 3 / 2;
   m.hp -= dmg;
+  num(m.x, m.y, std::to_string(dmg), crit_next ? 0xFFD25A : 0xFFFFFF);
+  crit_next = false;
   m.awake = true;
   if (by && !text.empty()) by->say(text, 0xFFD25A);
   if (m.hp <= 0) { kill(m, by); return; }
@@ -1604,7 +1607,9 @@ void Game::quaff(Hero& h, const std::string& k) {
   if (k == "heal") {
     if (h.heal <= 0) { h.say("No healing potions left.", 0x909090); return; }
     --h.heal;
+    int before = h.hp;
     h.hp = std::min(st.maxhp, h.hp + rnd_i(st.maxhp * .45 * (1 + .4 * h.perk("second"))));
+    num(h.x, h.y, "+" + std::to_string(h.hp - before), 0x60E060);
     h.poison = 0;
     h.say("You drink a healing potion.", 0xFF7070);
     add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", 0xFF7070}});
@@ -1838,7 +1843,7 @@ void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   Stats st = stats(h);
   int chance = std::clamp(m.acc + lvl * 2 - st.armour - (h.cls->key == "cutthroat" && !ranged ? 15 : 0), 20, 95);
   if (!ranged) add_fx({{"k", "swing"}, {"src", xy(m.x, m.y)}, {"cells", json::array({xy(h.x, h.y)})}});
-  if (rnd.below(100) >= chance) { if (h.perk("riposte")) m.open = 2; return; }
+  if (rnd.below(100) >= chance) { if (h.perk("riposte")) m.open = 2; num(h.x, h.y, "dodge", 0x808080); return; }
   int dmg = std::max(1, rnd.range(m.lo, m.hi) - st.armour / 6);
   if (m.can("fervour")) dmg = rnd_i(dmg * (1 + .6 * (1 - double(m.hp) / m.maxhp)));  // the more it bleeds, the harder
   if (m.def->fire || m.has("Fire-blooded")) dmg += rnd_i(rnd.range(m.lo, m.hi) * .3 * (1 - st.res_f / 100.0));
@@ -1865,6 +1870,7 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   if (h.cls->fury()) dmg = std::max(1, rnd_i(dmg * (1 - .02 * h.mana)));  // fury dulls the pain
   if (h.cls->fury() && m) h.mana = std::min(10, h.mana + (h.perk("guardian") ? 2 : 1));
   h.hp -= dmg;
+  num(h.x, h.y, std::to_string(dmg), kind == "poison" ? 0x70D050 : 0xFF5050);
   add_fx({{"k", "blood"}, {"x", h.x}, {"y", h.y}, {"src", xy(m ? m->x : h.x, m ? m->y : h.y - 1)}});
   h.say((m ? cap(the(*m)) : std::string(kind == "fire" ? "Fire" : kind == "bleed" ? "Bleeding" : "Poison")) + " hurts you (" + std::to_string(dmg) + ").", 0xFF8080);
   if (h.hp <= stats(h).maxhp / 3 && h.heal > 0) tip(h, "quaff", "You are badly hurt. Drink a healing potion: [q].");
@@ -1975,6 +1981,20 @@ void Game::tick() {
     if (m->has("Regenerating") && m->hp < m->maxhp) m->hp = std::min(m->maxhp, m->hp + std::max(1, m->maxhp / 50));
   classes_tick();
   traits_tick();
+  // a status that has just taken hold floats up over the hero once, in its own colour
+  for (auto* h : active()) {
+    struct S { int on; const char* word; int col; };
+    const S ss[] = {{h->held, "held", 0xE0C060},   {h->dazed, "dazed", 0xC0A0E0},  {h->bleed, "bleeding", 0xD03030},
+                    {h->brand, "branded", 0xFF8050}, {h->sunder, "sundered", 0xE0B080}, {h->latched, "latched", 0xE0D0A0},
+                    {h->poison, "poisoned", 0x70D050}, {h->numb, "chilled", 0x90C8FF}, {h->ashen, "blinded", 0xA0A0A0}};
+    int mask = 0;
+    for (int i = 0; i < int(std::size(ss)); ++i)
+      if (ss[i].on > 0) {
+        mask |= 1 << i;
+        if (!(h->shown & 1 << i) && !h->dead) num(h->x, h->y, ss[i].word, ss[i].col);
+      }
+    h->shown = mask;
+  }
 }
 
 void Game::look() {
