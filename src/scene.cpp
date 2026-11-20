@@ -704,9 +704,10 @@ void Client::draw_tiles() {
           if (t == DAIS && actn == SANCTUM) {
             // the platform where the Pyreheart lay: polished black, inlaid with gold in a lattice, the light running over it
             bg = mixc(0x16121C, 0x221C2A, (hash(x / 2, y / 2, 6) % 3) / 3.0);
-            bool inlay = (x + y) % 4 == 0 || (x - y + 400) % 4 == 0;
-            ch = inlay ? ((x % 4 == 0 && y % 2 == 0) ? 0x2666 : 0xB7) : ' ';
-            fg = inlay ? 0x8A6A30 : 0x2A2430;
+            // only a faint gold point where the lines of the lattice cross, so the floor stays calm to fight on
+            bool inlay = x % 6 == 0 && y % 4 == 3;
+            ch = inlay ? 0xB7 : ' ';
+            fg = inlay ? 0x6A5428 : 0x2A2430;
             double sweep = std::fmod(tt * .1 + (hash(x / 8, 0, 38) % 100) / 400.0, 1.0) * 60 - 15;
             if (inlay && std::abs(x * .8 + y - sweep) < 1.2) { fg = 0xFFE6A0; bright = true; }
           }

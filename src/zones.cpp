@@ -1501,11 +1501,11 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       for (int x = cx - 11; x <= cx + 11; x += 4) if (std::abs(x - cx) > 2) { m.put(x, top + 4, CANDLE); }
       for (int y = top + 6; y <= ay1 - 4; y += 3) { m.put(cx - 12, y, CANDLE); m.put(cx + 12, y, CANDLE); }
       // the melted gold offerings round the altar
-      for (int k = 0; k < 18; ++k) { int x = cx + rnd.range(-8, 8), y = top + rnd.range(5, 10); if (m.at(x, y) == DAIS) m.put(x, y, k % 3 ? GOLDCRUST : COIN); }
+      for (int k = 0; k < 7; ++k) { int x = cx + rnd.range(-4, 4), y = top + rnd.range(6, 9); if (m.at(x, y) == DAIS) m.put(x, y, k % 3 ? GOLDCRUST : COIN); }
       // the shattered altar's pieces; the broken chains of the god that lay bound beneath it, running into the hole
       auto on_dais = [&](int x, int y, int t) { if (m.at(x, y) == DAIS || m.at(x, y) == GOLDCRUST || m.at(x, y) == COIN) m.put(x, y, t); };
-      for (P r : {P{cx + 3, top + 7}, P{cx + 3, top + 8}, P{cx - 3, top + 8}, P{cx + 1, top + 8}}) on_dais(r.x, r.y, RUBBLE);
-      for (int s2 : {-1, 1}) { on_dais(cx + 2 * s2, top + 6, CHAIN); on_dais(cx + 3 * s2, top + 5, CHAIN); on_dais(cx + 2 * s2, top + 8, CHAIN); }
+      for (P r : {P{cx + 3, top + 7}, P{cx + 1, top + 8}}) on_dais(r.x, r.y, RUBBLE);
+      for (int s2 : {-1, 1}) { on_dais(cx + 2 * s2, top + 6, CHAIN); on_dais(cx + 3 * s2, top + 5, CHAIN); }
       // the hole was dug, and dug recklessly: props jammed at its lip, the spoil thrown up round it, the sacred pick dropped
       for (int s2 : {-1, 1}) {
         for (int y = top; y <= top + 3; ++y) {
@@ -1519,7 +1519,7 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       for (int x = cx - 4; x <= cx - 2; ++x) if (m.at(x, top + 4) == DAIS && m.at(x, top + 3) == CHASM) { m.put(x, top + 4, PICK); break; }
       // the High Prelate's last prayer, written in ash across the steps up to the platform; gold run down them
       for (int x = cx - 10; x <= cx + 10; ++x) if (std::abs(x - cx) >= 3 && m.at(x, ay1 - 2) == STEP) m.put(x, ay1 - 2, ASHPRAYER);
-      m.put(cx + 2, ay1 - 2, GOLDCRUST); m.put(cx + 2, ay1 - 1, GOLDCRUST);
+      m.put(cx + 2, ay1 - 1, GOLDCRUST);
       // the chapels down both sides of the nave, mirrored, each with an altar of its own (a shrine: not all are kind)
       std::vector<std::array<int, 4>> chapels;
       for (int y0 = ny0 + 1; y0 + 7 <= bottom - 5; y0 += 10)
