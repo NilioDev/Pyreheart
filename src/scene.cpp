@@ -58,7 +58,7 @@ bool crypt_fx() {
   return on;
 }
 const int GLASS[] = {0xC83848, 0x3C5AD0, 0xD8A840, 0x6A3CB0};
-// the Caves' air, one by one for the mock-ups: PYREHEART_CAVESFX=1,3 (1 mist over the stream, 2 heat over the
+// the Caves' air, all on by default; one by one with PYREHEART_CAVESFX=1,3 (1 mist over the stream, 2 heat over the
 // fissures, 3 the mountain groans, 4 eyes in the dark, 5 wet rock by the stream, 6 draught); off leaves them all out
 bool cave_fx(int n) {
   static std::string v = SDL_getenv("PYREHEART_CAVESFX") ? SDL_getenv("PYREHEART_CAVESFX") : "all";
