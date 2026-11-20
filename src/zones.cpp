@@ -836,7 +836,7 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       }
       lay(c.x + 3, c.y - 3, NOTICE);
       // lantern posts by the palace way, the lions' bronze vats, the palace litter
-      for (int y = py1 + 2; y < c.y - 9; y += 2) { lay(c.x - 3, y, POST); lay(c.x + 3, y, POST); }
+      for (int y = py1 + 2; y < c.y - 9; y += 4) { lay(c.x - 3, y, POST); lay(c.x + 3, y, POST); }
       for (int s : {-1, 1}) { lay(c.x + s * 20, iw - 1, VAT); lay(c.x + s * 14, iw + 1, VAT); lay(c.x + s * 18, py1 - 1, VAT); }
       for (int k = 0; k < 8; ++k) lay(c.x + rnd.range(-10, 10), rnd.range(hy0 + 1, hy1 - 1), COIN);
       for (auto& sd : sides) {

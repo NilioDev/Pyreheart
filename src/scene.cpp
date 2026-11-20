@@ -1381,7 +1381,7 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
       case 'L': {
         // the ember in a lantern's cage: a red point that breathes, a spark lifting off it now and then
         double fl2 = .5 + .5 * std::sin(tt * .7 + sd) * std::sin(tt * .23 + sd * 3);
-        dot(ex + .45, ey + .2, mixc(0x8A2008, 0xFF9040, fl2), .9, 2);
+        dot(ex + .4, ey + .1, mixc(0x8A2008, 0xFF9040, fl2), .9, 2);
         double ph = std::fmod(tt * .2 + nz(sd), 1.0);
         if (fl2 > .6 && ph < .5) dot(ex + .5 + std::sin(tt * 2 + sd) * .2 * ph, ey + .1 - ph * 1.6, mixc(0xFFC060, 0x7A2008, ph * 2), 1 - ph * 2);
         break;
