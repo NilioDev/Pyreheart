@@ -12,9 +12,10 @@
 
 using namespace data;
 
-// the newer air of the other zones, one by one for the mock-ups: PYREHEART_ZONEFX=c1,d2 (c the Crypt, d the Deep,
-// s the Cistern, t Charnfen); all of them by default, off for none
-// for the mock-ups: PYREHEART_FXPERIOD=4 makes the rare things (whispers, rats, ash whirls, crows) come every 4 s
+// the newer air of the other zones, all on by default; one by one with PYREHEART_ZONEFX=c1,d2, off for none.
+// c1 a cold draught through the Crypt, c2 its icy ghosts; d1 heat over the lava, d2 the Deep breathing; s1 the light
+// the Cistern's water throws back, s2 bubbles of gas in the sludge; t2 gusts of wind in Charnfen, t3 its fire flaring
+// for the mock-ups: PYREHEART_FXPERIOD=4 makes the rare things (the Crypt's ghosts, the fire flaring in Charnfen) come every 4 s
 double fx_period(double p) {
   static const char* e = SDL_getenv("PYREHEART_FXPERIOD");
   return e ? std::atof(e) : p;
@@ -202,7 +203,7 @@ void Client::draw_tiles() {
   // Deep breathes, water roars behind the Cistern's walls
   double groan = 0, ev_age = 99;
   const char* ev_text = actn == 1 && cave_fx(3) ? "The mountain groans." : actn == 0 && zone_fx("c1") ? "A cold draught moves through the crypt."
-                      : actn == 3 && zone_fx("d2") ? "The Deep breathes." : actn == CISTERN && zone_fx("s3") ? "Water roars somewhere behind the walls." : nullptr;
+                      : actn == 3 && zone_fx("d2") ? "The Deep breathes." : nullptr;
   if (!rest && ev_text) {
     static const char* every = SDL_getenv("PYREHEART_GROAN") ? SDL_getenv("PYREHEART_GROAN") : SDL_getenv("PYREHEART_EVENT");  // for the mock-ups: every n seconds
     if (groan_next_ < 0) groan_next_ = tt + (every ? 1.5 : 40 + nz(int(tt) % 997) * 50);
@@ -217,8 +218,7 @@ void Client::draw_tiles() {
   double draught_x = -999;  // the Crypt: where the draught is now, sweeping across the view
   if (actn == 0 && ev_age < 3) draught_x = camx_ - 6 + ev_age / 3 * (vw_ + 12);
   double breath = actn == 3 && ev_age < 3.5 ? std::sin(ev_age / 3.5 * PI) : 0;  // the Deep: the lava swells and glows
-  double surge_x = -999;  // the Cistern: a surge running along the channels
-  if (actn == CISTERN && ev_age < 4) surge_x = camx_ - 10 + ev_age / 4 * (vw_ + 20);
+
   // how much of a window's light falls on a cell, and in what colour
   auto beam_at = [&](int x, int y, int& col) {
     double best = 0;
@@ -353,7 +353,7 @@ void Client::draw_tiles() {
         int i = y * W + x, t = tile(x, y), sd = int(hash(x, y) % 97);
         if (vis[i] != '1') continue;
         if (actn == 3 && zone_fx("d1") && t == LAVA && ldist_[i] <= 2 && hash(x, y, 33) % 3 == 0) emits_.push_back({float(x), float(y), 'H', sd});
-        if (actn == 3 && breath > .2 && t == LAVA && hash(x, y, 34) % 7 == 0) emits_.push_back({float(x), float(y), 'E', sd});
+        if (actn == 3 && breath > .3 && t == LAVA && hash(x, y, 34) % 17 == 0) emits_.push_back({float(x), float(y), 'E', sd});
         if (actn == CISTERN && zone_fx("s2") && (t == SLUDGE || t == MIRE) && hash(x, y, 35) % 9 == 0) emits_.push_back({float(x), float(y), 'B', sd});
       }
   if (s.contains("ground"))
@@ -378,6 +378,45 @@ void Client::draw_tiles() {
     for (auto g : grinding) if (std::abs(g.x - x) <= 2 && std::abs(g.y - y) <= 1) return true;
     return false;
   };
+
+  // the Crypt's ghosts: now and then a pale, icy shape drifts through the halls and the walls, leaving frost behind it
+  ghost_a_ = 0;
+  std::vector<float> frost;
+  std::vector<int> under;
+  if (actn == 0 && zone_fx("c2") && !rest && !s["heroes"].empty()) {
+    double period = fx_period(20), cyc = std::floor(tt / period), age = tt - cyc * period, dur = std::min(8.0, period * .85);
+    if (age < dur) {
+      int seed = int(cyc) * 613, hx = s["heroes"][0]["x"], hy = s["heroes"][0]["y"];
+      static int start_cyc = -1;
+      static double sx = 0, sy = 0, ex = 0, ey = 0;
+      if (start_cyc != int(cyc)) {
+        start_cyc = int(cyc);
+        double side = nz(seed) < .5 ? -1 : 1;
+        sx = hx + side * 7; sy = hy + (nz(seed + 1) - .5) * 6; ex = hx - side * 7; ey = hy + (nz(seed + 2) - .5) * 6;
+      }
+      auto at = [&](double a, double& x, double& y) { double q = a / dur; x = sx + (ex - sx) * q; y = sy + (ey - sy) * q + std::sin(q * 5 + seed) * .7; };
+      double k = age / dur;
+      at(age, ghost_x_, ghost_y_);
+      ghost_dx_ = ex > sx ? 1 : -1;
+      ghost_a_ = std::clamp(std::min(k / .15, (1 - k) / .15), 0.0, 1.0);
+      frost.assign(W * H, 0.f);
+      under.assign(W * H, 0);
+      for (double back = 0; back <= 3 && back <= age; back += .2) {
+        double fx2, fy2;
+        at(age - back, fx2, fy2);
+        for (int dy = -1; dy <= 0; ++dy) {
+          int ix = int(std::floor(fx2 + .5)), iy = int(std::floor(fy2 + .5)) + dy;
+          if (ix < 0 || iy < 0 || ix >= W || iy >= H) continue;
+          frost[iy * W + ix] = std::max(frost[iy * W + ix], float((1 - back / 3) * ghost_a_));
+        }
+      }
+      static int said = -1;
+      if (said != int(cyc) && k > .3) {
+        said = int(cyc);
+        if (nz(seed + 3) < .5) log_.push_back({"The air turns to ice as something passes.", 0x8AA8D0});
+      }
+    }
+  }
 
   for (int y = y0; y < y1; ++y)
     for (int x = x0; x < x1; ++x) {
@@ -841,27 +880,22 @@ void Client::draw_tiles() {
         if (draught_x > -999) {
           // the draught: the flames bow and shrink as it passes, the air goes grey and cold
           double k = std::exp(-std::pow((x - draught_x) / 3.5, 2));
-          if (warm[i] > .05 && !bright) { fg = mixc(fg, scale(fg, .55), k); bg = mixc(bg, scale(bg, .55), k * warm[i]); }
-          if (!blocks(t)) bg = mixc(bg, 0x2A3240, k * .3);
+          if (warm[i] > .05 && !bright) { fg = mixc(fg, scale(fg, .75), k); bg = mixc(bg, scale(bg, .75), k * warm[i]); }
+          if (!blocks(t)) bg = mixc(bg, 0x2A3240, k * .12);
         }
         if (breath > 0) {
           // the Deep breathes: the lava swells brighter and its glow reaches further
           double k = breath * std::min(1.0, w * 1.6 + (t == LAVA ? .8 : 0));
-          bg = mixc(bg, t == LAVA ? 0xFF7A20 : 0x7A2408, k * (t == LAVA ? .5 : .4));
-          if (!bright) fg = mixc(fg, 0xFFB060, k * .35);
+          bg = mixc(bg, t == LAVA ? 0xFF7A20 : 0x7A2408, k * (t == LAVA ? .22 : .16));
+          if (!bright) fg = mixc(fg, 0xFFB060, k * .12);
         }
         if (actn == CISTERN && !damp_.empty()) {
           // the water throws the light back: pale wavering bands on the stone beside it
           if (zone_fx("s1") && damp_[i] > 0) {
-            double v = std::sin(x * .9 + y * .45 + tt * 1.6) * std::sin(x * .35 - y * 1.1 - tt * 1.2) + .3 * std::sin(x * 1.7 - tt * 2.3 + y);
-            double band = std::clamp((v - .35) / .5, 0.0, 1.0) * damp_[i] * std::min(1.0, l + .3);
-            bg = mixc(bg, 0x5A9A80, band * .6);
-            if (!bright) fg = mixc(fg, 0xB8F0D8, band * .45);
-          }
-          if (surge_x > -999 && (t == SLUDGE || t == FLOATER || t == MIRE)) {
-            // the surge: a swell of black water rolls along the channel, its back catching the light
-            double k = std::exp(-std::pow((x - surge_x) / 2.2, 2));
-            if (k > .15) { ch = k > .6 ? 0x2248 : '~'; fg = mixc(0x2A3424, 0x8A9A78, k * std::min(1.0, l)); bg = mixc(bg, 0x26301E, k); }
+            double v = std::sin(x * .6 + y * .35 + tt * .55) * std::sin(x * .25 - y * .8 - tt * .4);
+            double band = std::clamp((v - .3) / .6, 0.0, 1.0) * damp_[i] * std::min(1.0, l + .2);
+            bg = mixc(bg, 0x4A8A72, band * .3);
+            if (!bright) fg = mixc(fg, 0xA8E0C8, band * .15);
           }
         }
         if (cfx) {
@@ -890,8 +924,25 @@ void Client::draw_tiles() {
         fg = mixc(scale(fg, .35), 0x202430, .3);
         bg = scale(bg, .3);
       }
+      if (!frost.empty() && frost[i] > 0 && vis[i] == '1') {
+        // frost where the ghost went by, fading
+        bg = mixc(bg, 0x3A5A7A, frost[i] * .45);
+        if (!bright) fg = mixc(fg, 0xB8D8F8, frost[i] * .35);
+      }
+      if (!under.empty()) under[i] = bg;
       put(X, Y, ch, fg, bg);
     }
+  if (ghost_a_ > 0) {
+    // the ghost itself: a hood over a trailing shape, both half see-through and cold
+    int gx = int(std::floor(ghost_x_ + .5)), gy = int(std::floor(ghost_y_ + .5));
+    for (int dy = -1; dy <= 0; ++dy) {
+      int x = gx, y = gy + dy;
+      if (x < x0 || y < y0 || x >= x1 || y >= y1 || !seen[y * W + x]) continue;
+      int b = under[y * W + x];
+      double a = ghost_a_ * (vis[y * W + x] == '1' ? .8 : .5) * (.85 + .15 * std::sin(tt * 3));
+      put(x - camx_ + vx_, y - camy_ + vy_, dy < 0 ? 0x2229 : 0x2591, mixc(b, 0xDCEEFF, a), mixc(b, 0x34506E, a * .6));
+    }
+  }
 }
 
 // Particles: small squares of a font pixel or two, drawn over the rendered console. Each is worked out from the time
@@ -1342,95 +1393,26 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
     }
   }
   int actp = snap_.value("act", 0);
-  if ((actp == 0 || actp == 3) && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+  if (actp == 0 && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
     auto tl = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : tile_of(map[y * W + x]); };
-    int hx = snap_["heroes"][0]["x"], hy = snap_["heroes"][0]["y"];
     if (double age = tt - groan_t_; actp == 0 && zone_fx("c1") && age < 3) {
       // the draught: dust and a few dead leaves of old wreaths blown across the view with it
       double fx2 = camx_ - 6 + age / 3 * (vw_ + 12);
-      for (int j = 0; j < 220; ++j) {
+      for (int j = 0; j < 80; ++j) {
         double x = fx2 - nz(j * 3 + 5) * 6 + std::sin(tt * 4 + j) * .2, y = camy_ + nz(j * 7 + 1) * vh_ + std::sin(tt * 2 + j) * .3;
         if (!open_at(x, y) || blocks(tl(int(x), int(y)))) continue;
         double a = 1 - (fx2 - x) / 6;
         bool leaf = j % 23 == 0;
-        dot(x, y, leaf ? 0x5A4A2A : 0xB8B4AC, a * (leaf ? 1 : .55), leaf ? 2 : 1);
-        if (!leaf) dot(x - .15, y, 0xB8B4AC, a * .25);
+        dot(x, y, leaf ? 0x5A4A2A : 0xB8B4AC, a * (leaf ? .8 : .35), leaf ? 2 : 1);
       }
     }
-    if (actp == 0 && zone_fx("c2")) {
-      // a whisper: something pale passes through the walls beside you, and now and then it says your name
-      double period = fx_period(23), cyc = std::floor(tt / period), ph = tt / period - cyc;
-      static int said = -1;
-      if (ph < .22) {
-        int seed = int(cyc) * 613;
-        double k = ph / .22, side = nz(seed) < .5 ? -1 : 1;
-        double sx2 = hx + .5 + side * 9, sy2 = hy + .5 + (nz(seed + 1) - .5) * 6, ex2 = hx + .5 - side * 9, ey2 = hy + .5 + (nz(seed + 2) - .5) * 6;
-        for (int j = 0; j < 22; ++j) {
-          double q = std::clamp(k - j * .012, 0.0, 1.0);
-          double x = sx2 + (ex2 - sx2) * q, y = sy2 + (ey2 - sy2) * q + std::sin(q * 14 + seed) * .5;
-          double a = std::sin(k * PI) * (1 - j / 22.0) * .7;
-          if (j == 0) { dot(x - 2 * px / cell, y - 2 * px / cell, 0x8AA8E0, a * .3, 5); dot(x - px / cell, y - px / cell, 0xB8C8F0, a * .5, 3); }
-          dot(x, y, j < 3 ? 0xF0F4FF : mixc(0xB8C8F0, 0x4A5A80, j / 22.0), a * (j < 3 ? 1.3 : 1), j < 6 ? 2 : 1);
-        }
-        if (said != int(cyc) && k > .4) {
-          said = int(cyc);
-          if (nz(seed + 3) < .5) log_.push_back({"Something whispers your name.", 0x8A9CC8});
-        }
-      }
-    }
-    if (actp == 0 && zone_fx("c3")) {
-      // a rat runs along the foot of the wall, through the light, and is gone into a crack
-      double period = fx_period(11), cyc = std::floor(tt / period), ph = tt / period - cyc;
-      static int at_cyc = -1;
-      static P from{-1, -1}, dir{1, 0};
-      static int len = 0;
-      auto runs = [&](int x, int y, P d) {
-        // open ground with a wall alongside, on the left or right of the way it runs
-        int t = tl(x, y);
-        return !blocks(t) && t != SHALLOW && (tl(x + d.y, y + d.x) == WALL || tl(x - d.y, y - d.x) == WALL);
-      };
-      if (at_cyc != int(cyc)) {
-        at_cyc = int(cyc); from = {-1, -1};
-        int seed = int(cyc) * 977;
-        for (int k = 0; k < 80 && from.x < 0; ++k) {
-          int x = hx + int((nz(seed + k) - .5) * 12), y = hy + int((nz(seed + k + 99) - .5) * 8);
-          if (y < 0 || x < 0 || x >= W || y >= H || vis[y * W + x] != '1') continue;
-          static const P D4[] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-          P d = D4[int(nz(seed + k * 3) * 4) % 4];
-          if (!runs(x, y, d)) continue;
-          int n = 0;
-          while (n < 9 && runs(x + d.x * (n + 1), y + d.y * (n + 1), d)) ++n;
-          if (n >= 3) { from = {x, y}; dir = d; len = n; }
-        }
-      }
-      if (from.x >= 0 && ph < .35) {
-        double k = ph / .35;
-        double x = from.x + .5 + dir.x * k * len, y = from.y + .5 + dir.y * k * len + std::abs(std::sin(tt * 30)) * .04;
-        if (open_at(x, y)) {
-          x -= .2; y -= .2;
-          for (int j = 0; j < 3; ++j) dot(x - dir.x * j * .2, y - dir.y * j * .2, j == 0 ? 0x7A6656 : 0x5A4838, 1, 3);
-          dot(x + .1 + dir.x * .35, y + .1 + dir.y * .35, 0x9A8470, 1, 2);       // the snout
-          dot(x + .15 + dir.x * .25 - dir.y * .1, y + .05 + dir.y * .25, 0xFF5030, 1);  // an eye
-          for (int j = 0; j < 6; ++j) dot(x + .15 - dir.x * (.55 + j * .12) + std::sin(tt * 20 + j) * .04, y + .25 - dir.y * (.55 + j * .12), 0xA87C70, .9);  // the tail
-        }
-      }
-    }
-    if (actp == 3 && zone_fx("d3")) {
-      // a little whirl of ash and embers wanders over the open ground and falls apart
-      double period = fx_period(13), cyc = std::floor(tt / period), ph = tt / period - cyc;
-      if (ph < .4) {
-        int seed = int(cyc) * 331;
-        double k = ph / .4;
-        double cx = hx + .5 + (nz(seed) - .5) * 10 + (nz(seed + 1) - .5) * 6 * k, cy = hy + .5 + (nz(seed + 2) - .5) * 6 + (nz(seed + 3) - .5) * 4 * k;
-        double life = std::sin(k * PI);
-        if (open_at(cx, cy))
-          for (int j = 0; j < 80; ++j) {
-            double h = j / 80.0, a = tt * 9 + j * .55, rr = (.2 + h * 1.3) * life;
-            double x = cx + std::cos(a) * rr * 1.3, y = cy + .3 - h * 2.8 * life + std::sin(a) * rr * .35;
-            if (!open_at(x, y)) continue;
-            bool ember = j % 7 == 0;
-            dot(x, y, ember ? 0xFF8030 : mixc(0xC8C0B4, 0x6A625A, h), (ember ? 1 : .9) * life, j % 4 == 0 ? 2 : 1);
-          }
+    if (actp == 0 && zone_fx("c2") && ghost_a_ > 0) {
+      // the ghost breathes frost: pale glittering motes round it and falling behind it
+      for (int j = 0; j < 18; ++j) {
+        double ph = std::fmod(tt * .6 + nz(j * 7), 1.0);
+        double x = ghost_x_ + .5 + (nz(j * 3) - .5) * 1.6 - ghost_dx_ * ph * 1.5, y = ghost_y_ - .2 + (nz(j * 5) - .5) * 1.8 + ph * .8;
+        double tw = std::sin(ph * PI) * (.5 + .5 * std::sin(tt * 9 + j * 2));
+        dot(x, y, j % 3 ? 0xC8E0FF : 0xFFFFFF, ghost_a_ * tw * .8);
       }
     }
   }

@@ -288,47 +288,6 @@ void Client::draw_town_particles(SDL_Renderer* r, double ox, double oy, double c
         dot(x - .3, y, 0xF0F4FF, a * .2);
       }
   }
-  if (zone_fx("t1")) {
-    // crows: they sit on the crosses of the graveyard and fly up, cawing, when a hero comes near; a flock goes over now and then
-    auto crow = [&](double x, double y, bool flap, double a) {
-      // black against the snow and the mist, with a dull blue sheen on the feathers
-      dot(x - .1, y - .1, 0x5A6274, a * .45, 4);
-      dot(x - .04, y - .04, 0x101014, a, 3);
-      dot(x + .26, y - .12, 0x101014, a, 2);
-      dot(x + .45, y - .06, 0xB8A070, a);  // the beak
-      if (flap) { dot(x - .3, y - .3, 0x22242C, a, 2); dot(x + .1, y - .32, 0x22242C, a, 2); }
-      else { dot(x - .3, y + .1, 0x22242C, a, 2); dot(x + .14, y + .14, 0x22242C, a, 2); }
-    };
-    int x0 = std::max(0, camx_), y0 = std::max(0, camy_), x1 = std::min(W, camx_ + vw_), y1 = std::min(H, camy_ + vh_);
-    for (int y = y0; y < y1; ++y)
-      for (int x = x0; x < x1; ++x) {
-        int i = y * W + x;
-        if (tile_of(map[i]) != data::CROSS || nz(i * 13) > .7) continue;
-        double nearest = 99;
-        for (auto& h : snap_["heroes"]) nearest = std::min(nearest, std::hypot(h["x"].get<int>() - x, (h["y"].get<int>() - y) * 1.3));
-        auto it = crow_fled_.find(i);
-        if (it == crow_fled_.end()) {
-          if (nearest < 4) { crow_fled_[i] = tt; if (nz(i) < .5) log_.push_back({"A crow flies up, cawing.", 0x8A8A8A}); continue; }
-          crow(x + .3, y + .05 - (std::fmod(tt * .3 + nz(i), 1.0) < .05 ? .06 : 0), false, 1);  // it shifts on its perch now and then
-        } else {
-          double age = tt - it->second;
-          if (age < 3) {
-            double dx = nz(i * 7) < .5 ? -1 : 1;
-            crow(x + .3 + dx * age * age * 2.2, y - age * 3.2, std::sin(tt * 26) > 0, 1 - age / 3);
-          } else if (age > 25 && nearest > 7) crow_fled_.erase(it);
-        }
-      }
-    double fp = fx_period(21), ph = std::fmod(tt / fp, 1.0);
-    if (ph < .3) {
-      double k = ph / .3;
-      int seed = int(tt / fp);
-      double y = camy_ + 3 + nz(seed) * (vh_ - 6), x = camx_ - 4 + k * (vw_ + 8);
-      for (int j = 0; j < 7; ++j) {
-        int row = (j + 1) / 2, sgn = j % 2 ? 1 : -1;
-        crow(x - row * 1.4 + std::sin(tt * 2 + j) * .2, y + sgn * row * .8 + std::sin(tt * 3 + j * 2) * .15, std::sin(tt * 18 + j * 1.3) > 0, 1);
-      }
-    }
-  }
   // breath: every two seconds or so each hero breathes out a little cloud that drifts off and thins
   for (auto& h : snap_["heroes"]) {
     if (h.value("gone", false) || h.value("dead", false)) continue;
