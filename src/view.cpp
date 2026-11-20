@@ -68,6 +68,12 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["mh"] = f.h;
   out["deep"] = f.deep;
   out["zfloor"] = g.zfloor;
+  out["seed"] = std::to_string(g.seed);
+  out["zone"] = data::ACTS[f.act].key;
+  out["zname"] = data::ACTS[f.act].name;
+  out["zfloors"] = data::ACTS[f.act].floors;
+  out["god"] = h.god;
+  out["frost"] = g.frost;
   out["route"] = g.route;
   if (!f.exits.empty()) {
     json ex = json::array();

@@ -55,6 +55,7 @@ const std::vector<std::pair<std::string, std::string>> HELP = {
     {"[l]", "look at what you see."},
     {"[Esc]", "close a window; the game menu."},
     {"[F11]", "full screen and back; the window remembers its size for the next time."},
+    {"[F12] [`]", "debug and testing: the test list, report a bug (with the seed and a screenshot), quick tools."},
     {"", ""},
     {"", "Blue foes are champions, gold ones are uniques: stronger, and they carry better things."},
     {"", "Every fourth floor a great foe waits by the way down. After it comes a waystation with a fountain and a trader."},
@@ -408,6 +409,8 @@ void Client::event(SDL_Event& ev) {
     std::string t = ev.text.text;
     if (screen_ == Screen::Name && name_.size() < 16) name_ += t;
     if (screen_ == Screen::Join && addr_.size() < 60) addr_ += t;
+    if (over_ == Over::Debug && typing_ && note_.size() < 600 && !dbg_skip_) note_ += t;
+    dbg_skip_ = false;
     return;
   }
   if (ev.type == SDL_EVENT_MOUSE_WHEEL) {  // the watch crown, or a mouse wheel
@@ -469,6 +472,8 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     return;
   }
   if (!snap_.is_object()) { if (k == SDLK_ESCAPE) over_ = Over::Menu; return; }
+  if (over_ == Over::Debug) { debug_key(k); return; }
+  if (k == SDLK_F12 || k == SDLK_GRAVE) { open_debug(); return; }
   std::string state = snap_.value("state", "play");
   if (state != "play") {
     if (k == SDLK_RETURN || k == SDLK_ESCAPE || k == SDLK_KP_ENTER) { link_.reset(); host_.reset(); screen_ = Screen::Title; menu_ = 0; snap_ = json(); }
@@ -505,6 +510,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       if (k == SDLK_ESCAPE) over_ = Over::None;
       else if (k == SDLK_M) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
       else if (k == SDLK_N) { numbers_on_ = !numbers_on_; save_settings(); }
+      else if (k == SDLK_D) open_debug();
       else if (k == SDLK_Q || enter) { link_.reset(); host_.reset(); screen_ = Screen::Title; over_ = Over::None; menu_ = 0; snap_ = json(); }
       return;
     case Over::Target: {
@@ -648,6 +654,17 @@ void Client::click(int x, int y, bool down) {
     return;
   }
   if (!snap_.is_object()) return;
+  if (over_ == Over::Debug) {
+    for (auto& b : buttons_)
+      if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
+        if (b.action.rfind("sel:", 0) == 0) { sel_ = std::atoi(b.action.c_str() + 4); debug_key(SDLK_RETURN); }
+        else if (b.action.rfind("key:", 0) == 0) debug_key(SDL_Keycode(std::atoi(b.action.c_str() + 4)));
+        else if (b.action == "close") close_debug();
+        else if (b.action == "type") SDL_StartTextInput(ctx_.get_sdl_window());  // the phone's keyboard back
+        return;
+      }
+    return;
+  }
   if (snap_.value("state", "play") != "play") { link_.reset(); host_.reset(); screen_ = Screen::Title; menu_ = 0; snap_ = json(); return; }
   for (auto& b : buttons_)
     if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
@@ -805,6 +822,8 @@ void Client::frame() {
   vp.clear_color = {0, 0, 0, 255};
   vp.align_x = .5f; vp.align_y = .5f;
   present(vp);
+  dbg_skip_ = false;
+  if (dbg_pending_) { dbg_pending_ = false; over_ = Over::Debug; debug_tab(dbg_tab_); }
 }
 
 int Client::menu_top() const {
@@ -1007,6 +1026,7 @@ void Client::draw_game() {
     case Over::Epigraph: draw_epigraph(); break;
     default: break;
   }
+  if (over_ == Over::Debug) draw_debug();
   if (over_ == Over::None && snap_.value("rest", false) && !snap_.value("town", false) && layout_ != Layout::Watch) draw_route();
   if (snap_.value("state", "play") != "play") draw_end();
 }
@@ -1532,17 +1552,19 @@ void Client::draw_perk() {
 
 void Client::draw_menu() {
   int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 40), h = 11;
+  int w = std::min(cw, 40), h = 13;
   int x = (cw - w) / 2, y = (chh - h) / 2;
   box(x, y, w, h, "Pyreheart");
   text(x + 2, y + 2, "[Esc] back to the dive", WHITE);
   text(x + 2, y + 4, std::string("[m] music: ") + (music_on_ ? "on" : "off"), WHITE);
   text(x + 2, y + 6, std::string("[n] floating numbers: ") + (numbers_on_ ? "on" : "off"), WHITE);
-  text(x + 2, y + 8, "[q] leave the dive", WHITE);
+  text(x + 2, y + 8, "[d] debug and testing", WHITE);
+  text(x + 2, y + 10, "[q] leave the dive", WHITE);
   buttons_.push_back({x, y + 2, w, 1, "", "close"});
   buttons_.push_back({x, y + 4, w, 1, "", "key:" + std::to_string(SDLK_M)});
   buttons_.push_back({x, y + 6, w, 1, "", "key:" + std::to_string(SDLK_N)});
-  buttons_.push_back({x, y + 8, w, 1, "", "key:" + std::to_string(SDLK_Q)});
+  buttons_.push_back({x, y + 8, w, 1, "", "key:" + std::to_string(SDLK_D)});
+  buttons_.push_back({x, y + 10, w, 1, "", "key:" + std::to_string(SDLK_Q)});
 }
 
 void Client::draw_help() {

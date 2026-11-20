@@ -26,7 +26,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
-  enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring, Epigraph };
+  enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring, Epigraph, Debug };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -135,6 +135,22 @@ class Client {
   void draw_shop();
   void draw_help();
   void draw_menu();
+  // the debug and testing menu (debug.cpp)
+  int dbg_tab_ = 0, dbg_scroll_ = 0, bug_next_ = 1;
+  bool typing_ = false, dbg_skip_ = false, dbg_pending_ = false, tests_loaded_ = false;
+  std::string note_, note_test_, dbg_msg_;
+  std::map<std::string, int> tests_;  // 1 ok, 2 a bug
+  std::vector<std::string> test_items() const;
+  void load_tests();
+  void save_tests();
+  void open_debug();
+  void close_debug();
+  void debug_tab(int t);
+  void debug_key(SDL_Keycode k);
+  void debug_tool(int i);
+  std::string bug_context() const;
+  void save_bug();
+  void draw_debug();
   void draw_ring();
   void draw_end();
   // a zone's book fragment, shown once when it is first entered; each zone keeps a bag so all five come before one again

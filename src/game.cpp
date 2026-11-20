@@ -61,6 +61,7 @@ json cells_json(const std::vector<P>& cs) { json a = json::array(); for (auto c 
 Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, pyre::FROST_MAX)), rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
   // for screenshots and tests: PYREHEART_ZONE=vaults starts the dive in that zone (by the first way there), and
   // PYREHEART_BOSS=1 on its boss's map, next to it; PYREHEART_ROUTE=cistern,vaults,prison picks the ways a whole dive takes
+  this->seed = std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed;
   route = {0};
   auto zone_of = [](const std::string& k) { for (int i = 0; i < ZONES; ++i) if (ACTS[i].key == k) return i; return -1; };
   if (const char* z = std::getenv("PYREHEART_ZONE"); z && zone_of(z) > 0) {
@@ -79,6 +80,10 @@ Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, pyre::FROST_
     for (size_t i = 0; i + 1 < route.size(); ++i) depth += ACTS[route[i]].floors;
   }
   if (std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_REST")) { zfloor = ACTS[route.back()].floors - 1; depth += zfloor; }
+  else if (const char* zf = std::getenv("PYREHEART_ZFLOOR")) {  // which of the zone's maps, from 0: to look at a reported map again
+    zfloor = std::clamp(std::atoi(zf), 0, ACTS[route.back()].floors - 1);
+    depth += zfloor;
+  }
   floor = make_floor(depth, std::getenv("PYREHEART_REST") != nullptr);  // PYREHEART_REST=1: the waystation after it
   // a first look at Charnfen, drawn by hand: PYREHEART_TOWN=ref/charnfen.txt
   if (const char* town = std::getenv("PYREHEART_TOWN")) {
@@ -328,7 +333,20 @@ void Game::rescale() {
 }
 
 // ------------------------------------------------------------------ the floors
+// Each map is made from its own seed: the dive's seed, the zone and which of the zone's maps it is. So a map someone
+// reports can be made again exactly (PYREHEART_SEED, PYREHEART_ZONE, PYREHEART_ZFLOOR), whatever happened before it.
 std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
+  uint64_t fs = seed ^ (uint64_t(route.back() + 1) * 0x9E3779B97F4A7C15ull) ^ (uint64_t(zfloor + 1) * 0xC2B2AE3D27D4EB4Full) ^ (rest ? 0x165667B19E3779F9ull : 0);
+  fs ^= fs >> 31; fs *= 0xBF58476D1CE4E5B9ull; fs ^= fs >> 29;
+  Rng keep = rnd;
+  rnd = Rng(fs);
+  auto out = make_floor_from(d, rest);
+  rnd = keep;
+  rnd.g.discard(1);
+  return out;
+}
+
+std::unique_ptr<Floor> Game::make_floor_from(int d, bool rest) {
   auto f = std::make_unique<Floor>();
   f->depth = d; f->act = route.back(); f->rest = rest; f->id = floor_ids_++;
   Floor* old = floor.release();
@@ -678,6 +696,32 @@ void Game::next_floor() {
   look();
 }
 
+// ------------------------------------------------------------------ the debug menu's tools, for testing
+void Game::debug(Hero& h, const std::string& w) {
+  if (w == "heal") {
+    Stats st = stats(h);
+    h.hp = st.maxhp; h.mana = st.maxmana; h.poison = 0; h.dead = false;
+    h.say("[debug] Healed in full.", 0x80C0FF);
+  } else if (w == "god") {
+    h.god = !h.god;
+    h.say(std::string("[debug] Harm ") + (h.god ? "off: nothing hurts you." : "on again."), 0x80C0FF);
+  } else if (w == "reveal") {
+    for (int i = 0; i < W * H; ++i) h.seen[i] = 1;
+    ++floor->version;
+    h.say("[debug] The whole map is shown.", 0x80C0FF);
+  } else if (w == "level") {
+    int was = h.lvl;
+    for (int i = 0; i < 2000 && h.lvl == was; ++i) gain_xp(h, 40);
+  } else if (w == "gold") {
+    h.gold += 500;
+    h.say("[debug] 500 gold.", 0x80C0FF);
+  } else if (w == "next" || w == "boss") {
+    if (w == "boss" && !floor->rest) zfloor = std::max(zfloor, ACTS[route.back()].floors - 2);
+    say_all("[debug] On to the next map.", 0x80C0FF);
+    next_floor();
+  }
+}
+
 // ------------------------------------------------------------------ a step of the world
 bool Game::free_action(Hero& h, const json& a) {
   std::string t = a.value("t", "");
@@ -686,6 +730,7 @@ bool Game::free_action(Hero& h, const json& a) {
   if (t == "buyp") { buy_potion(h, a.value("k", "")); return true; }
   if (t == "sell") { sell(h, a.value("id", 0)); return true; }
   if (t == "close") { h.shopping = false; return true; }
+  if (t == "debug") { debug(h, a.value("w", "")); return true; }
   return false;
 }
 
@@ -1967,7 +2012,7 @@ void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
 }
 
 void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
-  if (h.dead) return;
+  if (h.dead || h.god) return;
   Stats st = stats(h);
   int dmg = dmg0;
   if (kind == "fire") dmg = rnd_i(dmg * (1 - st.res_f / 100.0));

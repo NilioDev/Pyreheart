@@ -73,6 +73,7 @@ struct Hero {
   std::map<std::string, int> perks;
   std::vector<std::vector<std::string>> perk_choices;
   bool dead = false, gone = false, away = false, drank = false, shopping = false;
+  bool god = false;  // the debug menu's: takes no harm
   int shield = 0, poison = 0, poison_dmg = 0, numb = 0, kills = 0;
   int focus = 0, standfast = 0, combo_id = 0, combo = 0;  // ranger's focus, warrior's Stand Fast, duelist's run of blows
   // what the foes' tricks leave on a hero, in turns: held fast, dazed (no turn at all), armour split, branded (hurts more),
@@ -197,6 +198,7 @@ const SkillDef& skill_def(const std::string& key);
 class Game {
  public:
   explicit Game(uint64_t seed, int frost = 0);
+  uint64_t seed = 0;  // the dive's seed: each map is made from it, its zone and which of the zone's maps it is
   int frost = 0;                  // the Frost level: 0 the game as it is, each one up harder foes and better loot
   std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)
   bool landing_ = false;           // a blow seen coming is landing (for Mantle)
@@ -238,6 +240,8 @@ class Game {
   std::vector<int> dist_;
 
   std::unique_ptr<Floor> make_floor(int depth, bool rest);
+  std::unique_ptr<Floor> make_floor_from(int d, bool rest);
+  void debug(Hero& h, const std::string& what);
   void build_waystation(Floor& f);
   void build_rooms(Floor& fl, int d, bool boss_floor);
   void furnish(Floor& fl, const std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>> treasure);
