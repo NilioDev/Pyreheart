@@ -1101,18 +1101,20 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
         switch (kind) {
           case SLEEP:
             // rows of bunks, a soldier's chest at the foot of each, some still with their sleeper's bones
-            for (int y = y0 + 1; y <= y1 - 1; y += 3)
+            // along the long walls only, two deep, so the middle of the hall stays open to fight in
+            for (int y : {y0, y0 + 2, y1 - 2, y1})
               for (int x = x0 + 1; x <= x1 - 1; x += 3) {
                 if (std::abs(x - mx) <= 1) continue;
                 m.put(x, y, BUNK); m.put(x + 1 <= x1 - 1 && std::abs(x + 1 - mx) > 1 ? x + 1 : x, y, BUNK);
-                if (y + 1 <= y1) lay(x, y + 1, CRATE);
+                if (y == y0 + 2 || y == y1 - 2) lay(x, y + (y == y0 + 2 ? 1 : -1), CRATE);
               }
             for (int k = 0; k < 4; ++k) lay(rx(), ry(), k % 2 ? BONES : SKULL);
             for (int k = 0; k < 2; ++k) lay(rx(), ry(), TANKARD);
             break;
           case MESS:
             // long tables with benches at the ends, stools knocked over, tankards, kegs, a cold hearth on the far wall
-            for (int y = y0 + 2; y <= y1 - 2; y += 3) {
+            // two long tables, near the walls, so the middle stays open
+            for (int y : {y0 + 2, y1 - 2}) {
               for (int x = x0 + 3; x <= x1 - 3; ++x) if (std::abs(x - mx) > 1) m.put(x, y, TABLE);
               for (int x : {x0 + 2, x1 - 2}) m.put(x, y, BENCH);
             }
@@ -1247,17 +1249,20 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
           m.rect(x - 1, y - 1, x + 1, y + 1, FLOOR);
         }
       }
-      // the pit, the chains coiled from it, the torn vault door at its edge
-      m.disc(c, 3.2, CHASM);
+      // the wardens' post at the heart of the gaol: a ring of pillars, the watch fire in the middle, the open floor
+      // round it to fight on
       for (int k = 0; k < 8; ++k) {
-        double a = k * 3.14159265 / 4 + .3;
-        for (double r = 4; r <= 7; r += 1) m.put(c.x + int(std::lround(std::cos(a) * r * 1.3)), c.y + int(std::lround(std::sin(a) * r)), CHAIN);
+        double a = k * 3.14159265 / 4 + .39;
+        m.put(c.x + int(std::lround(std::cos(a) * 5.6)), c.y + int(std::lround(std::sin(a) * 4.6)), PILLAR);
       }
-      m.put(c.x - 1, c.y + 4, OPENVAULT); m.put(c.x, c.y + 4, OPENVAULT); m.put(c.x + 1, c.y + 4, OPENVAULT);
+      m.put(c.x, c.y, BRAZIER);
       // the wings: west and east long, north and south short, each a corridor with barred cells on both sides
       struct Wing { int dx, dy, len; };
       std::vector<Wing> wings = {{-1, 0, c.x - 21 - 10}, {1, 0, w - 1 - (c.x + 21) - 10}, {0, -1, c.y - 14 - 9}, {0, 1, h - 1 - (c.y + 14) - 9}};
       std::vector<P> guards;
+      struct Box { int x0, y0, x1, y1; };
+      std::vector<Box> ends;
+      std::vector<std::vector<P>> cells_in;
       for (auto& wg : wings) {
         P s{c.x + wg.dx * (wg.dx ? 19 : 0), c.y + wg.dy * (wg.dy ? 13 : 0)};
         P e{s.x + wg.dx * wg.len, s.y + wg.dy * wg.len};
@@ -1280,12 +1285,14 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
             bool broken = rnd.real() < .25;
             m.put(front.x, front.y, broken ? RUBBLE : DOOR);
             m.rooms.push_back(inside);
+            cells_in.push_back(inside);
             if (broken) m.treasure.push_back(inside);
           }
         }
         // the guard room at the end
         P g{e.x + wg.dx * 5, e.y + wg.dy * 4};
-        m.room(g.x - 4, g.y - 3, g.x + 4, g.y + 3);
+        m.room(g.x - 5, g.y - 4, g.x + 5, g.y + 4);  // big enough to fight in
+        ends.push_back({g.x - 5, g.y - 4, g.x + 5, g.y + 4});
         m.way(e, g, 3);
         guards.push_back(g);
       }
@@ -1297,7 +1304,75 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       m.way(ge, {ge.x, gs.y}, 2); m.way({ge.x, gs.y}, gs, 2);
       m.way(gs, gw, 2);
       up = guards[0];
-      down = {c.x, c.y - 5};
+      down = {c.x, c.y - 3};
+      fl.up = up; fl.down = down;
+      // ---- the dressing: the dwarves' own gaol, left locked when the ash came
+      auto lay = [&](int x, int y, int t) {
+        if (!m.in(x, y) || m.at(x, y) != FLOOR || cheb(x, y, up.x, up.y) <= 1 || cheb(x, y, down.x, down.y) <= 1) return false;
+        if (!blocks(t)) { m.put(x, y, t); return true; }
+        return m.place(x, y, t);
+      };
+      auto on_wall = [&](int x, int y, int t) { if (m.at(x, y) == WALL) { m.put(x, y, t); return true; } return false; };
+      // the wardens' post: a table, the racks, keys on the pillars' side
+      lay(c.x - 2, c.y + 2, TABLE); lay(c.x + 2, c.y + 2, TABLE); lay(c.x - 6, c.y - 1, RACK); lay(c.x + 6, c.y - 1, RACK);
+      // the cells: the prisoners nobody came to free, still in their irons; some cells an oubliette with a grate,
+      // some flooded where the drains backed up
+      for (auto& cl : cells_in) {
+        P mid = cl[cl.size() / 2];
+        double r = rnd.real();
+        if (r < .45) { lay(mid.x, mid.y, rnd.coin() ? BONES : SKULL); lay(cl[rnd.below(int(cl.size()))].x, cl[rnd.below(int(cl.size()))].y, CHAIN); }
+        else if (r < .6) m.put(mid.x, mid.y, GRATE);
+        else if (r < .72) for (auto q : cl) if (rnd.real() < .6 && m.at(q.x, q.y) == FLOOR) m.put(q.x, q.y, SHALLOW);
+      }
+      // the end rooms: the judgement hall, the torture chamber, the gaoler's room, the stone-breaking yard, the
+      // execution yard; furniture along the walls, the floor left open
+      std::vector<int> themes = {0, 1, 2, 3, 4};
+      rnd.shuffle(themes);
+      for (size_t k = 0; k < ends.size(); ++k) {
+        auto b = ends[k];
+        int cxr = (b.x0 + b.x1) / 2;
+        auto rx = [&]() { return rnd.range(b.x0, b.x1); };
+        auto edge = [&]() {  // a cell along the room's walls
+          int s2 = rnd.below(4);
+          return s2 == 0 ? P{rx(), b.y0} : s2 == 1 ? P{rx(), b.y1} : s2 == 2 ? P{b.x0, rnd.range(b.y0, b.y1)} : P{b.x1, rnd.range(b.y0, b.y1)};
+        };
+        switch (themes[k]) {
+          case 0:  // the judgement hall: the laws cut in the wall, the judge's seat behind his bench, benches, the dock
+            for (int x = b.x0; x <= b.x1; x += 2) on_wall(x, b.y0 - 1, LAWS);
+            lay(cxr, b.y0, JUDGESEAT); lay(cxr - 1, b.y0 + 1, STONEWORK); lay(cxr, b.y0 + 1, STONEWORK); lay(cxr + 1, b.y0 + 1, STONEWORK);
+            for (int x = b.x0 + 1; x <= b.x0 + 3; ++x) { lay(x, b.y1 - 1, BENCH); lay(x + 6, b.y1 - 1, BENCH); }
+            lay(b.x1, b.y0 + 3, BARS); lay(b.x1 - 1, b.y0 + 3, BARS); lay(b.x1, b.y0 + 5, BARS); lay(b.x1 - 1, b.y0 + 5, BARS);
+            break;
+          case 1:  // the torture chamber: the rack, iron maidens, hooks on chains, the brazier with its irons
+            lay(b.x0 + 1, b.y0 + 1, TORTURERACK); lay(b.x0 + 2, b.y0 + 1, TORTURERACK); lay(b.x0 + 3, b.y0 + 1, TORTURERACK);
+            lay(b.x1, b.y0, MAIDEN); lay(b.x1, b.y1, MAIDEN); lay(b.x0, b.y1, MAIDEN);
+            lay(b.x1 - 2, b.y1, BRAZIER); lay(b.x1 - 3, b.y1, TONGS);
+            for (int j = 0; j < 4; ++j) { P e2 = edge(); lay(e2.x, e2.y, HOOK); }
+            for (int j = 0; j < 3; ++j) lay(rx(), rnd.range(b.y0, b.y1), STAIN);
+            break;
+          case 2:  // the gaoler's room: keys on their hooks, his table and the tally-book, a candle, a rack, a bunk
+            for (int x = b.x0 + 1; x <= b.x0 + 5; x += 2) on_wall(x, b.y0 - 1, KEYS);
+            lay(b.x1, b.y0, TABLE); lay(b.x1 - 1, b.y0, TABLE); lay(b.x1, b.y0 + 1, CANDLE); lay(b.x1 - 1, b.y0 + 1, LEDGER);
+            lay(b.x0, b.y1, BUNK); lay(b.x0 + 1, b.y1, BUNK); lay(b.x1, b.y1, RACK);
+            break;
+          case 3:  // the stone-breaking yard: heaps of broken stone along the walls, hammers, chains to rings, a cart
+            for (int j = 0; j < 7; ++j) { P e2 = edge(); lay(e2.x, e2.y, HEAP); }
+            for (int j = 0; j < 4; ++j) lay(rx(), rnd.range(b.y0, b.y1), CHAIN);
+            for (int j = 0; j < 3; ++j) lay(rx(), rnd.range(b.y0, b.y1), HAMMER);
+            lay(rx(), b.y1, BARROW);
+            lay(rx(), rnd.range(b.y0, b.y1), BONES);
+            break;
+          default:  // the execution yard: the gallows along the far wall, the headsman's block, an old stain
+            for (int x = b.x0 + 1; x <= b.x0 + 4; ++x) lay(x, b.y0, GALLOWS);
+            for (int x = b.x1 - 4; x <= b.x1 - 1; ++x) lay(x, b.y0, GALLOWS);
+            lay(cxr, (b.y0 + b.y1) / 2 + 1, BLOCK); lay(cxr - 1, (b.y0 + b.y1) / 2 + 2, STAIN); lay(cxr + 1, (b.y0 + b.y1) / 2 + 2, STAIN);
+            lay(rx(), b.y1, SKULL);
+            break;
+        }
+      }
+      // the corridors and the ring: chains slung overhead now and then, an old stain, a dropped chain
+      for (int k = 0; k < 14; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), k % 3 ? SLUNG : CHAIN);
+      for (int k = 0; k < 6; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), k % 2 ? STAIN : BONES);
 
     } else if (act == SANCTUM) {
       // ---------------------------------------------------------------- the Sanctum: nave, chapels, the empty altar

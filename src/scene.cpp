@@ -18,6 +18,7 @@ using namespace data;
 // q1 the halls shuddering now and then (all zones but the Caves and the Deep, which have their own);
 // v1 ash seeping under the Vaults' doors, v2 parchment flakes off the scroll drifts;
 // b1 soot puffing up under the Barracks' boots, b2 flakes off the banners' tatters, b3 a war-drum far off;
+// p1 a cell door rattling or chains clinking in the Prison;
 // k1 the City's ash fall, k3 the ancestors weeping soot, k4 the air shafts' breath, k5 shadows at the shutters
 // for the mock-ups: PYREHEART_FXPERIOD=4 makes the rare things (the Crypt's ghosts, the fire flaring in Charnfen) come every 4 s
 double fx_period(double p) {
@@ -255,6 +256,18 @@ void Client::draw_tiles() {
       log_.push_back({"A war-drum booms, far off.", 0xA0A0A0});
     }
   }
+  // the Prison: now and then something rattles a cell door, or chains clink somewhere in the dark
+  if (!rest && actn == PRISON && zone_fx("p1") && !s.value("town", false)) {
+    static const char* every = SDL_getenv("PYREHEART_RATTLE");  // for the mock-ups: every n seconds
+    if (rattle_next_ < 0) rattle_next_ = tt + (every ? 1.0 : 20 + nz(int(tt) % 983) * 25);
+    if (tt >= rattle_next_) {
+      rattle_t_ = tt;
+      rattle_door_ = !rattle_door_;
+      rattle_next_ = tt + (every ? std::atof(every) : 30 + nz(int(tt * 3) % 983) * 40);
+      log_.push_back({rattle_door_ ? "Something rattles a cell door." : "Chains clink somewhere in the dark.", 0xA0A0A0});
+    }
+  }
+  double rattle = actn == PRISON && tt - rattle_t_ < 1.6 ? 1 - (tt - rattle_t_) / 1.6 : 0;
   double breath = actn == 3 && ev_age < 3.5 ? std::sin(ev_age / 3.5 * PI) : 0;  // the Deep: the lava swells and glows
 
   // how much of a window's light falls on a cell, and in what colour
@@ -380,6 +393,14 @@ void Client::draw_tiles() {
         // a rune of binding: the curse still holds, and the rune breathes a cold violet
         double g = .5 + .5 * std::sin(tt * .9 + x);
         pool(x, y, 1.8, base + .12 * g, .5, true);
+      } else if (actn == PRISON && t == MAIDEN && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'J', sd});  // dark drops out of its seams
+      } else if (actn == PRISON && t == BRAZIER && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'g', sd});  // smoke hanging low over the irons
+      } else if (actn == PRISON && t == FLOOR && vis[i] == '1' && hash(x, y, 33) % 71 == 0) {
+        emits_.push_back({float(x), float(y), 'd', sd});  // dust in the torchlight
+      } else if (actn == PRISON && t == SHALLOW && vis[i] == '1' && hash(x, y, 34) % 5 == 0) {
+        emits_.push_back({float(x), float(y), 'J', sd + 7777});  // water dripping into the flooded cells
       } else if (actn == BARRACKS && t == HANGING && vis[i] == '1' && zone_fx("b2")) {
         emits_.push_back({float(x), float(y), 'F', sd});  // black flakes coming off a banner's tatters
       } else if (actn == BARRACKS && t == FLOOR && vis[i] == '1' && hash(x, y, 33) % 71 == 0) {
@@ -591,6 +612,10 @@ void Client::draw_tiles() {
             if (actn == CISTERN && wet(tile(x, y + 1)) && !wet(tile(x, y - 1))) { ch = 0x2584; fg = 0x4A5450; bg = 0x1C2224; }  // the curb of a channel
             else if (actn == CISTERN && wet(tile(x, y - 1)) && !wet(tile(x, y + 1))) { ch = 0x2580; fg = 0x4A5450; bg = 0x1C2224; }
             else if (actn == CISTERN && noise(x, y, 4, 9) > .64) { bg = mixc(bg, 0x10202A, .7); ch = ' '; }  // a puddle
+            else if (actn == PRISON && tile(x, y - 1) == GALLOWS && hh % 2) {
+              double sw = std::sin(tt * .8 + x);  // a rope, swinging a little
+              ch = sw < -.6 ? '/' : sw > .6 ? '\\' : 0xA6; fg = 0x8A7A5A;
+            }
             else if (actn == BARRACKS && tile(x, y - 1) == HANGING && blocks(tile(x, y - 2))) {
               // the tatters of the banner above, swinging in a draught
               double sw = std::sin(tt * 1.3 + x * .7) + .4 * std::sin(tt * 2.9 + x);
@@ -819,7 +844,11 @@ void Client::draw_tiles() {
           fg = 0x3A4A48;
           break;
         }
-        case GRATE: bg = 0x0E100E; ch = '#'; fg = 0x5A5A60; break;
+        case GRATE:
+          bg = 0x0E100E; ch = '#'; fg = 0x5A5A60;
+          // an oubliette in the Prison: now and then a pale hand at the grate
+          if (actn == PRISON && std::fmod(tt * .08 + (hh % 100) / 100.0, 1.0) < .05) fg = 0xD8CCB8;
+          break;
         case CHASM: {
           // the floor falls away into the dark; its lip catches the light
           bg = 0x04050A; ch = ' ';
@@ -912,7 +941,12 @@ void Client::draw_tiles() {
           break;
         }
         case SLIME: bg = mixc(floor_bg(), 0x1A2416, .5); break;
-        case DOOR: case OPEN: bg = floor_bg(); keep = true; break;
+        case DOOR: case OPEN:
+          bg = floor_bg(); keep = true;
+          // the cell door something rattles
+          if (t == DOOR && rattle > 0 && rattle_door_ && (tile(x - 1, y) == BARS || tile(x, y - 1) == BARS) && hash(x, y, int(rattle_t_)) % 4 == 0 && int(tt * 18) % 2)
+            { fg = 0xE0D0B8; bright = true; }
+          break;
         case STAIRS: case UPSTAIRS: case CHEST: case OPENCHEST: case SHRINE: case USED: case FOUNTAIN:
           bg = floor_bg(); keep = true; break;
         case ORE: {
@@ -982,6 +1016,22 @@ void Client::draw_tiles() {
         }
         case BELLOWS: ch = tile(x, y + 1) == BELLOWS ? 0x2584 : 0x2580; bg = 0x161210; break;
         case SLAGPIT: ch = hh % 3 ? 0x2591 : 0x2592; fg = mixc(0x4A4440, 0x625A54, (hh % 5) / 5.0); bg = 0x1A1714; break;
+        case HOOK:
+          if (actn != PRISON) { bg = floor_bg(); break; }
+          { // a hook on its chain, swinging; harder while the chains clink
+            double sw = std::sin(tt * (1.1 + 3 * rattle * !rattle_door_) + x) * (1 + rattle * !rattle_door_);
+            ch = sw < -.5 ? '/' : sw > .5 ? '\\' : 0xA6; bg = floor_bg();
+          }
+          break;
+        case LAWS: bg = 0x22222A; break;
+        case KEYS: bg = 0x1A1A20; if (rattle > 0 && !rattle_door_ && int(tt * 16 + x) % 2) { fg = 0xE0C880; bright = true; } break;
+        case JUDGESEAT: case TORTURERACK: case BLOCK: bg = floor_bg(); break;
+        case MAIDEN: bg = 0x1E1614; break;
+        case GALLOWS: {
+          bool l = tile(x - 1, y) == GALLOWS, r = tile(x + 1, y) == GALLOWS;
+          ch = l && r ? 0x2500 : r ? 0x250C : l ? 0x2510 : 0x393; bg = floor_bg();
+          break;
+        }
         case SLUNG: ch = (x + y) % 2 ? '~' : '-'; fg = (x + y) % 2 ? 0x9A9AA4 : 0x7A7A84; bg = floor_bg(); break;
         case STACK: {
           bool edge = false;
@@ -1549,6 +1599,15 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           dot(x, y, mixc(0xA8A094, 0x3A3630, ph), .7 * (1 - ph));
         }
         break;
+      case 'J': {
+        // a drop falling from a seam (an iron maiden's: dark red) or from the ceiling into the water, and its splash
+        bool water = sd >= 7777;
+        double per = 2.2 + nz(sd) * 2, ph = std::fmod(tt / per + nz(sd + 3), 1.0);
+        double x = ex + .3 + nz(sd + 1) * .4;
+        if (ph < .3) dot(x, ey + (water ? -1.2 + ph / .3 * 1.6 : .8 + ph / .3 * .6), water ? 0x6A7A8A : 0x7A1410, .9);
+        else if (ph < .42) { double k = (ph - .3) / .12; for (int d = -1; d <= 1; d += 2) dot(x + d * k * .35, ey + (water ? .45 : 1.4) - k * .1, water ? 0x8A9AAA : 0x4A0C0A, .7 * (1 - k)); }
+        break;
+      }
       case 'F':
         // black flakes of banner cloth coming off the tatters, drifting down and settling
         for (int j = 0; j < 3; ++j) {
