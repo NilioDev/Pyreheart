@@ -293,17 +293,16 @@ void Client::apply(const json& s) {
   for (auto& f : s["fx"]) fx_.push_back({f, t});
   if (s["turn"].get<int>() != sent_turn_) { waiting_ = false; ready_.clear(); }
   bool was_shopping = snap_.is_object() && snap_["me"].value("shopping", false);
-  if (fl != epi_floor_ && !s.value("rest", false) && layout_ != Layout::Watch && !SDL_getenv("PYREHEART_WHOLE")) {
-    // the first map of a zone opens with one of its book fragments; the dive opens with Charnfen's
+  bool town = s.value("town", false);
+  if (fl != epi_floor_ && (town || !s.value("rest", false)) && layout_ != Layout::Watch && !SDL_getenv("PYREHEART_WHOLE")) {
+    // the first map of a zone opens with one of its book fragments; the dive opens in Charnfen with Charnfen's
     bool first = epi_floor_ < 0;
     epi_floor_ = fl;
     int act = s.value("act", 0), zf = s.value("zfloor", 0);
     bool taken_up = first && s["turn"].get<int>() > 0;  // a dive taken up again: no fragment
     if (!taken_up) {
-      if (s.value("depth", 1) == 1) {
-        queue_epigraph("charnfen");
-        if (data::ACTS[act].floors == 1) queue_epigraph(data::ACTS[act].key);
-      } else if (zf == 0 || (act == 0 && zf == 1)) queue_epigraph(data::ACTS[act].key);
+      if (town) queue_epigraph("charnfen");
+      else if (zf == 0) queue_epigraph(data::ACTS[act].key);
     }
   }
   claim_sparks(s);

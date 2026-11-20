@@ -127,7 +127,8 @@ Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume, in
     game_.fx.clear();
     for (auto& [id, h] : game_.heroes) {
       h->log.clear();
-      h->say("You take up the dive again, on floor " + std::to_string(game_.depth) + ".", 0xD2B48C);
+      h->say(game_.depth == 0 ? std::string("You take up the dive again, in Charnfen.")
+                              : "You take up the dive again, on floor " + std::to_string(game_.depth) + ".", 0xD2B48C);
     }
     if (game_.state != "play" || !resume_pid_) { resume_pid_ = 0; finished(); }
   } else if (!journal_.empty()) {
