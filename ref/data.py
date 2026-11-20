@@ -14,7 +14,8 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON, \
     PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL, \
     HAMMER, TONGS, STOOL, APRON, BUCKET, STAIN, TANKARD, BLADE, LADLE, SHOVEL, ARM, SKULL, SLUNG, HOOK, TROUGH, MOULD, CAST, SPILL, WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, \
-    DRIFT, MARBLE, MOSAIC, DRYBATH, STEP, GOLDCRUST, BRIDGE, SCROLL, AWNING, GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL = range(187)
+    DRIFT, MARBLE, MOSAIC, DRYBATH, STEP, GOLDCRUST, BRIDGE, SCROLL, AWNING, GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL, \
+    GOLDHAND, COINHEAP, CHESTWRECK, FALLSHELF, SCROLLDRIFT, MELTBAR, TAPESTRY, CROWN, TABLET, SCALES, LEDGER, CASE, GEM, INGOTS, MOUND, BINDRUNE, INSCRIPTION = range(204)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -215,6 +216,24 @@ TILES = [
     ('▓', (168, 138, 64), False, False, 'a great disc of gold, sagging where it melted'),
     ('☼', (224, 192, 112), False, False, 'a golden image of the Pyreheart'),
     ('▓', (112, 104, 94), False, False, 'the wall of a house'),
+    # the Vaults: gold fused to the floor, shattered chests, ash-choked archives, runes of binding round the sealed doors
+    ('%', (224, 216, 196), True, True, 'the bones of a hand, fused into the gold'),
+    ('▲', (184, 144, 56), False, True, 'a heap of tarnished coins'),
+    ('□', (122, 90, 58), False, True, 'a shattered chest'),
+    ('/', (106, 74, 48), False, True, 'a fallen shelf'),
+    ('≈', (138, 128, 112), True, True, 'scrolls under a drift of ash'),
+    ('┘', (106, 74, 48), True, True, 'a bar half melted away'),
+    ('▒', (90, 26, 26), False, False, 'a burned velvet tapestry'),
+    ('╦', (200, 160, 64), False, True, 'a crown on its pedestal'),
+    ('▬', (138, 132, 120), False, True, 'a treaty, cut in stone'),
+    ('Φ', (160, 138, 80), False, True, 'brass scales'),
+    ('≡', (138, 106, 68), True, True, 'a ledger, dropped'),
+    ('□', (138, 144, 152), False, True, 'a smashed glass case'),
+    ('♦', (168, 200, 224), True, True, 'a cut gem in the dust'),
+    ('▬', (200, 160, 64), False, True, 'a stack of gold ingots'),
+    ('▲', (200, 152, 56), False, True, 'a mound of fused gold and silver'),
+    ('Σ', (106, 74, 138), False, False, 'a rune of binding cut in the wall'),
+    ('≡', (180, 160, 112), False, False, 'an inscription over the gate'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
@@ -224,7 +243,8 @@ BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, C
                SMITH, DIGGER, GUARD, BARRICADE, HEAP, BEAM, ORE, TIMBER, COCOON,
                STALAG, BURROW, TOTEM, CAMPFIRE, CRYSTAL,
                WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, \
-               GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL}
+               GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL,
+               COINHEAP, CHESTWRECK, FALLSHELF, TAPESTRY, CROWN, TABLET, SCALES, CASE, INGOTS, MOUND, BINDRUNE, INSCRIPTION}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:

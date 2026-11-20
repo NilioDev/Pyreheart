@@ -15,7 +15,9 @@ using namespace data;
 // the newer air of the other zones, all on by default; one by one with PYREHEART_ZONEFX=c2,d2, off for none.
 // c2 the Crypt's icy ghosts; d1 heat over the lava, d2 the Deep breathing; s1 the light
 // the Cistern's water throws back, s2 bubbles of gas in the sludge; t2 gusts of wind in Charnfen, t3 its fire flaring;
-// k1 the City's ash fall, k2 the city shuddering, k3 the ancestors weeping soot, k4 the air shafts' breath, k5 shadows at the shutters
+// q1 the halls shuddering now and then (all zones but the Caves and the Deep, which have their own);
+// v1 ash seeping under the Vaults' doors, v2 parchment flakes off the scroll drifts;
+// k1 the City's ash fall, k3 the ancestors weeping soot, k4 the air shafts' breath, k5 shadows at the shutters
 // for the mock-ups: PYREHEART_FXPERIOD=4 makes the rare things (the Crypt's ghosts, the fire flaring in Charnfen) come every 4 s
 double fx_period(double p) {
   static const char* e = SDL_getenv("PYREHEART_FXPERIOD");
@@ -224,8 +226,13 @@ void Client::draw_tiles() {
   // now and then the zone stirs as a whole: the mountain groans (Caves), a cold draught goes through the Crypt, the
   // Deep breathes, water roars behind the Cistern's walls
   double groan = 0, ev_age = 99;
-  const char* ev_text = actn == 1 && cave_fx(3) ? "The mountain groans." : actn == 3 && zone_fx("d2") ? "The Deep breathes."
-                      : actn == CITY && zone_fx("k2") ? "The city shudders." : nullptr;
+  // everywhere else the halls shudder: the light flickers and dust, grit and stones come down
+  static const char* SHUDDER[] = {"The crypt shudders.", nullptr, "The forge shudders.", nullptr, "The cistern shudders.",
+                                  "The city shudders.", "The vaults shudder.", "The fortress shudders.", "The prison shudders.",
+                                  "The temple shudders."};
+  const char* ev_text = s.value("town", false) ? nullptr
+                      : actn == 1 && cave_fx(3) ? "The mountain groans." : actn == 3 && zone_fx("d2") ? "The Deep breathes."
+                      : actn >= 0 && actn < 10 && zone_fx("q1") ? SHUDDER[actn] : nullptr;
   if (!rest && ev_text) {
     static const char* every = SDL_getenv("PYREHEART_GROAN") ? SDL_getenv("PYREHEART_GROAN") : SDL_getenv("PYREHEART_EVENT");  // for the mock-ups: every n seconds
     if (groan_next_ < 0) groan_next_ = tt + (every ? 1.5 : 40 + nz(int(tt) % 997) * 50);
@@ -235,7 +242,7 @@ void Client::draw_tiles() {
       log_.push_back({ev_text, 0xA0A0A0});
     }
     ev_age = tt - groan_t_;
-    if ((actn == 1 || actn == CITY) && ev_age < 2.6) groan = (1 - ev_age / 2.6) * (.5 + .5 * std::abs(std::sin(ev_age * 19)));
+    if (actn != 3 && ev_age < 2.6) groan = (1 - ev_age / 2.6) * (.5 + .5 * std::abs(std::sin(ev_age * 19)));
   }
   double breath = actn == 3 && ev_age < 3.5 ? std::sin(ev_age / 3.5 * PI) : 0;  // the Deep: the lava swells and glows
 
@@ -255,7 +262,7 @@ void Client::draw_tiles() {
 
   // the light: a dim base, pools round every flame, and each hero's own light
   static const bool whole_view = SDL_getenv("PYREHEART_WHOLE") != nullptr;  // a screenshot of the whole map
-  double base = rest ? .9 : whole_view ? .8 : .6;
+  double base = rest ? .9 : whole_view ? .8 : actn == VAULTS ? .46 : .6;  // the Vaults are pitch dark: only your own light
   std::vector<float> L(W * H, float(base)), warm(W * H, 0.f), cold(W * H, 0.f);
   std::vector<P> heaps;  // the Caves' fallen shafts, with grey daylight on them
   auto pool = [&](double cx, double cy, double r, double a, double w, bool cool = false) {
@@ -353,6 +360,17 @@ void Client::draw_tiles() {
         // the old embers: a little dull red light, a thin smoke, brighter while the draught blows
         if (hash(x, y, 31) % 3) pool(x, y, 2.4 + 1.5 * gust, base + .3 + .3 * gust, .7);
         if (vis[i] == '1' && hash(x, y, 32) % 3 == 0) emits_.push_back({float(x), float(y), 'g', sd});
+      } else if (actn == VAULTS && (t == VAULTDOOR || (t == DOOR && hash(x, y, 39) % 2 == 0))) {
+        if (vis[i] == '1' && zone_fx("v1")) emits_.push_back({float(x), float(y), 'V', sd});  // ash seeping in under the door
+      } else if (actn == VAULTS && t == SCROLLDRIFT && vis[i] == '1' && zone_fx("v2")) {
+        for (auto& hh2 : s["heroes"])
+          if (cheb(x, y, hh2["x"].get<int>(), hh2["y"].get<int>()) <= 4) { emits_.push_back({float(x), float(y), 'N', sd}); break; }
+      } else if (actn == VAULTS && t == BINDRUNE) {
+        // a rune of binding: the curse still holds, and the rune breathes a cold violet
+        double g = .5 + .5 * std::sin(tt * .9 + x);
+        pool(x, y, 1.8, base + .12 * g, .5, true);
+      } else if (actn == VAULTS && t == FLOOR && vis[i] == '1' && hash(x, y, 33) % 61 == 0) {
+        emits_.push_back({float(x), float(y), 'd', sd});  // dust hanging in the dark
       } else if (actn == CITY && t == POST) {
         // the ember left in the lantern's cage: a small red light, now and then a little brighter
         double fl2 = .5 + .5 * std::sin(tt * .7 + sd) * std::sin(tt * .23 + sd * 3);
@@ -809,7 +827,7 @@ void Client::draw_tiles() {
         }
         case COIN:
           bg = floor_bg(); keep = true;
-          if (actn == CITY && std::fmod(tt * .22 + (hh % 100) / 100.0, 1.0) < .035) { fg = 0xFFF0B0; bright = true; }  // it catches the light
+          if ((actn == CITY || actn == VAULTS) && std::fmod(tt * .22 + (hh % 100) / 100.0, 1.0) < .035) { fg = 0xFFF0B0; bright = true; }  // it catches the light
           break;
         case SHAFT: {
           bg = mixc(0x3A1404, 0x8A3408, .5 + .3 * std::sin(tt * 1.3 + hh % 5));
@@ -1035,6 +1053,31 @@ void Client::draw_tiles() {
         }
         case ANCESTOR: bg = 0x2A2622; break;
         case DEADHEAP: bg = 0x34322E; break;
+        case GOLDHAND: case COINHEAP: case MOUND: case INGOTS: case CROWN: case GEM: {
+          // gold and stones: dull in the dark, now and then catching the light
+          bg = t == GOLDHAND ? 0x3C2C10 : t == GEM || t == CROWN ? floor_bg() : 0x2A2010;
+          if (t == GEM) { static const int GC[] = {0x7A98B0, 0xA05050, 0x50A070, 0xA89850}; fg = GC[hh % 4]; }
+          if (t == MOUND) {
+            // the mound heaves now and then: something under it
+            double ph = std::fmod(tt / 7.0, 1.0);
+            if (ph < .07) { fg = mixc(fg, 0xFFE090, std::sin(ph / .07 * PI)); bright = true; }
+            if (hh % 4 == 0) fg = 0xA8A8B0;  // silver
+          }
+          if (std::fmod(tt * .2 + (hh % 100) / 100.0, 1.0) < .03) { fg = t == GEM ? mixc(fg, 0xFFFFFF, .7) : 0xFFF0B0; bright = true; }
+          break;
+        }
+        case CHESTWRECK: case FALLSHELF: case TABLET: case SCALES: case LEDGER: bg = floor_bg(); break;
+        case CASE: bg = 0x1C1E22; break;
+        case SCROLLDRIFT: bg = mixc(floor_bg(), 0x2A2622, .5); break;
+        case MELTBAR: bg = floor_bg(); ch = hh % 2 ? 0x2518 : 0x2510; break;
+        case TAPESTRY: bg = 0x180A0A; ch = hh % 4 == 0 ? 0x2591 : 0x2592; break;
+        case BINDRUNE: {
+          static const int RN[] = {0x3A3, 0x3A6, 0x3B4, 0x398};
+          double g = .5 + .5 * std::sin(tt * .9 + x);
+          bg = 0x14121A; ch = RN[(x + y) % 4]; fg = mixc(0x2A1E3A, 0x7A5AA0, g); bright = true;
+          break;
+        }
+        case INSCRIPTION: bg = 0x28221A; break;
         default: bg = floor_bg(); break;
       }
       if (forge && hot_.size() == size_t(W * H) && hot_[i] && !blocks(t)) {
@@ -1403,6 +1446,24 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           dot(x, y, mixc(0xB0A870, 0x2E2C22, ph), .7 * (1 - ph) * std::min(1.0, ph * 6), ph < .35 ? 1 : 2);
         }
         break;
+      case 'V':
+        // fine grey ash seeping in under a door or through its keyhole, creeping out over the floor both ways
+        for (int j = 0; j < 12; ++j) {
+          double ph = std::fmod(tt * .12 + j / 12.0 + nz(sd + j) * .3, 1.0);
+          double side = j % 2 ? 1 : -1;
+          double x = ex + .5 + (nz(sd * 3 + j) - .5) * 1.2 + (nz(sd + j * 5) - .5) * ph * 1.6, y = ey + .5 + side * (.4 + ph * 1.3);
+          if (!open_at(x, y) || blocks(tile_of(map[int(y) * W + int(x)]))) continue;
+          dot(x, y, mixc(0xA8A094, 0x3A3630, ph), .7 * (1 - ph));
+        }
+        break;
+      case 'N':
+        // black flakes of what was parchment, stirred up off the drift as you pass, sinking again
+        for (int j = 0; j < 4; ++j) {
+          double ph = std::fmod(tt * .35 + j / 4.0 + nz(sd + j), 1.0);
+          double x = ex + .5 + (nz(sd * 3 + j) - .5) * .9 + std::sin(tt * 3 + j + sd) * .25, y = ey + .7 - std::sin(ph * PI) * 1.1;
+          dot(x, y, j % 3 ? 0x141210 : 0x4A4440, .9 * std::sin(ph * PI));
+        }
+        break;
       case 'j':
         // embalming fumes: a sickly green breath seeping off the bier and creeping low
         for (int j = 0; j < 14; ++j) {
@@ -1601,19 +1662,19 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
       }
     }
   }
-  if (snap_.value("act", 0) == CITY && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
-    auto tl = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : tile_of(map[y * W + x]); };
-    if (zone_fx("k1"))
-      // the ash still comes down out of the dark like a slow grey snow
-      for (int j = 0; j < 170; ++j) {
-        double v = .45 + nz(j * 5) * .5, span = vh_ + 4, ph = std::fmod(tt * v / span + nz(j * 3), 1.0);
-        double x = camx_ + nz(j * 7) * vw_ + std::sin(tt * .5 + j) * .7, y = camy_ - 2 + ph * span;
-        if (!open_at(x, y)) continue;
-        int c = j % 4 == 0 ? 0x3A3632 : mixc(0x6A6660, 0xB0AAA2, nz(j * 11));
-        dot(x, y, c, .75 * std::min(1.0, std::min(ph, 1 - ph) * 12), j % 9 == 0 ? 2 : 1);
-      }
-    if (double age = tt - groan_t_; zone_fx("k2") && age < 2.6) {
-      // the city shudders: ash and plaster come down off every roof and cornice, a stone or a piece of carving among them
+  if (snap_.contains("ents"))
+    for (auto& e : snap_["ents"]) {
+      // a heap of gold that is not one: when it twitches, a coin slides off it
+      if (!e.value("hidden", false)) continue;
+      double ph = std::fmod(tt * .37 + e["id"].get<int>() * .61, 6.0);
+      if (ph > .6) continue;
+      double k = ph / .6, mx = e["x"].get<int>(), my = e["y"].get<int>();
+      if (!open_at(mx, my)) continue;
+      dot(mx + .5 + k * .9, my + .55 + k * k * .35, 0xFFD24A, 1 - k * .5, 2);
+    }
+  if (int ap = snap_.value("act", 0); ap != 1 && ap != 3 && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+    if (double age = tt - groan_t_; zone_fx("q1") && age < 2.6) {
+      // the halls shudder: dust and grit come down off every ceiling and cornice, a stone or a piece of carving among them
       for (int j = 0; j < 1800; ++j) {
         double st = nz(j * 5 + int(groan_t_)) * 1.2, ag = age - st;
         if (ag < 0 || ag > 1.2) continue;
@@ -1634,6 +1695,18 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         }
       }
     }
+  }
+  if (snap_.value("act", 0) == CITY && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+    auto tl = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : tile_of(map[y * W + x]); };
+    if (zone_fx("k1"))
+      // the ash still comes down out of the dark like a slow grey snow
+      for (int j = 0; j < 170; ++j) {
+        double v = .45 + nz(j * 5) * .5, span = vh_ + 4, ph = std::fmod(tt * v / span + nz(j * 3), 1.0);
+        double x = camx_ + nz(j * 7) * vw_ + std::sin(tt * .5 + j) * .7, y = camy_ - 2 + ph * span;
+        if (!open_at(x, y)) continue;
+        int c = j % 4 == 0 ? 0x3A3632 : mixc(0x6A6660, 0xB0AAA2, nz(j * 11));
+        dot(x, y, c, .75 * std::min(1.0, std::min(ph, 1 - ph) * 12), j % 9 == 0 ? 2 : 1);
+      }
     // ash puffs up round the feet of whoever wades through a drift
     if (zone_fx("k1")) {
       int hx = snap_["heroes"][0]["x"], hy = snap_["heroes"][0]["y"];

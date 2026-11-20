@@ -1169,7 +1169,8 @@ void Client::draw_map() {
           }
     int bg = -1;
     if (e.value("braced", false)) bg = 0x6A5A3A;  // its guard up
-    if (e.value("hidden", false) && std::fmod(now() * .37 + e["id"].get<int>() * .61, 6.0) < .12) col = 0xB89400;  // a twitch
+    if (e.value("hidden", false) && std::fmod(now() * .37 + e["id"].get<int>() * .61, 6.0) < .6)  // a twitch: the heap shivers
+      col = int(now() * 20) % 2 ? 0xB89400 : 0xFFE680;
     put(X, Y, e["ch"].get<int>(), col, bg);
     if (e.value("listen", false) && con_.in_bounds({X, Y - 1})) put(X, Y - 1, '?', 0xE0E0A0);
     if (e.value("asleep", false) && con_.in_bounds({X + 1, Y - 1})) {  // asleep: a z rising and fading over it

@@ -949,6 +949,8 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       for (int x = cx - 12; x <= cx + 12; x += 4) if (std::abs(x - cx) > 6) for (int y : {cy - 5, cy + 5}) m.put(x, y, PILLAR);
       // in each quarter a gallery, with vaults above and below it; the right half mirrors the left
       std::vector<P> vault_doors;
+      struct VRoom { int kind, a, b, y0, y1; P door; };
+      std::vector<VRoom> vrooms;
       for (int q = 0; q < 2; ++q) {
         int gy = q == 0 ? (3 + 3 + cy - 1) / 2 : (cy + 2 + h - 4) / 2;  // the gallery's row
         int band0 = q == 0 ? 6 : cy + 2, band1 = q == 0 ? cy - 2 : h - 5;
@@ -968,6 +970,7 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
               if (kind == 0) vault_doors.push_back({doorx, doory});
               if (kind == 1) for (int y = y0 + 1; y <= y1 - 1; y += 2) for (int x = a + 1; x <= b - 1; ++x) if (x != (a + b) / 2) m.put(x, y, BOOKS);
               if (kind == 0) { for (int k = 0; k < 5; ++k) m.put(rnd.range(a, b), rnd.range(y0, y1), COIN); m.treasure.push_back(m.rooms.back()); }
+              vrooms.push_back({kind, a, b, y0, y1, {doorx, doory}});
             }
           }
         }
@@ -975,6 +978,94 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       for (auto vd : vault_doors) fl.writings.erase(vd.y * W + vd.x);
       up = {4, h - 5};
       down = {cx, cy + 5};
+      fl.up = up; fl.down = down;
+      // ---- the dressing: what the night of ash left in the treasuries and archives
+      auto near_stairs = [&](int x, int y, int r) { return cheb(x, y, up.x, up.y) <= r || cheb(x, y, down.x, down.y) <= r; };
+      auto lay = [&](int x, int y, int t) {
+        if (!m.in(x, y) || near_stairs(x, y, 1) || m.at(x, y) != FLOOR) return false;
+        if (!blocks(t)) { m.put(x, y, t); return true; }
+        return m.place(x, y, t);
+      };
+      auto puddle = [&](int x, int y) {  // gold that ran and set, a hand's bones in it now and then
+        for (int k = 0; k < 4; ++k) lay(x + rnd.range(-1, 1), y + rnd.range(0, 1) * (k % 2), GOLDCRUST);
+        lay(x, y, GOLDCRUST);
+        if (rnd.real() < .5) { if (m.at(x, y) == GOLDCRUST) m.put(x, y, GOLDHAND); }
+      };
+      auto runes = [&](P dr) {  // runes of binding cut round a vault's door
+        for (int dx : {-2, -1, 1, 2}) if (m.at(dr.x + dx, dr.y) == WALL) m.put(dr.x + dx, dr.y, BINDRUNE);
+      };
+      std::vector<int> bag;
+      for (auto& r : vrooms) {
+        int a = r.a, b = r.b, y0 = r.y0, y1 = r.y1;
+        auto rx = [&]() { return rnd.range(a, b); };
+        auto ry = [&]() { return rnd.range(y0, y1); };
+        int kind = r.kind;
+        if (kind == 3) {  // a plain store: the regalia, a counting house, the gem store or a coin hall
+          if (bag.empty()) bag = {0, 1, 2, 3};
+          int k = rnd.below(int(bag.size()));
+          kind = 10 + bag[k];
+          bag.erase(bag.begin() + k);
+        }
+        if (kind == 0) {
+          runes(r.door);
+          for (int k = 0; k < 3; ++k) lay(rx(), ry(), COINHEAP);
+          puddle(rx(), ry());
+          lay(rx(), ry(), CHESTWRECK);
+        } else if (kind == 1) {
+          for (int y = y0; y <= y1; ++y) for (int x = a; x <= b; ++x) if (m.at(x, y) == BOOKS && rnd.real() < .25) m.put(x, y, FALLSHELF);
+          for (int k = 0; k < 7; ++k) lay(rx(), ry(), SCROLLDRIFT);
+          for (int k = 0; k < 3; ++k) lay(rx(), ry(), SCROLL);
+        } else if (kind == 2) {
+          int by = r.door.y;
+          for (int x = a; x <= b; ++x) if (m.at(x, by) == BARS && rnd.real() < .2) m.put(x, by, MELTBAR);
+          for (int k = 0; k < 3; ++k) lay(rx(), ry(), CHESTWRECK);
+          for (int k = 0; k < 2; ++k) lay(rx(), ry(), COIN);
+          lay(rx(), ry(), rnd.coin() ? BONES : SKULL);
+        } else if (kind == 10) {
+          // the regalia: crowns on pedestals, the treaties, a burned velvet tapestry on the far wall with a warning
+          int far = r.door.y > y1 ? y0 - 1 : y1 + 1, fy = r.door.y > y1 ? y0 : y1;
+          for (int x = a; x <= b; ++x) if (m.at(x, far) == WALL && rnd.real() < .6) m.put(x, far, TAPESTRY);
+          for (int x = a + 1; x <= b - 1; x += 3) lay(x, fy, CROWN);
+          for (int k = 0; k < 3; ++k) lay(rx(), ry(), TABLET);
+          lay(rx(), ry(), NOTICE);
+        } else if (kind == 11) {
+          // a counting house: desks in rows, ledgers dropped, brass scales
+          for (int y = y0 + 1; y <= y1 - 1; y += 2) for (int x = a + 1; x <= b - 1; x += 2) if (x != (a + b) / 2) lay(x, y, LECTERN);
+          for (int k = 0; k < 4; ++k) lay(rx(), ry(), LEDGER);
+          lay(rx(), ry(), SCALES);
+          for (int k = 0; k < 3; ++k) lay(rx(), ry(), COIN);
+        } else if (kind == 12) {
+          // the gem store: smashed glass cases, cut stones in the dust
+          for (int y = y0 + 1; y <= y1 - 1; y += 2) for (int x = a + 1; x <= b - 1; x += 2) if (x != (a + b) / 2) lay(x, y, CASE);
+          for (int k = 0; k < 7; ++k) lay(rx(), ry(), GEM);
+        } else {
+          // a coin hall: heaps of tarnished coins, gold run together with the bones of the hands that held it
+          for (int k = 0; k < 4; ++k) lay(rx(), ry(), COINHEAP);
+          for (int k = 0; k < 2; ++k) puddle(rx(), ry());
+          for (int k = 0; k < 4; ++k) lay(rx(), ry(), COIN);
+        }
+      }
+      // the inner treasury's gate: runes either side, the inscription over it; heaps inside, gold run out under the door
+      runes({cx, cy + 2});
+      for (int x : {cx - 4, cx + 4}) if (m.at(x, cy + 2) == WALL) m.put(x, cy + 2, INSCRIPTION);
+      lay(cx - 4, cy + 1, COINHEAP); lay(cx + 4, cy + 1, COINHEAP);
+      puddle(cx - 2, cy - 1);
+      // the great hall: gold puddles round the pillars, coins welded to bone
+      for (int k = 0; k < 4; ++k) puddle(cx + rnd.range(-13, 13), cy + (rnd.coin() ? rnd.range(-6, -4) : rnd.range(4, 6)));
+      // on the Hoard-Warden's map: the mound of fused gold and silver he lies under, stacks of ingots
+      if (boss_floor) {
+        for (int y = cy + 3; y <= cy + 7; ++y)
+          for (int x = cx - 9; x <= cx + 9; ++x) {
+            double ex = (x - cx) / 8.5, ey = (y - (cy + 5)) / 2.6, e = ex * ex + ey * ey;
+            if (e <= 1 && e > .25 && rnd.real() < .85) lay(x, y, MOUND);
+          }
+        for (int k = 0; k < 4; ++k) lay(cx + (k % 2 ? 1 : -1) * rnd.range(11, 14), cy + rnd.range(-6, 6), INGOTS);
+      }
+      // the ways between: coins, gold run together, the dead, a chest dropped and burst
+      for (int k = 0; k < 16; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), COIN);
+      for (int k = 0; k < 6; ++k) puddle(rnd.range(3, w - 4), rnd.range(3, h - 4));
+      for (int k = 0; k < 12; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), k % 3 ? BONES : SKULL);
+      for (int k = 0; k < 5; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), CHESTWRECK);
 
     } else if (act == BARRACKS) {
       // ---------------------------------------------------------------- the Barracks: a fortress round the drill yard

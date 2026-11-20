@@ -15,16 +15,19 @@ constexpr int W = 120;  // the largest map; a zone's floors use the top left w x
 constexpr int H = 66;
 constexpr int SIGHT = 9;
 // A map goes over the wire as printable text, one character a cell: TILE0 + its tile, and for the tiles past what
-// that reaches, '~' then TILE0 + (tile - TILE_ESC). Decoded, it is one byte a cell, TILE0 + tile; tile_of() reads one.
+// that reaches, '~' then TILE0 + (tile - TILE_ESC), and past those '~~' then TILE0 + (tile - 2 * TILE_ESC) (tiles up to
+// 223, since a decoded cell is one byte). Decoded, it is one byte a cell, TILE0 + tile; tile_of() reads one.
 constexpr char TILE0 = ' ';
 constexpr int TILE_ESC = 94;  // ' ' + 94 = '~', the escape
 inline int tile_of(char c) { return int((unsigned char)c) - TILE0; }
+static_assert(data::TILE_COUNT <= 224, "a decoded map cell is one byte: TILE0 + tile must fit");
 inline std::string encode_map(const std::vector<int>& t) {
   std::string m;
   m.reserve(t.size());
   for (int v : t) {
     if (v < TILE_ESC) m += char(TILE0 + v);
-    else { m += '~'; m += char(TILE0 + v - TILE_ESC); }
+    else if (v < 2 * TILE_ESC) { m += '~'; m += char(TILE0 + v - TILE_ESC); }
+    else { m += "~~"; m += char(TILE0 + v - 2 * TILE_ESC); }  // and past those, a second '~'
   }
   return m;
 }
@@ -32,7 +35,8 @@ inline std::string decode_map(const std::string& s) {
   std::string m;
   m.reserve(s.size());
   for (size_t i = 0; i < s.size(); ++i) {
-    if (s[i] == '~' && i + 1 < s.size()) { m += char((unsigned char)(TILE0 + TILE_ESC + (s[i + 1] - TILE0))); ++i; }
+    if (s[i] == '~' && i + 2 < s.size() && s[i + 1] == '~') { m += char((unsigned char)(TILE0 + 2 * TILE_ESC + (s[i + 2] - TILE0))); i += 2; }
+    else if (s[i] == '~' && i + 1 < s.size()) { m += char((unsigned char)(TILE0 + TILE_ESC + (s[i + 1] - TILE0))); ++i; }
     else m += s[i];
   }
   return m;
