@@ -17,6 +17,7 @@ using namespace data;
 // the Cistern's water throws back, s2 bubbles of gas in the sludge; t2 gusts of wind in Charnfen, t3 its fire flaring;
 // q1 the halls shuddering now and then (all zones but the Caves and the Deep, which have their own);
 // v1 ash seeping under the Vaults' doors, v2 parchment flakes off the scroll drifts;
+// b1 soot puffing up under the Barracks' boots, b2 flakes off the banners' tatters, b3 a war-drum far off;
 // k1 the City's ash fall, k3 the ancestors weeping soot, k4 the air shafts' breath, k5 shadows at the shutters
 // for the mock-ups: PYREHEART_FXPERIOD=4 makes the rare things (the Crypt's ghosts, the fire flaring in Charnfen) come every 4 s
 double fx_period(double p) {
@@ -244,6 +245,16 @@ void Client::draw_tiles() {
     ev_age = tt - groan_t_;
     if (actn != 3 && ev_age < 2.6) groan = (1 - ev_age / 2.6) * (.5 + .5 * std::abs(std::sin(ev_age * 19)));
   }
+  // the Barracks: far off, a war-drum booms twice that nobody beats; dust trickles down from the low ceilings
+  if (!rest && actn == BARRACKS && zone_fx("b3") && !s.value("town", false)) {
+    static const char* every = SDL_getenv("PYREHEART_DRUM");  // for the mock-ups: every n seconds
+    if (drum_next_ < 0) drum_next_ = tt + (every ? 1.0 : 25 + nz(int(tt) % 991) * 30);
+    if (tt >= drum_next_) {
+      drum_t_ = tt;
+      drum_next_ = tt + (every ? std::atof(every) : 35 + nz(int(tt * 5) % 991) * 45);
+      log_.push_back({"A war-drum booms, far off.", 0xA0A0A0});
+    }
+  }
   double breath = actn == 3 && ev_age < 3.5 ? std::sin(ev_age / 3.5 * PI) : 0;  // the Deep: the lava swells and glows
 
   // how much of a window's light falls on a cell, and in what colour
@@ -369,6 +380,10 @@ void Client::draw_tiles() {
         // a rune of binding: the curse still holds, and the rune breathes a cold violet
         double g = .5 + .5 * std::sin(tt * .9 + x);
         pool(x, y, 1.8, base + .12 * g, .5, true);
+      } else if (actn == BARRACKS && t == HANGING && vis[i] == '1' && zone_fx("b2")) {
+        emits_.push_back({float(x), float(y), 'F', sd});  // black flakes coming off a banner's tatters
+      } else if (actn == BARRACKS && t == FLOOR && vis[i] == '1' && hash(x, y, 33) % 71 == 0) {
+        emits_.push_back({float(x), float(y), 'd', sd});  // soot hanging in the air
       } else if (actn == VAULTS && t == FLOOR && vis[i] == '1' && hash(x, y, 33) % 61 == 0) {
         emits_.push_back({float(x), float(y), 'd', sd});  // dust hanging in the dark
       } else if (actn == CITY && t == POST) {
@@ -576,6 +591,11 @@ void Client::draw_tiles() {
             if (actn == CISTERN && wet(tile(x, y + 1)) && !wet(tile(x, y - 1))) { ch = 0x2584; fg = 0x4A5450; bg = 0x1C2224; }  // the curb of a channel
             else if (actn == CISTERN && wet(tile(x, y - 1)) && !wet(tile(x, y + 1))) { ch = 0x2580; fg = 0x4A5450; bg = 0x1C2224; }
             else if (actn == CISTERN && noise(x, y, 4, 9) > .64) { bg = mixc(bg, 0x10202A, .7); ch = ' '; }  // a puddle
+            else if (actn == BARRACKS && tile(x, y - 1) == HANGING && blocks(tile(x, y - 2))) {
+              // the tatters of the banner above, swinging in a draught
+              double sw = std::sin(tt * 1.3 + x * .7) + .4 * std::sin(tt * 2.9 + x);
+              ch = sw < -.5 ? '/' : sw > .5 ? '\\' : 0xA6; fg = 0x5A1E12;
+            }
             else if ((actn <= 1 && by_wall && n > .58) || (actn == CISTERN && by_wall && n > .7)) {
               ch = hh % 3 ? '"' : ',';
               fg = mixc(0x3E5A2A, 0x5E7A36, (hh % 5) / 5.0);
@@ -745,6 +765,7 @@ void Client::draw_tiles() {
             bg = 0x2A2622;
             if (tile(x - 1, y) != STATUE) ch = 0x263B;  // the head
           }
+          if (t == BANNER && actn == BARRACKS) fg = 0xA03A20;  // the Iron-Vanguard's, on its pole
           if (t == FALLEN && (std::fmod(tt * .45 + (hh % 100) / 100.0, 1.0) < .05 || (shudder(x, y) && int(tt * 14) % 2))) fg = 0xE8DCC0;
           break;
         }
@@ -1127,6 +1148,29 @@ void Client::draw_tiles() {
           break;
         }
         case INSCRIPTION: bg = 0x28221A; break;
+        // ---- the Barracks, as the garrison left them
+        case BUNK: case TABLE: case RACK: case DUMMY: {
+          bg = floor_bg();
+          if (actn != BARRACKS) break;
+          if (t == BUNK && hh % 5 == 0) { ch = '_'; fg = 0x5A4430; }  // fallen through
+          else if (t == BUNK && hh % 5 == 1) { ch = '%'; fg = 0xC8BCA0; bg = 0x34281E; }  // the sleeper's bones still in it
+          else if (t == TABLE && hh % 6 == 0) { ch = '/'; fg = 0x6A5038; }  // smashed
+          else if (t == RACK && hh % 3 == 0) { ch = 0x2567; fg = 0x7A7A84; }  // overturned
+          else if (t == DUMMY && hh % 2) fg = 0x4A3A2C;  // burned black
+          if ((t == RACK) && std::fmod(tt * .2 + (hh % 100) / 100.0, 1.0) < .025) { fg = 0xE0E0E8; bright = true; }  // steel not quite rusted
+          break;
+        }
+        case SPEAR: case BANDAGE:
+          bg = floor_bg();
+          if (t == SPEAR && hh % 2) ch = '\\';
+          if (t == SPEAR && std::fmod(tt * .2 + (hh % 100) / 100.0, 1.0) < .02) { fg = 0xE0E0E8; bright = true; }
+          break;
+        case SHIELDHEAP: bg = 0x221C16; break;
+        case DRUM: bg = 0x281A12; break;
+        case ARMOUR: bg = floor_bg(); break;
+        case TARGET: bg = 0x2A2018; break;
+        case PASSMAP: ch = (x + y) % 2 ? '^' : 0x2248; bg = 0x3C3020; break;
+        case HANGING: bg = 0x1E100C; ch = 0xB6; break;
         default: bg = floor_bg(); break;
       }
       if (forge && hot_.size() == size_t(W * H) && hot_[i] && !blocks(t)) {
@@ -1505,6 +1549,15 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           dot(x, y, mixc(0xA8A094, 0x3A3630, ph), .7 * (1 - ph));
         }
         break;
+      case 'F':
+        // black flakes of banner cloth coming off the tatters, drifting down and settling
+        for (int j = 0; j < 3; ++j) {
+          double ph = std::fmod(tt * .16 + j / 3.0 + nz(sd + j) * .5, 1.0);
+          double x = ex + .5 + (nz(sd * 3 + j) - .5) * .8 + std::sin(tt * 2 + j + sd) * .25, y = ey + 1.3 + ph * 2.2;
+          if (!open_at(x, y)) continue;
+          dot(x, y, j % 3 ? 0x141010 : 0x5A1E12, .9 * std::min(1.0, (1 - ph) * 3));
+        }
+        break;
       case 'N':
         // black flakes of what was parchment, stirred up off the drift as you pass, sinking again
         for (int j = 0; j < 4; ++j) {
@@ -1741,6 +1794,49 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         for (int k = 0; k < 8; ++k) {
           double a = PI + nz(j + k * 7) * PI, rr = ag / .6 * (.4 + nz(k) * .8);
           dot(bx + std::cos(a) * rr * 1.4, by + std::sin(a) * rr * .5, 0xB0AAA0, .7 * (1 - ag / .6));
+        }
+      }
+    }
+  }
+  if (snap_.value("act", 0) == BARRACKS && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+    if (double age = tt - drum_t_; zone_fx("b3") && age < 3.2) {
+      // the war-drum: on each of its two beats dust trickles down from the cracks in the low ceilings
+      for (int beat = 0; beat < 2; ++beat) {
+        double ag = age - beat * .55;
+        if (ag < 0 || ag > 1.6) continue;
+        for (int j = 0; j < 90; ++j) {
+          int sdj = j * 7 + beat * 131 + int(drum_t_);
+          double st = nz(sdj) * .4, a2 = ag - st;
+          if (a2 < 0 || a2 > 1.0) continue;
+          double x = camx_ + nz(sdj + 1) * vw_, y0 = camy_ + nz(sdj + 2) * vh_;
+          for (int k = 0; k < 3; ++k) {
+            double y = y0 + a2 * a2 * 3.5 - k * .2;
+            if (!open_at(x, y)) continue;
+            dot(x, y, mixc(0xA8A094, 0x4A4440, a2), (1 - a2) * .85);
+          }
+        }
+      }
+    }
+    if (zone_fx("b1")) {
+      // soot puffs up under every boot that takes a step, the dead's and yours
+      std::map<int, int> now_at;
+      auto stepped = [&](int id, int x, int y) {
+        now_at[id] = y * W + x;
+        auto it = ent_cell_.find(id);
+        if (it != ent_cell_.end() && it->second != y * W + x) puffs_.push_back({double(x), double(y), tt});
+      };
+      int hid = -1;
+      for (auto& hh2 : snap_["heroes"]) stepped(hid--, hh2["x"].get<int>(), hh2["y"].get<int>());
+      if (snap_.contains("ents")) for (auto& e : snap_["ents"]) if (e.contains("id")) stepped(e["id"].get<int>(), e["x"].get<int>(), e["y"].get<int>());
+      ent_cell_ = std::move(now_at);
+      while (!puffs_.empty() && tt - puffs_.front()[2] > .9) puffs_.pop_front();
+      while (puffs_.size() > 80) puffs_.pop_front();
+      for (auto& pf : puffs_) {
+        double k = (tt - pf[2]) / .9;
+        if (!open_at(pf[0] + .5, pf[1] + .5)) continue;
+        for (int j = 0; j < 9; ++j) {
+          double a = PI + nz(j * 7 + int(pf[2] * 10)) * PI, rr = k * (.4 + nz(j) * .8);
+          dot(pf[0] + .5 + std::cos(a) * rr * 1.4, pf[1] + .9 + std::sin(a) * rr * .5 - k * .2, mixc(0x8A8278, 0x2A2622, k), .7 * (1 - k), j % 4 ? 1 : 2);
         }
       }
     }

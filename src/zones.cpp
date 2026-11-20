@@ -1081,34 +1081,153 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       for (int x = yx0 + 2; x <= cx; x += 4) for (int y : {yy0 + 1, yy1 - 1}) { m.put(x, y, PILLAR); m.put(2 * cx - x, y, PILLAR); }
       for (int y = yy0 + 3; y <= yy1 - 3; y += 4) for (int x : {yx0 + 1, yx1 - 1}) m.put(x, y, PILLAR);
       for (int x = cx - 12; x <= cx - 4; x += 4) for (int y = cy - 4; y <= cy + 4; y += 4) { m.put(x, y, DUMMY); m.put(2 * cx - x, y, DUMMY); }
-      // the halls: three above the yard, three below, mirrored; each with its door to the patrol way and to the yard
-      auto hall = [&](int x0, int y0, int x1, int y1, int kind, bool top) {
-        m.room(x0, y0, x1, y1);
-        m.put((x0 + x1) / 2, top ? y0 - 1 : y1 + 1, DOOR);  // to the patrol way
-        m.put((x0 + x1) / 2, top ? y1 + 1 : y0 - 1, DOOR);  // to the yard side
-        if (kind == 0) for (int y = y0 + 1; y <= y1 - 1; y += 2) for (int x = x0 + 2; x <= x1 - 2; x += 3) if (x != (x0 + x1) / 2) m.put(x, y, BUNK);
-        if (kind == 1) for (int y = y0 + 2; y <= y1 - 2; y += 3) for (int x = x0 + 3; x <= x1 - 3; ++x) if (std::abs(x - (x0 + x1) / 2) > 1) m.put(x, y, TABLE);
-        if (kind == 2) { for (int x = x0 + 1; x <= x1 - 1; x += 2) if (std::abs(x - (x0 + x1) / 2) > 1) { m.put(x, y0, RACK); m.put(x, y1, RACK); } m.treasure.push_back(m.rooms.back()); }
-        if (kind == 3) for (int k = 0; k < 8; ++k) m.put(rnd.range(x0, x1), rnd.range(y0, y1), CRATE);
+      // the halls: three above the yard, three below, mirrored; each with its door to the patrol way and to the yard.
+      // Each has a small side room walled off at one end. The halls and the side rooms are dressed as the garrison
+      // left them: sleeping halls, the mess, the armoury, the banner hall, the archery range; the captain's room,
+      // the infirmary, the kennels, the drum room and the stores.
+      enum { SLEEP, MESS, ARMOURY, BANNERS, RANGE, CAPTAIN, INFIRMARY, KENNEL, DRUMS, STORES };
+      std::vector<int> big = {SLEEP, MESS, ARMOURY, BANNERS, RANGE, SLEEP}, small = {CAPTAIN, INFIRMARY, KENNEL, DRUMS, STORES, KENNEL};
+      rnd.shuffle(big); rnd.shuffle(small);
+      auto lay = [&](int x, int y, int t) {
+        if (!m.in(x, y) || m.at(x, y) != FLOOR || cheb(x, y, 5, cy) <= 1) return false;
+        if (!blocks(t)) { m.put(x, y, t); return true; }
+        return m.place(x, y, t);
       };
-      int hw = (w - 12) / 3;
-      int kinds[3] = {0, 1, 2};
-      for (int i = 0; i < 3; ++i) {
-        int x0 = 6 + i * hw, x1 = x0 + hw - 3;
-        hall(x0, 6, x1, yy0 - 4, kinds[i], true);
-        hall(x0, yy1 + 4, x1, h - 7, i == 1 ? 3 : i == 2 ? 0 : 1, false);
-      }
-      // the ways along the yard, between it and the halls
+      auto on_wall = [&](int x, int y, int t) { if (m.at(x, y) == WALL) m.put(x, y, t); };
+      auto dress = [&](int kind, int x0, int y0, int x1, int y1, int mx, bool top) {
+        auto rx = [&]() { return rnd.range(x0, x1); };
+        auto ry = [&]() { return rnd.range(y0, y1); };
+        int fy = top ? y0 : y1, ny = top ? y1 : y0;  // the far wall's row (away from the yard) and the near one
+        switch (kind) {
+          case SLEEP:
+            // rows of bunks, a soldier's chest at the foot of each, some still with their sleeper's bones
+            for (int y = y0 + 1; y <= y1 - 1; y += 3)
+              for (int x = x0 + 1; x <= x1 - 1; x += 3) {
+                if (std::abs(x - mx) <= 1) continue;
+                m.put(x, y, BUNK); m.put(x + 1 <= x1 - 1 && std::abs(x + 1 - mx) > 1 ? x + 1 : x, y, BUNK);
+                if (y + 1 <= y1) lay(x, y + 1, CRATE);
+              }
+            for (int k = 0; k < 4; ++k) lay(rx(), ry(), k % 2 ? BONES : SKULL);
+            for (int k = 0; k < 2; ++k) lay(rx(), ry(), TANKARD);
+            break;
+          case MESS:
+            // long tables with benches at the ends, stools knocked over, tankards, kegs, a cold hearth on the far wall
+            for (int y = y0 + 2; y <= y1 - 2; y += 3) {
+              for (int x = x0 + 3; x <= x1 - 3; ++x) if (std::abs(x - mx) > 1) m.put(x, y, TABLE);
+              for (int x : {x0 + 2, x1 - 2}) m.put(x, y, BENCH);
+            }
+            for (int k = 0; k < 6; ++k) lay(rx(), ry(), STOOL);
+            for (int k = 0; k < 6; ++k) lay(rx(), ry(), TANKARD);
+            for (int x : {x0, x1}) lay(x, fy, KEG);
+            for (int dx = -1; dx <= 1; ++dx) { int hx = mx + (mx > (x0 + x1) / 2 ? -5 : 5) + dx; lay(hx, fy, EMBERS); }
+            break;
+          case ARMOURY:
+            // the racks along the walls, many overturned; spears, split shields and axes all over, heaps of shields
+            for (int x = x0 + 1; x <= x1 - 1; x += 2) if (std::abs(x - mx) > 1) { lay(x, y0, RACK); lay(x, y1, RACK); }
+            for (int k = 0; k < 4; ++k) { int x = rx(), y = ry(); lay(x, y, SHIELDHEAP); lay(x + 1, y, SHIELDHEAP); }
+            for (int k = 0; k < 9; ++k) lay(rx(), ry(), SPEAR);
+            for (int k = 0; k < 5; ++k) lay(rx(), ry(), SHIELD);
+            for (int k = 0; k < 2; ++k) lay(rx(), ry(), WRECK);
+            for (int k = 0; k < 2; ++k) lay(rx(), ry(), BOLTS);
+            break;
+          case BANNERS:
+            // two rows of pillars, scorched banners hanging in tatters along the walls, the Iron-Vanguard's in the middle
+            for (int x = x0 + 3; x <= x1 - 3; x += 4) if (std::abs(x - mx) > 2) { m.put(x, y0 + 3, PILLAR); m.put(x, y1 - 3, PILLAR); }
+            for (int x = x0 + 1; x <= x1 - 1; x += 3) if (std::abs(x - mx) > 1) { on_wall(x, y0 - 1, HANGING); on_wall(x, y1 + 1, HANGING); }
+            lay(mx + 3, (y0 + y1) / 2, BANNER);
+            lay(rx(), ry(), SKULL);
+            break;
+          case RANGE:
+            // targets along the far wall with bolts in them, a shooting line of benches, crates of bolts behind it
+            for (int x = x0 + 2; x <= x1 - 2; x += 5) if (std::abs(x - mx) > 1) lay(x, fy, TARGET);
+            for (int x = x0 + 1; x <= x1 - 1; ++x) if (std::abs(x - mx) > 2 && (x - x0) % 7 != 3) lay(x, ny + (top ? -2 : 2), BENCH);
+            for (int k = 0; k < 3; ++k) lay(rx(), ny, BOLTS);
+            for (int k = 0; k < 2; ++k) lay(rx(), ry(), BONES);
+            break;
+          case CAPTAIN:
+            // the map of the passes on its table, armour welded on its stands, a bed, a desk with candles and the log
+            for (int x = x0 + 2; x <= x0 + 5; ++x) for (int y : {(y0 + y1) / 2, (y0 + y1) / 2 + 1}) lay(x, y, x == x0 + 2 || x == x0 + 5 ? TABLE : PASSMAP);
+            lay(x0, fy, BUNK); lay(x0 + 1, fy, BUNK);
+            for (int x = x0 + 4; x <= x1; x += 2) lay(x, fy, ARMOUR);
+            lay(x1, ny, TABLE); lay(x1 - 1, ny, CANDLE); lay(x1 - 2, ny, LEDGER);
+            lay(x0, ny, RACK);
+            lay(rx(), ry(), CRATE);
+            m.treasure.push_back(m.cells(x0, y0, x1, y1));
+            break;
+          case INFIRMARY:
+            for (int y = y0; y <= y1; y += 2) { lay(x0, y, BUNK); if (rnd.real() < .3) lay(x0 + 1, y, BONES); }
+            for (int k = 0; k < 4; ++k) lay(rx(), ry(), BANDAGE);
+            lay(rx(), ry(), BUCKET);
+            lay(x1, ny, TABLE); lay(x1, ny + (top ? -1 : 1), CANDLE); lay(x1 - 1, ny, LEDGER);
+            break;
+          case KENNEL:
+            // pens of bars along the far wall, a gap into each; chains, gnawed bones, a trough of black water
+            for (int x = x0; x <= x1; ++x) if ((x - x0) % 4 != 1) lay(x, fy + (top ? 2 : -2), BARS);
+            for (int k = 0; k < 2; ++k) lay(rx(), ry(), CHAIN);
+            for (int k = 0; k < 4; ++k) lay(rx(), ry(), k % 2 ? BONES : MIDDEN);
+            for (int x = x0 + 2; x <= x0 + 4; ++x) lay(x, ny, QUENCH);
+            break;
+          case DRUMS:
+            // the war-drums, their skins split by the heat, and the bones of the drummer
+            for (int k = 0; k < 3; ++k) { int x = rx(), y = ry(); lay(x, y, DRUM); if (k == 0) { lay(x + 1, y, DRUM); lay(x, y + 1, DRUM); lay(x + 1, y + 1, DRUM); } }
+            lay(rx(), ry(), SKULL);
+            break;
+          default:
+            for (int k = 0; k < 8; ++k) lay(rx(), ry(), CRATE);
+            for (int k = 0; k < 2; ++k) lay(rx(), ry(), KEG);
+            break;
+        }
+      };
+      // the ways along the yard (first, so the furniture laid in the halls can tell what it would cut off), between it and the halls
       for (int o = 0; o < 2; ++o) { m.rect(5, yy0 - 2 + o, w - 6, yy0 - 2 + o, FLOOR); m.rect(5, yy1 + 1 + o, w - 6, yy1 + 1 + o, FLOOR); }
       // ways from the patrol round to the yard's sides
       m.way({4, cy}, {yx0, cy}, 3);
       m.way({w - 5, cy}, {yx1, cy}, 3);
+      up = {5, cy};
+      fl.up = up;  // whole() walks from here while the halls are furnished
+      int hn = 0;
+      auto hall = [&](int x0, int y0, int x1, int y1, bool top, bool side_left) {
+        m.room(x0, y0, x1, y1);
+        int mx = (x0 + x1) / 2;
+        m.put(mx, top ? y0 - 1 : y1 + 1, DOOR);  // to the patrol way
+        m.put(mx, top ? y1 + 1 : y0 - 1, DOOR);  // to the yard side
+        // the side room, ten wide, behind a wall with a door
+        int xs = side_left ? x0 + 10 : x1 - 10;
+        for (int y = y0; y <= y1; ++y) m.put(xs, y, WALL);
+        m.put(xs, (y0 + y1) / 2, DOOR);
+        int a0 = side_left ? xs + 1 : x0, a1 = side_left ? x1 : xs - 1;  // the hall itself
+        int b0 = side_left ? x0 : xs + 1, b1 = side_left ? xs - 1 : x1;  // the side room
+        m.rooms.push_back(m.cells(b0, y0, b1, y1));
+        dress(big[hn], a0, y0, a1, y1, mx, top);
+        if (big[hn] == ARMOURY) m.treasure.push_back(m.cells(a0, y0, a1, y1));
+        dress(small[hn], b0, y0, b1, y1, -9, top);
+        ++hn;
+      };
+      int hw = (w - 12) / 3;
+      for (int i = 0; i < 3; ++i) {
+        int x0 = 6 + i * hw, x1 = x0 + hw - 3;
+        hall(x0, 6, x1, yy0 - 4, true, i == 0 || (i == 1 && rnd.coin()));
+        hall(x0, yy1 + 4, x1, h - 7, false, i == 0 || (i == 1 && rnd.coin()));
+      }
       // the gate at the foot of the west side: a portcullis half raised
       m.put(1, cy - 1, BARS); m.put(1, cy + 1, BARS);
       up = {5, cy};
       fl.up = up;
       down = {cx, yy0 + 3};
       m.treasure.push_back(m.rooms[0]);
+      // the yard: drifts of soot, spears and shields where the ranks broke, the dead; banners round its walls
+      for (int k = 0; k < 10; ++k) {
+        int x = rnd.range(yx0 + 2, yx1 - 2), y = rnd.range(yy0 + 2, yy1 - 2);
+        for (int j = 0; j < 5; ++j) lay(x + rnd.range(-2, 2), y + rnd.range(-1, 1), DRIFT);
+      }
+      for (int k = 0; k < 6; ++k) lay(rnd.range(yx0 + 1, yx1 - 1), rnd.range(yy0 + 1, yy1 - 1), SPEAR);
+      for (int k = 0; k < 3; ++k) lay(rnd.range(yx0 + 1, yx1 - 1), rnd.range(yy0 + 1, yy1 - 1), SHIELD);
+      for (int k = 0; k < 3; ++k) lay(rnd.range(yx0 + 1, yx1 - 1), rnd.range(yy0 + 1, yy1 - 1), BONES);
+      for (int x = yx0 + 4; x <= yx1 - 4; x += 6) if (std::abs(x - cx) > 2) { on_wall(x, yy0 - 1, HANGING); on_wall(x, yy1 + 1, HANGING); }
+      // on the Iron-Captain's map: his stand at the head of the yard, where the ranks muster before him
+      if (boss_floor) for (int x = cx - 3; x <= cx + 3; ++x) if (m.at(x, yy0 + 1) == FLOOR) m.put(x, yy0 + 1, DAIS);
+      // the patrol way: a spear or a shield dropped, the dead
+      for (int k = 0; k < 8; ++k) lay(rnd.range(2, w - 3), rnd.range(2, h - 3), k % 3 ? SPEAR : BONES);
 
     } else if (act == PRISON) {
       // ---------------------------------------------------------------- the Prison: a star of cell blocks round the pit
@@ -1303,6 +1422,15 @@ void Game::zone_foes(Floor& fl) {
     }
   }
   if (act == BARRACKS) {
+    // the war hounds, asleep in their kennels by the trough
+    for (int i = 0; i < W * H; ++i) {
+      if (fl.t[i] != QUENCH || fl.t[i - 1] == QUENCH || rnd.real() > .8) continue;
+      for (int k = 0; k < 1 + rnd.below(2); ++k) {
+        P at;
+        if (free_near(i % W, i / W, 4, at, [&](int x, int y) { return open(x, y); }))
+          if (auto mm = spawn("warhound", at.x, at.y)) mm->sleep = 1;
+      }
+    }
     // squads: a shield-bearer in front, two cross-bowmen behind it, a pikeman beside
     for (int k = 0; k < 4; ++k) {
       P c;

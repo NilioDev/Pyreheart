@@ -5,6 +5,8 @@
 #include <chrono>
 #include <deque>
 #include <libtcod.hpp>
+#include <map>
+#include <array>
 #include <memory>
 #include <set>
 
@@ -115,6 +117,9 @@ class Client {
   std::vector<float> damp_, draft_;
   std::vector<char> wetw_;
   double groan_t_ = -99, groan_next_ = -1;
+  double drum_t_ = -99, drum_next_ = -1;  // the Barracks: a war-drum booming far off, now and then
+  std::map<int, int> ent_cell_;  // the Barracks: where each foe stood, so soot puffs up when it takes a step
+  std::deque<std::array<double, 3>> puffs_;  // and those puffs: x, y, when
   double ghost_x_ = 0, ghost_y_ = 0, ghost_dx_ = 1, ghost_a_ = 0;  // the Crypt's ghost, if one is passing
   void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
   void present(const TCOD_ViewportOptions& vp);

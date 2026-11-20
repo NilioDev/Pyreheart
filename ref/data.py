@@ -15,7 +15,8 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL, \
     HAMMER, TONGS, STOOL, APRON, BUCKET, STAIN, TANKARD, BLADE, LADLE, SHOVEL, ARM, SKULL, SLUNG, HOOK, TROUGH, MOULD, CAST, SPILL, WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, \
     DRIFT, MARBLE, MOSAIC, DRYBATH, STEP, GOLDCRUST, BRIDGE, SCROLL, AWNING, GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL, \
-    GOLDHAND, COINHEAP, CHESTWRECK, FALLSHELF, SCROLLDRIFT, MELTBAR, TAPESTRY, CROWN, TABLET, SCALES, LEDGER, CASE, GEM, INGOTS, MOUND, BINDRUNE, INSCRIPTION = range(204)
+    GOLDHAND, COINHEAP, CHESTWRECK, FALLSHELF, SCROLLDRIFT, MELTBAR, TAPESTRY, CROWN, TABLET, SCALES, LEDGER, CASE, GEM, INGOTS, MOUND, BINDRUNE, INSCRIPTION, \
+    SPEAR, SHIELDHEAP, DRUM, PASSMAP, ARMOUR, TARGET, BANDAGE, HANGING = range(212)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -234,6 +235,15 @@ TILES = [
     ('▲', (200, 152, 56), False, True, 'a mound of fused gold and silver'),
     ('Σ', (106, 74, 138), False, False, 'a rune of binding cut in the wall'),
     ('≡', (180, 160, 112), False, False, 'an inscription over the gate'),
+    # the Barracks: what the garrison left when the ash came
+    ('/', (138, 90, 58), True, True, 'a rusted spear'),
+    ('◘', (122, 106, 74), False, True, 'a heap of split shields'),
+    ('◙', (154, 106, 68), False, True, 'a war-drum, its skin split'),
+    ('≈', (180, 160, 112), False, True, 'a map of the mountain passes on a table'),
+    ('Ж', (90, 90, 100), False, True, 'armour on a stand, welded shut by the heat'),
+    ('⊙', (180, 154, 106), False, True, 'a target, bolts still in it'),
+    ('≈', (180, 172, 152), True, True, 'bandages, thrown down'),
+    ('¶', (122, 42, 26), False, False, 'a scorched banner, hanging in tatters from the wall'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
@@ -244,7 +254,8 @@ BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, C
                STALAG, BURROW, TOTEM, CAMPFIRE, CRYSTAL,
                WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, \
                GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL,
-               COINHEAP, CHESTWRECK, FALLSHELF, TAPESTRY, CROWN, TABLET, SCALES, CASE, INGOTS, MOUND, BINDRUNE, INSCRIPTION}
+               COINHEAP, CHESTWRECK, FALLSHELF, TAPESTRY, CROWN, TABLET, SCALES, CASE, INGOTS, MOUND, BINDRUNE, INSCRIPTION,
+               SHIELDHEAP, DRUM, PASSMAP, ARMOUR, TARGET, HANGING}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:
