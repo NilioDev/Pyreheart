@@ -1450,50 +1450,176 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       for (int k = 0; k < 6; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), k % 2 ? STAIN : BONES);
 
     } else if (act == SANCTUM) {
-      // ---------------------------------------------------------------- the Sanctum: nave, chapels, the empty altar
+      // ---------------------------------------------------------------- the Sanctum: the temple where the Pyreheart lay
       int cx = w / 2;
-      int top = 4, bottom = h - 4;
-      // the nave, with two rows of pillars
-      m.room(cx - 12, 16, cx + 12, bottom - 4);
-      for (int y = 19; y <= bottom - 7; y += 4) { m.put(cx - 7, y, PILLAR); m.put(cx + 7, y, PILLAR); }
+      int top = 3, bottom = h - 4, ny0 = 20;
+      // the nave, with two rows of pillars, some cracked
+      m.room(cx - 12, ny0, cx + 12, bottom - 4);
+      for (int y = ny0 + 3; y <= bottom - 7; y += 4) { m.put(cx - 7, y, PILLAR); m.put(cx + 7, y, PILLAR); }
       // the porch and the way in
       m.room(cx - 5, bottom - 3, cx + 5, bottom);
-      // the raised platform, the empty altar, melted gold, and the hole dug behind it
-      m.rect(cx - 14, top, cx + 14, 15, FLOOR);
-      m.rooms.push_back(m.cells(cx - 14, top, cx + 14, 15));
-      m.rect(cx - 10, top + 3, cx + 10, 13, DAIS);
-      m.put(cx, top + 6, ALTAR);
-      for (int k = 0; k < 12; ++k) { int x = cx + rnd.range(-6, 6), y = top + rnd.range(4, 9); if (m.at(x, y) == DAIS) m.put(x, y, COIN); }
-      m.rect(cx - 3, top, cx + 3, top + 2, CHASM);
-      for (int x : {cx - 9, cx + 9}) for (int y = top + 4; y <= 12; y += 4) m.put(x, y, CANDLE);
+      // the sanctuary: a great raised hall round the empty altar, where the Pyreheart lay; the arena of the High Prelate
+      // and the way down to the Deep, through the hole dug behind the altar
+      int ax0 = cx - 19, ax1 = cx + 19, ay1 = ny0 - 2;
+      m.rect(ax0, top, ax1, ay1, FLOOR);
+      m.rooms.push_back(m.cells(ax0, top, ax1, ay1));
+      m.rect(cx - 12, top + 4, cx + 12, ay1 - 3, DAIS);   // the platform, inlaid with gold
+      for (int x = cx - 12; x <= cx + 12; ++x) m.put(x, ay1 - 2, STEP);  // the steps up to it
+      for (int x = cx - 3; x <= cx + 3; ++x) m.put(x, ay1 - 1, STEP);
+      for (int x = cx - 1; x <= cx + 1; ++x) m.put(x, ay1, FLOOR), m.put(x, ay1 + 1, FLOOR);  // into the nave
+      // the hole, dug recklessly deep behind the altar, jagged at its edge
+      {
+        int lo = cx - 4 - rnd.below(2), hi = cx + 4 + rnd.below(2);
+        for (int y = top; y <= top + 3; ++y) {
+          // each row of the hole torn a little further or less far than the last
+          if (y == top + 3) { lo = std::max(lo + 1 + rnd.below(2), cx - 3); hi = std::min(hi - 1 - rnd.below(2), cx + 3); }
+          else if (y > top) { lo += rnd.range(-1, 1); hi += rnd.range(-1, 1); }
+          lo = std::clamp(lo, cx - 6, cx - 2); hi = std::clamp(hi, cx + 2, cx + 6);
+          for (int x = lo; x <= hi; ++x) m.put(x, y, CHASM);
+          if (rnd.real() < .5) m.put(lo - 1, y, CHASM);
+          if (rnd.real() < .5) m.put(hi + 1, y, CHASM);
+        }
+      }
+      m.put(cx, top + 4, DAIS);
+      // the altar, cracked and empty
+      for (int x = cx - 2; x <= cx + 2; ++x) m.put(x, top + 7, ALTAR);
+      // the reredos of beaten gold along the back wall, the golden image of the Pyreheart in it either side of the hole
+      for (int x = ax0 + 1; x <= ax1 - 1; ++x) if (m.at(x, top - 1) == WALL && std::abs(x - cx) > 6) m.put(x, top - 1, (std::abs(x - cx) == 10) ? SUNHEART : SCREEN);
+      // a ring of pillars round the platform, braziers between, candles along its edge
+      // one of them broken, its drums rolled across the floor: the pilgrim's warning is cut into the stump
+      int broke = rnd.range(1, 8);
+      for (int k = 0; k < 10; ++k) {
+        double a = 3.14159265 * (k + .5) / 10;
+        int x = cx + int(std::lround(std::cos(a) * 17)), y = top + 1 + int(std::lround(std::sin(a) * 12.5));
+        if (y > ay1 - 1) continue;
+        if (k != broke) { m.put(x, y, PILLAR); continue; }
+        m.put(x, y, HEAP);
+        int s2 = x < cx ? 1 : -1;
+        for (int j = 1; j <= 3; ++j) if (m.at(x + s2 * j, y + (j > 1)) == FLOOR) m.put(x + s2 * j, y + (j > 1), RUBBLE);
+      }
+      for (int x : {cx - 15, cx + 15}) for (int y : {top + 2, ay1 - 4}) m.put(x, y, BRAZIER);
+      for (int x = cx - 11; x <= cx + 11; x += 4) if (std::abs(x - cx) > 2) { m.put(x, top + 4, CANDLE); }
+      for (int y = top + 6; y <= ay1 - 4; y += 3) { m.put(cx - 12, y, CANDLE); m.put(cx + 12, y, CANDLE); }
+      // the melted gold offerings round the altar
+      for (int k = 0; k < 18; ++k) { int x = cx + rnd.range(-8, 8), y = top + rnd.range(5, 10); if (m.at(x, y) == DAIS) m.put(x, y, k % 3 ? GOLDCRUST : COIN); }
+      // the shattered altar's pieces; the broken chains of the god that lay bound beneath it, running into the hole
+      auto on_dais = [&](int x, int y, int t) { if (m.at(x, y) == DAIS || m.at(x, y) == GOLDCRUST || m.at(x, y) == COIN) m.put(x, y, t); };
+      for (P r : {P{cx + 3, top + 7}, P{cx + 3, top + 8}, P{cx - 3, top + 8}, P{cx + 1, top + 8}}) on_dais(r.x, r.y, RUBBLE);
+      for (int s2 : {-1, 1}) { on_dais(cx + 2 * s2, top + 6, CHAIN); on_dais(cx + 3 * s2, top + 5, CHAIN); on_dais(cx + 2 * s2, top + 8, CHAIN); }
+      // the hole was dug, and dug recklessly: props jammed at its lip, the spoil thrown up round it, the sacred pick dropped
+      for (int s2 : {-1, 1}) {
+        for (int y = top; y <= top + 3; ++y) {
+          int x = cx + s2 * 6;
+          while (m.at(x, y) == CHASM) x += s2;
+          if (y == top + 1 && m.at(x, y) == FLOOR) m.put(x, y, PROP);
+          else if (m.at(x, y) == FLOOR && rnd.real() < .7) m.put(x, y, RUBBLE);
+          if (m.at(x + s2, y) == FLOOR && rnd.real() < .5) m.put(x + s2, y, RUBBLE);
+        }
+      }
+      for (int x = cx - 4; x <= cx - 2; ++x) if (m.at(x, top + 4) == DAIS && m.at(x, top + 3) == CHASM) { m.put(x, top + 4, PICK); break; }
+      // the High Prelate's last prayer, written in ash across the steps up to the platform; gold run down them
+      for (int x = cx - 10; x <= cx + 10; ++x) if (std::abs(x - cx) >= 3 && m.at(x, ay1 - 2) == STEP) m.put(x, ay1 - 2, ASHPRAYER);
+      m.put(cx + 2, ay1 - 2, GOLDCRUST); m.put(cx + 2, ay1 - 1, GOLDCRUST);
       // the chapels down both sides of the nave, mirrored, each with an altar of its own (a shrine: not all are kind)
-      for (int y0 = 18; y0 + 7 <= bottom - 5; y0 += 10)
+      std::vector<std::array<int, 4>> chapels;
+      for (int y0 = ny0 + 1; y0 + 7 <= bottom - 5; y0 += 10)
         for (int side : {-1, 1}) {
           int x0 = side < 0 ? cx - 26 : cx + 15, x1 = x0 + 11;
           m.room(x0, y0, x1, y0 + 7);
+          chapels.push_back({x0, y0, x1, side});
           int door_x = side < 0 ? x1 + 1 : x0 - 1;
           for (int y = y0 + 3; y <= y0 + 4; ++y) for (int x = std::min(door_x, side < 0 ? cx - 13 : cx + 13); x <= std::max(door_x, side < 0 ? cx - 13 : cx + 13); ++x) m.put(x, y, FLOOR);
           int ax = side < 0 ? x0 + 1 : x1 - 1;
           m.put(ax, y0 + 2, CANDLE); m.put(ax, y0 + 5, CANDLE);
         }
-      // the side halls off the platform: a sacristy and a scriptorium, and the aisles down to the porch
+      // the side halls off the sanctuary: the vestry and the reliquary, and the aisles down to the porch
+      std::vector<std::array<int, 4>> sides;
       for (int side : {-1, 1}) {
-        int x0 = side < 0 ? 3 : w - 22, x1 = x0 + 18;
-        m.room(x0, top, x1, 13);
+        int x0 = side < 0 ? 3 : w - 22, x1 = x0 + 15;
+        m.room(x0, top + 1, x1, 13);
+        sides.push_back({x0, top + 1, x1, side});
         int hx = side < 0 ? x1 : x0;
-        m.way({hx, 9}, {side < 0 ? cx - 14 : cx + 14, 9}, 3);
-        if (side > 0) {
-          for (int y = top + 1; y <= 12; y += 2)
-            for (int x = x0 + 2; x <= x1 - 2; ++x) if (std::abs(x - (x0 + x1) / 2) > 1) m.put(x, y, BOOKS);
-        } else m.treasure.push_back(m.rooms.back());
+        m.way({hx, 9}, {side < 0 ? ax0 : ax1, 9}, 3);
         int ax = side < 0 ? 6 : w - 7;
         m.way({ax, 13}, {ax, bottom - 1}, 3);
         m.way({ax, bottom - 1}, {side < 0 ? cx - 5 : cx + 5, bottom - 1}, 3);
       }
+      // the great halls between the aisles and the chapels: the censer hall, the prayer halls, the image of the crystal
+      std::vector<std::array<int, 4>> greats;
+      for (int side : {-1, 1})
+        for (int k = 0; k < 2; ++k) {
+          int x0 = side < 0 ? 10 : w - 1 - 31, x1 = side < 0 ? 31 : w - 1 - 10;
+          int y0 = k ? 40 : 17, y1 = k ? bottom - 5 : 36;
+          m.room(x0, y0, x1, y1);
+          greats.push_back({x0, y0, x1, y1});
+          int my = (y0 + y1) / 2;
+          m.way({side < 0 ? 6 : w - 7, my}, {side < 0 ? x0 : x1, my}, 3);
+          // and a door through to the chapel beside it
+          auto& ch = chapels[size_t(k * 2 + (side < 0 ? 2 : 3)) % chapels.size()];
+          int cy2 = ch[1] + 3;
+          m.way({side < 0 ? x1 : ch[2] + 1, cy2}, {side < 0 ? ch[0] - 1 : x0, cy2}, 2);
+        }
       up = {cx, bottom - 1};
       fl.up = up;
       down = {cx, top + 4};
-      if (m.at(down.x, down.y) != DAIS && m.at(down.x, down.y) != FLOOR) down = {cx + 2, top + 4};
+      // ---- the dressing
+      auto lay = [&](int x, int y, int t) {
+        if (!m.in(x, y) || m.at(x, y) != FLOOR || cheb(x, y, up.x, up.y) <= 1 || cheb(x, y, down.x, down.y) <= 1) return false;
+        if (!blocks(t)) { m.put(x, y, t); return true; }
+        return m.place(x, y, t);
+      };
+      auto on_wall = [&](int x, int y, int t) { if (m.at(x, y) == WALL) m.put(x, y, t); };
+      // the nave: the faithful burned to soot where they knelt, pieces of fallen pillar
+      for (int k = 0; k < 10; ++k) lay(cx + rnd.range(-11, 11), rnd.range(ny0 + 1, bottom - 5), SOOTDEAD);
+      for (int k = 0; k < 4; ++k) lay(cx + rnd.range(-11, 11), rnd.range(ny0 + 1, bottom - 5), RUBBLE);
+      // the porch: soot blown in, a few fallen stones
+      for (int k = 0; k < 3; ++k) lay(cx + rnd.range(-4, 4), bottom - rnd.range(2, 3), k ? RUBBLE : SOOTDEAD);
+      // the chapels: an ancestor at the end, offerings
+      for (auto& ch : chapels) {
+        int far = ch[3] < 0 ? ch[0] : ch[2];
+        lay(far, ch[1] + 3, ANCESTOR); lay(far, ch[1] + 4, ANCESTOR);
+        for (int k = 0; k < 3; ++k) lay(rnd.range(ch[0], ch[2]), rnd.range(ch[1], ch[1] + 7), COIN);
+      }
+      // the vestry (west): the golden robes burned to soot, burned hangings, chests; the reliquary (east): empty niches
+      // in the walls, reliquaries with their gold run
+      for (auto& sd2 : sides) {
+        int x0 = sd2[0], y0 = sd2[1], x1 = sd2[2];
+        if (sd2[3] < 0) {
+          for (int x = x0; x <= x1; x += 2) on_wall(x, y0 - 1, TAPESTRY);
+          for (int k = 0; k < 6; ++k) lay(rnd.range(x0, x1), rnd.range(y0, 13), GOLDCRUST);
+          for (int k = 0; k < 3; ++k) lay(rnd.range(x0, x1), 13, CHESTWRECK);
+          m.treasure.push_back(m.cells(x0, y0, x1, 13));
+        } else {
+          for (int x = x0; x <= x1; x += 2) { on_wall(x, y0 - 1, NICHE); on_wall(x, 14, NICHE); }
+          for (int x = x0 + 2; x <= x1 - 2; x += 4) for (int y : {y0 + 2, 11}) { lay(x, y, RELIQUARY); lay(x + 1, y, RELIQUARY); }
+          for (int k = 0; k < 4; ++k) lay(rnd.range(x0, x1), rnd.range(y0, 13), GOLDCRUST);
+        }
+      }
+      // the great halls
+      std::vector<int> gk = {0, 1, 2, 1};
+      rnd.shuffle(gk);
+      for (size_t k = 0; k < greats.size(); ++k) {
+        auto [x0, y0, x1, y1] = greats[k];
+        int mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+        auto clear = [&](int x, int y) { return std::abs(y - my) > 1 && std::abs(x - mx) > 1; };
+        if (gk[k] == 0) {
+          // the censer hall: brass censers on their chains, smoking bone-dust
+          for (int x = x0 + 2; x <= x1 - 2; x += 5) for (int y : {y0 + 1, y1 - 1, my - 3, my + 3}) if (clear(x, y)) lay(x, y, CENSER);
+          for (int j = 0; j < 4; ++j) lay(rnd.range(x0, x1), rnd.range(y0, y1), SOOTDEAD);
+        } else if (gk[k] == 1) {
+          // a prayer hall: rows of kneeling benches near the walls, the dead still on them, ancestors at the end
+          for (int y : {y0 + 1, y0 + 3, y1 - 3, y1 - 1}) for (int x = x0 + 3; x <= x1 - 3; ++x) if (clear(x, y)) { if (rnd.real() < .15) lay(x, y, SOOTDEAD); else lay(x, y, PEW); }
+          for (int y = my - 1; y <= my + 1; y += 2) lay(x0, y, ANCESTOR);
+          lay(x1, y0, CANDLE); lay(x1, y1, CANDLE);
+        } else {
+          // the image of the living crystal: the golden sun in the wall, sagging where it melted; offerings below
+          for (int x = mx - 3; x <= mx + 3; ++x) on_wall(x, y0 - 1, x == mx ? SUNHEART : SUNDISC);
+          for (int x = mx - 2; x <= mx + 2; ++x) on_wall(x, y0 - 2, SUNDISC);
+          for (int k = 0; k < 6; ++k) lay(mx + rnd.range(-4, 4), y0 + rnd.range(0, 3), k % 2 ? COIN : GOLDCRUST);
+          lay(x0, y0, CANDLE); lay(x1, y0, CANDLE);
+          for (int j = 0; j < 3; ++j) lay(rnd.range(x0, x1), rnd.range(y0 + 4, y1), SOOTDEAD);
+        }
+      }
     }
 
     if (up.x < 0 || down.x < 0) continue;
@@ -1594,6 +1720,35 @@ void Game::zone_foes(Floor& fl) {
     }
   }
   if (act == SANCTUM) {
-    for (int dx : {-6, 6}) if (open(fl.down.x + dx, fl.down.y + 2)) spawn("altarguard", fl.down.x + dx, fl.down.y + 2);
+    // the altar-guards kneel at the corners of the platform, still until someone comes near the empty altar
+    P alt{-1, -1};
+    for (int i = 0; i < W * H; ++i) if (fl.t[i] == ALTAR && fl.t[i - 1] == ALTAR && fl.t[i + 1] == ALTAR && fl.t[i - 2] == ALTAR) { alt = {i % W, i / W}; break; }
+    if (alt.x >= 0) {
+      auto dais = [&](int x, int y) { int t = fl.tile(x, y); return (t == DAIS || t == GOLDCRUST || t == COIN || t == RUBBLE) && !mon_at(x, y); };
+      for (P g : {P{alt.x - 9, alt.y - 1}, P{alt.x + 9, alt.y - 1}, P{alt.x - 9, alt.y + 4}, P{alt.x + 9, alt.y + 4}}) {
+        P at;
+        if (free_near(g.x, g.y, 2, at, dais))
+          if (auto mm = spawn("altarguard", at.x, at.y)) { mm->sleep = 1; mm->awake = true; }
+      }
+      // the High Prelate hangs in the air above the empty altar, not down by the hole
+      if (fl.boss && dais(alt.x, alt.y + 1)) { fl.boss->x = alt.x; fl.boss->y = alt.y + 1; }
+    }
+    // what is written in the temple: on the steps, on the broken pillar, by the chain and the pick, in a censer
+    auto write = [&](int i, const std::string& w) {
+      if (used_writings_.count(w)) return;
+      fl.writings[i] = w;
+      used_writings_.insert(w);
+    };
+    bool steps = false, pillar = false, chain = false, pick = false, censer = false;
+    for (int i = W; i < W * (H - 1); ++i) {
+      int t = fl.t[i];
+      if (t == ASHPRAYER && !steps) { steps = true; write(i, "Written in ash across the temple steps, the High Prelate's last prayer: 'We knelt upon the polished obsidian and worshiped the warmth that fed our kingdom, blind to the scarred, mutilated god chained in agony right beneath our altar. One reckless strike of the sacred pickaxe cracked the floor. One breath of the waking King turned our golden robes to soot and boiled the blood in our veins.'"); }
+      if (t == PICK && !pick) { pick = true; write(i, "The sacred pickaxe, gold wire wound round its haft, its point chipped. Scratched into the stone beside it: 'One strike of the pickaxe broke the seal. One breath of the King burned our temple to soot.'"); }
+      if (t == CHAIN && !chain) { chain = true; write(i, "A broken chain runs out from under the altar and down into the hole, each link as thick as a man. The dwarven seal on it is split through."); }
+      if (t == HEAP && !pillar)
+        for (int d : {1, -1, W, -W}) if (fl.t[i + d] == RUBBLE || fl.t[i + d] == FLOOR) { pillar = true; write(i + d, "Chiselled into the stump of a broken pillar, the Temple Pilgrim's Warning: 'The great altar stands cold, cracked, and hollow, surrounded by puddles of melted gold offerings that once gleamed in the light of the living crystal. Directly behind it, the temple floor gives way to a gaping, jagged wound torn recklessly into the earth, the fatal shaft through which our ruin climbed into the light.'"); break; }
+      if (t == CENSER && !censer)
+        for (int d : {1, -1, W, -W}) if (fl.t[i + d] == FLOOR) { censer = true; write(i + d, "A scroll, rolled up inside a cracked bronze censer: 'Kneel if your knees still bend, traveler, though no merciful god has answered a prayer in these halls since the heart was ripped from the stone. The air here is thick with burning incense and bone-dust, and the zealots who survived the slaughter still claw at their own faces in madness.'"); break; }
+    }
   }
 }

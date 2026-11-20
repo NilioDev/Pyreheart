@@ -27,7 +27,8 @@ names = ['WALL', 'FLOOR', 'DOOR', 'OPEN', 'STAIRS', 'WATER', 'SHALLOW', 'RUBBLE'
          'DRIFT', 'MARBLE', 'MOSAIC', 'DRYBATH', 'STEP', 'GOLDCRUST', 'BRIDGE', 'SCROLL', 'AWNING', 'GOLDBED', 'REDWALL', 'REDCOL', 'LION', 'VAT', 'SCREEN', 'BALUSTER', 'SHUTTER', 'POST', 'SIGN', 'NOTICE', 'ANCESTOR', 'DEADHEAP', 'KEG', 'LECTERN', 'SUNDISC', 'SUNHEART', 'HWALL',
          'GOLDHAND', 'COINHEAP', 'CHESTWRECK', 'FALLSHELF', 'SCROLLDRIFT', 'MELTBAR', 'TAPESTRY', 'CROWN', 'TABLET', 'SCALES', 'LEDGER', 'CASE', 'GEM', 'INGOTS', 'MOUND', 'BINDRUNE', 'INSCRIPTION',
          'SPEAR', 'SHIELDHEAP', 'DRUM', 'PASSMAP', 'ARMOUR', 'TARGET', 'BANDAGE', 'HANGING',
-         'LAWS', 'JUDGESEAT', 'TORTURERACK', 'MAIDEN', 'KEYS', 'GALLOWS', 'BLOCK']
+         'LAWS', 'JUDGESEAT', 'TORTURERACK', 'MAIDEN', 'KEYS', 'GALLOWS', 'BLOCK',
+         'SOOTDEAD', 'CENSER', 'RELIQUARY', 'NICHE', 'ASHPRAYER']
 o.append('enum Tile { ' + ', '.join(names) + ', TILE_COUNT };')
 assert len(names) == len(D.TILES), (len(names), len(D.TILES))
 o.append('inline const TileDef TILES[] = {')

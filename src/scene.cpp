@@ -18,7 +18,7 @@ using namespace data;
 // q1 the halls shuddering now and then (all zones but the Caves and the Deep, which have their own);
 // v1 ash seeping under the Vaults' doors, v2 parchment flakes off the scroll drifts;
 // b1 soot puffing up under the Barracks' boots, b2 flakes off the banners' tatters, b3 a war-drum far off;
-// p1 a cell door rattling or chains clinking in the Prison;
+// p1 a cell door rattling or chains clinking in the Prison; n1 ash welling out of the Sanctum's hole, n2 its incense haze;
 // k1 the City's ash fall, k3 the ancestors weeping soot, k4 the air shafts' breath, k5 shadows at the shutters
 // for the mock-ups: PYREHEART_FXPERIOD=4 makes the rare things (the Crypt's ghosts, the fire flaring in Charnfen) come every 4 s
 double fx_period(double p) {
@@ -393,6 +393,13 @@ void Client::draw_tiles() {
         // a rune of binding: the curse still holds, and the rune breathes a cold violet
         double g = .5 + .5 * std::sin(tt * .9 + x);
         pool(x, y, 1.8, base + .12 * g, .5, true);
+      } else if (actn == SANCTUM && t == CHASM && vis[i] == '1') {
+        pool(x, y, 2.2, base + .12, .8);  // a little red light up out of the hole
+        if (hash(x, y, 35) % 3 == 0 && zone_fx("n1")) emits_.push_back({float(x), float(y), 'S', sd});  // the wound still bleeds ash
+      } else if (actn == SANCTUM && t == CENSER && vis[i] == '1') {
+        emits_.push_back({float(x), float(y), 'g', sd});  // bone-dust smoking out of the censer
+      } else if (actn == SANCTUM && t == FLOOR && vis[i] == '1' && hash(x, y, 33) % 71 == 0) {
+        emits_.push_back({float(x), float(y), 'd', sd});
       } else if (actn == PRISON && t == MAIDEN && vis[i] == '1') {
         emits_.push_back({float(x), float(y), 'J', sd});  // dark drops out of its seams
       } else if (actn == PRISON && t == BRAZIER && vis[i] == '1') {
@@ -694,6 +701,15 @@ void Client::draw_tiles() {
             ch = RUNES[(x * 3 + y) % 6]; fg = mixc(0x4A1E10, 0xC04A16, .25 + .9 * glow); bright = true;
           }
           if (t == DAIS) { bg = mixc(0x383A46, 0x44465A, (hash(x / 3, y / 3, 6) % 3) / 3.0); ch = tile(x, y + 1) == DAIS ? ' ' : 0x25AC; fg = 0x5A5C6E; }
+          if (t == DAIS && actn == SANCTUM) {
+            // the platform where the Pyreheart lay: polished black, inlaid with gold in a lattice, the light running over it
+            bg = mixc(0x16121C, 0x221C2A, (hash(x / 2, y / 2, 6) % 3) / 3.0);
+            bool inlay = (x + y) % 4 == 0 || (x - y + 400) % 4 == 0;
+            ch = inlay ? ((x % 4 == 0 && y % 2 == 0) ? 0x2666 : 0xB7) : ' ';
+            fg = inlay ? 0x8A6A30 : 0x2A2430;
+            double sweep = std::fmod(tt * .1 + (hash(x / 8, 0, 38) % 100) / 400.0, 1.0) * 60 - 15;
+            if (inlay && std::abs(x * .8 + y - sweep) < 1.2) { fg = 0xFFE6A0; bright = true; }
+          }
           if (t == THRONE) { bg = 0x383A46; ch = 0x2565; fg = 0x8A7AA0; }
           if (t == THRONE && actn == CITY) { bg = 0x3A2A14; fg = 0xB48A48; }
           break;
@@ -750,6 +766,19 @@ void Client::draw_tiles() {
         }
         case ALTAR: {
           bool l = tile(x - 1, y) == ALTAR, r = tile(x + 1, y) == ALTAR;
+          if (actn == SANCTUM) {
+            // the great altar where the Pyreheart burned: black with soot, cracked through, and in its middle the
+            // hollow where the crystal sat, cold now, with frost at its rim
+            int nl = 0, nr = 0;
+            while (tile(x - nl - 1, y) == ALTAR) ++nl;
+            while (tile(x + nr + 1, y) == ALTAR) ++nr;
+            bg = mixc(0x141012, 0x1E1A1A, (hh % 3) / 3.0);
+            if (nl == nr) { ch = 0x25D8; fg = 0x6A7A90; bg = 0x0C0E14; if (std::fmod(tt * .13, 1.0) < .05) { fg = 0xB4C8E0; bright = true; } }
+            else if (nl == nr + 1) { ch = '/'; fg = 0x0A0808; }
+            else if (!l || !r) { ch = 0x2584; fg = 0x4A4440; }
+            else { ch = 0x2021; fg = 0x6A5A3C; }
+            break;
+          }
           bool end3 = (l && !r && tile(x - 2, y) == ALTAR) || (r && !l && tile(x + 2, y) == ALTAR);
           ch = end3 ? 0x2584 : 0x2021; fg = end3 ? 0x8A8478 : 0xDCC88C; bg = 0x34302A;
           break;
@@ -859,9 +888,34 @@ void Client::draw_tiles() {
             if (near) { bg = mixc(0x06060A, 0x2A2018, std::min(1.0, near / 4.0)); if ((x + y) % 2) { ch = 0xB7; fg = 0x4A3C30; } }
             break;
           }
+          if (actn == SANCTUM) {
+            // the hole dug behind the altar: jagged at the edge, and far down a dull red glow, the Deep below breathing
+            int near = 0;
+            for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) near += tile(x + dx, y + dy) != CHASM;
+            double g = .5 + .5 * std::sin(tt * .7 + x * .3);
+            bg = near ? 0x0C0A0E : mixc(0x1A0604, 0x3A0E06, g * (1 - near / 8.0));
+            if (near && hh % 2) { ch = 0x25B2; fg = 0x2A2630; }
+            break;
+          }
           if (tile(x, y - 1) != CHASM && !blocks(tile(x, y - 1))) { ch = 0x2580; fg = 0x3A4446; }
           break;
         }
+        case SOOTDEAD: bg = floor_bg(); if (hh % 3 == 0) ch = 0x3A9; break;
+        case CENSER:
+          bg = floor_bg();
+          if (std::fmod(tt * .2 + (hh % 100) / 100.0, 1.0) < .04) { fg = 0xFFE6A0; bright = true; }  // the brass catches the light
+          break;
+        case RELIQUARY:
+          bg = 0x2A2010;
+          if (std::fmod(tt * .2 + (hh % 100) / 100.0, 1.0) < .03) { fg = 0xFFF0B0; bright = true; }
+          break;
+        case NICHE: bg = 0x08080A; break;
+        case ASHPRAYER:
+          // the High Prelate's last prayer, written in ash along the steps
+          bg = y % 2 ? 0x2E2C28 : 0x24221F;
+          ch = hh % 4 == 0 ? '-' : hh % 4 == 1 ? 0x2248 : '~';
+          fg = 0x9A948A;
+          break;
         case FLOODGATE: {
           bg = 0x2A1A10; fg = mixc(0x8A4A28, 0xA0602E, nz(int(y)));
           ch = tile(x, y - 1) == FLOODGATE && tile(x, y + 1) == FLOODGATE ? (y % 2 ? 0x256C : 0x2551) : 0x2593;
@@ -926,7 +980,7 @@ void Client::draw_tiles() {
         }
         case COIN:
           bg = floor_bg(); keep = true;
-          if ((actn == CITY || actn == VAULTS) && std::fmod(tt * .22 + (hh % 100) / 100.0, 1.0) < .035) { fg = 0xFFF0B0; bright = true; }  // it catches the light
+          if ((actn == CITY || actn == VAULTS || actn == SANCTUM) && std::fmod(tt * .22 + (hh % 100) / 100.0, 1.0) < .035) { fg = 0xFFF0B0; bright = true; }  // it catches the light
           break;
         case SHAFT: {
           bg = mixc(0x3A1404, 0x8A3408, .5 + .3 * std::sin(tt * 1.3 + hh % 5));
@@ -964,8 +1018,17 @@ void Client::draw_tiles() {
           ch = side ? 0x2551 : 0x2550;
           break;
         }
-        case HEAP: bg = mixc(floor_bg(), 0x2A2420, .6); ch = hash(x, y, 26) % 3 ? 0x25B2 : '%'; break;
-        case BEAM: case PICK: case TURNTABLE: case COCOON: bg = floor_bg(); break;
+        case HEAP:
+          if (actn == SANCTUM) { ch = 0x2584; fg = 0x8C847A; bg = 0x2C2926; break; }  // the stump of a broken pillar
+          bg = mixc(floor_bg(), 0x2A2420, .6); ch = hash(x, y, 26) % 3 ? 0x25B2 : '%'; break;
+        case BEAM: case PICK: case TURNTABLE: case COCOON:
+          bg = floor_bg();
+          if (t == PICK && actn == SANCTUM) {
+            // the sacred pickaxe, gold wire round its haft, dropped at the lip of the hole it dug
+            bg = 0x16121C; fg = 0xC8A050;
+            if (std::fmod(tt * .25, 1.0) < .06) { fg = 0xFFE6A0; bright = true; }
+          }
+          break;
         case PLANK: {
           // planks over the water or the dark, swaying a little
           bool water = tile(x, y - 1) == WATER || tile(x, y + 1) == WATER || tile(x - 1, y) == WATER || tile(x + 1, y) == WATER ||
@@ -1599,6 +1662,14 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           dot(x, y, mixc(0xA8A094, 0x3A3630, ph), .7 * (1 - ph));
         }
         break;
+      case 'S':
+        // ash welling up out of the hole behind the altar and spilling over its lip
+        for (int j = 0; j < 6; ++j) {
+          double ph = std::fmod(tt * .22 + j / 6.0 + nz(sd + j) * .5, 1.0);
+          double x = ex + nz(sd * 3 + j) + std::sin(tt * 1.3 + j + sd) * .4 * ph, y = ey + .8 - ph * 2.4 + ph * ph * 1.2;
+          dot(x, y, mixc(0xA8A094, 0x2A2826, ph), .8 * (1 - ph), ph < .5 ? 1 : 2);
+        }
+        break;
       case 'J': {
         // a drop falling from a seam (an iron maiden's: dark red) or from the ceiling into the water, and its splash
         bool water = sd >= 7777;
@@ -1855,6 +1926,15 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           dot(bx + std::cos(a) * rr * 1.4, by + std::sin(a) * rr * .5, 0xB0AAA0, .7 * (1 - ag / .6));
         }
       }
+    }
+  }
+  if (snap_.value("act", 0) == SANCTUM && zone_fx("n2") && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+    // the haze of incense and bone-dust that never cleared: pale motes drifting slowly through the halls
+    for (int j = 0; j < 120; ++j) {
+      double v = .15 + nz(j * 5) * .25, span = vw_ + 4, ph = std::fmod(tt * v / span + nz(j * 3), 1.0);
+      double x = camx_ - 2 + ph * span, y = camy_ + nz(j * 7) * vh_ + std::sin(tt * .4 + j) * .6;
+      if (!open_at(x, y)) continue;
+      dot(x, y, mixc(0x3A3642, 0x7A7484, .5 + .5 * std::sin(tt * .7 + j)), .55 * std::min(1.0, std::min(ph, 1 - ph) * 10));
     }
   }
   if (snap_.value("act", 0) == BARRACKS && !snap_["heroes"].empty() && !snap_.value("rest", false)) {

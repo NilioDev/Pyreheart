@@ -17,7 +17,8 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     DRIFT, MARBLE, MOSAIC, DRYBATH, STEP, GOLDCRUST, BRIDGE, SCROLL, AWNING, GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL, \
     GOLDHAND, COINHEAP, CHESTWRECK, FALLSHELF, SCROLLDRIFT, MELTBAR, TAPESTRY, CROWN, TABLET, SCALES, LEDGER, CASE, GEM, INGOTS, MOUND, BINDRUNE, INSCRIPTION, \
     SPEAR, SHIELDHEAP, DRUM, PASSMAP, ARMOUR, TARGET, BANDAGE, HANGING, \
-    LAWS, JUDGESEAT, TORTURERACK, MAIDEN, KEYS, GALLOWS, BLOCK = range(219)
+    LAWS, JUDGESEAT, TORTURERACK, MAIDEN, KEYS, GALLOWS, BLOCK, \
+    SOOTDEAD, CENSER, RELIQUARY, NICHE, ASHPRAYER = range(224)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -253,6 +254,12 @@ TILES = [
     ('⌐', (160, 138, 80), False, False, 'rings of keys on their hooks'),
     ('Γ', (106, 80, 56), False, True, 'a gallows'),
     ('▬', (90, 74, 64), False, True, "the headsman's block"),
+    # the Sanctum: the temple where the Pyreheart lay
+    ('%', (90, 84, 80), False, True, 'a worshipper burned to soot where he knelt'),
+    ('δ', (184, 144, 64), True, True, 'a brass censer on its chain, smoking bone-dust'),
+    ('▬', (160, 138, 80), False, True, 'a reliquary, its gold run'),
+    ('∩', (58, 52, 66), False, False, 'an empty niche in the wall'),
+    ('~', (168, 160, 148), True, True, "a prayer written in ash on the step"),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
@@ -265,7 +272,8 @@ BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, C
                GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL,
                COINHEAP, CHESTWRECK, FALLSHELF, TAPESTRY, CROWN, TABLET, SCALES, CASE, INGOTS, MOUND, BINDRUNE, INSCRIPTION,
                SHIELDHEAP, DRUM, PASSMAP, ARMOUR, TARGET, HANGING,
-               LAWS, JUDGESEAT, TORTURERACK, MAIDEN, KEYS, GALLOWS, BLOCK}
+               LAWS, JUDGESEAT, TORTURERACK, MAIDEN, KEYS, GALLOWS, BLOCK,
+               SOOTDEAD, RELIQUARY, NICHE}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:

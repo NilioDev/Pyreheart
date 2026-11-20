@@ -1864,7 +1864,12 @@ void Game::mon_turn(Mon& m) {
     return;
   }
   if (m.sleep) {
-    if (d <= 1) { m.sleep = 0; say_near(m.x, m.y, cap(the(m)) + " wakes with a start.", 0xC0A080); }
+    // the Sanctum's altar-guards kneel until someone comes near the empty altar
+    bool kneels = floor->act == SANCTUM && m.def->key == "altarguard";
+    if (kneels && (d <= 2 || cheb(h->x, h->y, floor->down.x, floor->down.y + 3) <= 6)) {
+      m.sleep = 0;
+      say_near(m.x, m.y, cap(the(m)) + " rises from its knees, black armour grinding.", 0xB0B0C8);
+    } else if (!kneels && d <= 1) { m.sleep = 0; say_near(m.x, m.y, cap(the(m)) + " wakes with a start.", 0xC0A080); }
     return;
   }
   if (m.rank == "boss" && !m.def->moves.empty() && sees && --m.cool <= 0) {
