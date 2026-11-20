@@ -113,6 +113,7 @@ class Client {
   std::vector<float> damp_, draft_;
   std::vector<char> wetw_;
   double groan_t_ = -99, groan_next_ = -1;
+  std::map<int, double> crow_fled_;  // Charnfen: when each crow on a cross flew up
   void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
   void present(const TCOD_ViewportOptions& vp);
   void draw_side(int x, int y, int w, int h);
