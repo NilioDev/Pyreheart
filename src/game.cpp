@@ -187,6 +187,8 @@ void Game::place(Hero& h) {
   }
   // for screenshots: PYREHEART_NEAR=20 starts next to the first tile of that kind (20 a stone tomb)
   if (const char* n = std::getenv("PYREHEART_NEAR")) {
+    // and PYREHEART_PEACE empties the floor of foes, so nothing dims the light or gets in the picture
+    if (std::getenv("PYREHEART_PEACE")) { floor->mons.clear(); floor->boss = nullptr; }
     int want = std::atoi(n), skip = std::getenv("PYREHEART_NEAR_SKIP") ? std::atoi(std::getenv("PYREHEART_NEAR_SKIP")) : 0;
     for (int i = 0; i < W * H; ++i)
       if (floor->t[i] == want && skip-- <= 0 && free_near(i % W, i / W, 4, s)) { h.x = s.x; h.y = s.y; return; }

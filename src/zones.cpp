@@ -671,39 +671,115 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       m.treasure.push_back(m.rooms[cols]);
 
     } else if (act == CITY) {
-      // ---------------------------------------------------------------- the City: avenues, a plaza, houses in rows
-      P c{w / 2, h / 2};
-      // the cavern: everything open inside a rough oval
+      // ---------------------------------------------------------------- the City: rich once, buried in one night of ash
+      // a cavern round a plaza with the dry fountain; the palace at the head of the north avenue, walled in red like a
+      // forbidden city; houses in rows, a bath house, an inn, a scribes' hall and a sun temple among them; a great
+      // stair down to the way in; statues of the ancestors along the avenue, grates of the air shafts, drifts of ash
+      P o{w / 2, h / 2}, c{w / 2, h / 2 + 2};
       for (int y = 1; y < h - 1; ++y)
         for (int x = 1; x < w - 1; ++x) {
-          double dx = (x - c.x) / (w / 2.0 - 2), dy = (y - c.y) / (h / 2.0 - 2);
+          double dx = (x - o.x) / (w / 2.0 - 2), dy = (y - o.y) / (h / 2.0 - 2);
           if (dx * dx + dy * dy < .97 + .06 * rnd.real()) m.put(x, y, FLOOR);
         }
+      // the palace: outer wall, the golden river with five bridges, the inner wall and its lions, the marble terrace
+      // with the great hall, and a side hall either side
+      int px0 = c.x - 24, px1 = c.x + 24, py0 = 1, py1 = 21;
+      m.rect(px0 - 2, py0, px1 + 2, py1 + 3, FLOOR);
+      for (int x = px0; x <= px1; ++x) { m.put(x, py0, REDWALL); m.put(x, py1, REDWALL); }
+      for (int y = py0; y <= py1; ++y) { m.put(px0, y, REDWALL); m.put(px1, y, REDWALL); }
+      for (int x : {c.x - 1, c.x, c.x + 1, c.x - 9, c.x - 8, c.x + 8, c.x + 9}) m.put(x, py1, FLOOR);
+      for (int y : {py1 - 3, py1 - 2})
+        for (int x = px0 + 1; x <= px1 - 1; ++x) m.put(x, y, GOLDBED);
+      for (int x : {c.x - 1, c.x, c.x + 1, c.x - 5, c.x + 5, c.x - 9, c.x - 8, c.x + 8, c.x + 9})
+        for (int y : {py1 - 3, py1 - 2}) m.put(x, y, BRIDGE);
+      int iw = py1 - 5;  // the inner wall
+      for (int x = px0 + 1; x <= px1 - 1; ++x) if (std::abs(x - c.x) > 2) m.put(x, iw, REDWALL);
+      m.put(c.x - 4, iw + 1, LION); m.put(c.x + 4, iw + 1, LION);
+      int tx0 = c.x - 16, tx1 = c.x + 16, ty0 = py0 + 2, ty1 = iw - 2;
+      m.rect(tx0, ty0, tx1, ty1, MARBLE);
+      for (int x = tx0; x <= tx1; ++x) { m.put(x, ty0, BALUSTER); m.put(x, ty1, std::abs(x - c.x) <= 2 ? STEP : BALUSTER); }
+      for (int y = ty0; y <= ty1; ++y) { m.put(tx0, y, BALUSTER); m.put(tx1, y, BALUSTER); }
+      int hx0 = c.x - 12, hx1 = c.x + 12, hy0 = ty0 + 1, hy1 = ty1 - 3;
+      for (int x = hx0; x <= hx1; ++x) { m.put(x, hy0, REDWALL); m.put(x, hy1, REDWALL); }
+      for (int y = hy0; y <= hy1; ++y) { m.put(hx0, y, REDWALL); m.put(hx1, y, REDWALL); }
+      m.rect(hx0 + 1, hy0 + 1, hx1 - 1, hy1 - 1, FLOOR);
+      m.rooms.push_back(m.cells(hx0 + 1, hy0 + 1, hx1 - 1, hy1 - 1));
+      for (int x = c.x - 1; x <= c.x + 1; ++x) m.put(x, hy1, FLOOR);
+      for (int dx : {3, 6, 9}) for (int y : {hy0 + 2, hy1 - 2}) { m.put(c.x - dx, y, REDCOL); m.put(c.x + dx, y, REDCOL); }
+      m.put(c.x, hy0 + 1, THRONE);
+      for (int dx : {-2, -1, 1, 2}) m.put(c.x + dx, hy0 + 1, SCREEN);
+      down = {c.x, hy0 + 3};
+      std::vector<std::array<int, 4>> sides;
+      for (int s : {-1, 1}) {
+        int ax = s < 0 ? px0 + 1 : c.x + 18, bx = s < 0 ? c.x - 18 : px1 - 1, ay = ty0, by = ty1 - 3;
+        for (int x = ax; x <= bx; ++x) { m.put(x, ay, REDWALL); m.put(x, by, REDWALL); }
+        for (int y = ay; y <= by; ++y) { m.put(ax, y, REDWALL); m.put(bx, y, REDWALL); }
+        m.rect(ax + 1, ay + 1, bx - 1, by - 1, FLOOR);
+        m.put(s < 0 ? bx : ax, (ay + by) / 2, FLOOR);
+        m.rooms.push_back(m.cells(ax + 1, ay + 1, bx - 1, by - 1));
+        sides.push_back({ax + 1, ay + 1, bx - 1, by - 1});
+      }
+      m.treasure.push_back(m.rooms.back());
+      auto in_palace = [&](int x0, int y0, int x1, int y1) { return x1 >= px0 - 3 && x0 <= px1 + 3 && y0 <= py1 + 3; };
+      auto all_floor = [&](int x0, int y0, int x1, int y1) {
+        for (int y = y0; y <= y1; ++y) for (int x = x0; x <= x1; ++x) if (m.at(x, y) != FLOOR) return false;
+        return true;
+      };
+      auto box = [&](int x0, int y0, int x1, int y1, bool shutters) {
+        m.rect(x0, y0, x1, y1, HWALL);
+        m.rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, FLOOR);
+        if (shutters)
+          for (int x = x0 + 2; x <= x1 - 2; x += 3) for (int y : {y0, y1}) if (rnd.real() < .55) m.put(x, y, SHUTTER);
+      };
+      // the great buildings: a bath house, an inn, a scribes' hall, the sun temple
+      struct Bld { int kind, x0, y0, x1, y1, door_y; };
+      std::vector<Bld> blds;
+      for (int kind : {3, 0, 2, 1})
+        for (int t = 0; t < 600; ++t) {
+          int x0 = rnd.range(3, w - 24), y0 = rnd.range(3, h - 12), x1 = x0 + 19, y1 = y0 + 8;
+          int mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+          if (std::abs(mx - c.x) < 18 || std::abs(my - c.y) < 9 || in_palace(x0, y0, x1, y1)) continue;
+          if (!all_floor(x0 - 1, y0 - 2, x1 + 1, y1 + 2)) continue;
+          box(x0, y0, x1, y1, kind != 3);
+          int door_y = my < c.y ? y1 : y0;
+          m.put(mx, door_y, OPEN); m.put(mx + 1, door_y, OPEN);
+          m.rooms.push_back(m.cells(x0 + 1, y0 + 1, x1 - 1, y1 - 1));
+          blds.push_back({kind, x0, y0, x1, y1, door_y});
+          break;
+        }
       // houses: blocks between the streets, each a box with its door on the street side
+      struct House { int x0, y0, x1, y1, door_x, door_y; };
+      std::vector<House> houses;
       for (int by = 4; by < h - 8; by += 9)
         for (int bx = 6; bx < w - 12; bx += 12) {
           int x0 = bx + rnd.range(0, 2), y0 = by + rnd.range(0, 1), x1 = x0 + rnd.range(7, 9), y1 = y0 + rnd.range(5, 6);
-          if (std::abs((x0 + x1) / 2 - c.x) < 12 || std::abs((y0 + y1) / 2 - c.y) < 9) continue;  // the avenues
-          bool all_open = true;
-          for (int y = y0 - 1; y <= y1 + 1; ++y) for (int x = x0 - 1; x <= x1 + 1; ++x) if (m.at(x, y) != FLOOR) all_open = false;
-          if (!all_open) continue;
-          m.rect(x0, y0, x1, y1, WALL);
-          m.rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, FLOOR);
+          if (std::abs((x0 + x1) / 2 - c.x) < 12 || std::abs((y0 + y1) / 2 - c.y) < 9 || in_palace(x0, y0, x1, y1)) continue;
+          if (!all_floor(x0 - 1, y0 - 1, x1 + 1, y1 + 1)) continue;
+          box(x0, y0, x1, y1, true);
           m.rooms.push_back(m.cells(x0 + 1, y0 + 1, x1 - 1, y1 - 1));
-          int door_y = (y0 + y1) / 2 < c.y ? y1 : y0;
-          m.put((x0 + x1) / 2, door_y, DOOR);
-          if (rnd.real() < .25) {  // fallen in: part of it rubble and open to the street
+          int door_y = (y0 + y1) / 2 < c.y ? y1 : y0, door_x = (x0 + x1) / 2;
+          m.put(door_x, door_y, rnd.real() < .6 ? OPEN : DOOR);
+          if (rnd.real() < .2) {  // fallen in: part of it rubble and open to the street
             int cx0 = rnd.coin() ? x0 : x1 - 2;
             for (int y = y0; y <= y1; ++y) for (int x = cx0; x <= cx0 + 2; ++x) m.put(x, y, rnd.real() < .6 ? RUBBLE : FLOOR);
-          }
+          } else houses.push_back({x0, y0, x1, y1, door_x, door_y});
         }
-      // the avenues: a canal down the middle of each, with bridges; statues on plinths along them
+      // and more of them wherever a house still fits, so the streets run narrow between them
+      for (int k = 0; k < 900; ++k) {
+        int x0 = rnd.range(3, w - 13), y0 = rnd.range(3, h - 10), x1 = x0 + rnd.range(6, 9), y1 = y0 + rnd.range(5, 6);
+        if (std::abs((x0 + x1) / 2 - c.x) < 11 || std::abs((y0 + y1) / 2 - c.y) < 8 || in_palace(x0, y0, x1, y1)) continue;
+        if (!all_floor(x0 - 1, y0 - 1, x1 + 1, y1 + 1)) continue;
+        box(x0, y0, x1, y1, true);
+        m.rooms.push_back(m.cells(x0 + 1, y0 + 1, x1 - 1, y1 - 1));
+        int door_y = (y0 + y1) / 2 < c.y ? y1 : y0, door_x = (x0 + x1) / 2;
+        m.put(door_x, door_y, rnd.real() < .6 ? OPEN : DOOR);
+        houses.push_back({x0, y0, x1, y1, door_x, door_y});
+      }
+      // the avenue across: a canal down its middle with bridges, the ancestors on their plinths either side
       for (int x = 2; x < w - 2; ++x)
         if (std::abs(x - c.x) > 10 && m.at(x, c.y) == FLOOR && x % 10 != 0) m.put(x, c.y, WATER);
-      for (int y = 2; y < h - 2; ++y)
-        if (std::abs(y - c.y) > 10 && m.at(c.x, y) == FLOOR && y % 8 != 4) m.put(c.x, y, WATER);
-      for (int x = 4; x < w - 4; x += 8)
-        if (std::abs(x - c.x) > 12) for (int y : {c.y - 4, c.y + 4}) if (m.at(x, y) == FLOOR) m.put(x, y, STATUE);
+      for (int x = 4; x < w - 4; x += 6)
+        if (std::abs(x - c.x) > 13) for (int y : {c.y - 4, c.y + 4}) if (m.at(x, y) == FLOOR) m.put(x, y, rnd.real() < .2 ? STATUE : ANCESTOR);
       // the plaza: paving, a ring of columns, the dry fountain
       for (int y = c.y - 9; y <= c.y + 9; ++y)
         for (int x = c.x - 12; x <= c.x + 12; ++x) {
@@ -716,30 +792,140 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       }
       m.rect(c.x - 1, c.y - 1, c.x + 1, c.y + 1, DRYFOUNT);
       m.rooms.push_back(m.cells(c.x - 11, c.y - 8, c.x + 11, c.y + 8));
-      up = {c.x + 3, h - 5};
+      // the way up to the palace gate, lantern posts along it
+      for (int y = py1 + 1; y < c.y; ++y) for (int x = c.x - 1; x <= c.x + 1; ++x) if (m.at(x, y) == WALL || m.at(x, y) == WATER) m.put(x, y, FLOOR);
+      // the great stair down from the plaza to the way in
+      int sy0 = c.y + 10, sy1 = std::min(h - 6, c.y + 17);
+      for (int y = sy0; y <= sy1; ++y) for (int x = c.x - 4; x <= c.x + 4; ++x) if (m.in(x, y)) m.put(x, y, STEP);
+      m.put(c.x - 6, sy0, ANCESTOR); m.put(c.x + 6, sy0, ANCESTOR);
+      up = {c.x, h - 5};
       {
         int bd = 1 << 30;
         P best{-1, -1};
-        for (int y = c.y + 12; y < h - 1; ++y)
-          for (int x = c.x - 12; x <= c.x + 12; ++x)
-            if (m.at(x, y) == FLOOR && std::abs(x - c.x) > 1 && (h - y) * 4 + std::abs(x - c.x) < bd) { bd = (h - y) * 4 + std::abs(x - c.x); best = {x, y}; }
+        for (int y = sy1 + 1; y < h - 1; ++y)
+          for (int x = c.x - 8; x <= c.x + 8; ++x)
+            if (m.at(x, y) == FLOOR && (h - y) * 4 + std::abs(x - c.x) < bd) { bd = (h - y) * 4 + std::abs(x - c.x); best = {x, y}; }
         if (best.x >= 0) up = best;
       }
+      for (int y = sy1 + 1; y <= up.y; ++y) for (int x = c.x - 1; x <= c.x + 1; ++x) if (m.at(x, y) == WALL) m.put(x, y, FLOOR);
+      if (m.at(up.x, up.y) != FLOOR) m.put(up.x, up.y, FLOOR);
       fl.up = up;
-      // market stalls on the plaza's edge
-      for (int k = 0; k < 6; ++k) {
-        int x = c.x + (k % 2 ? 1 : -1) * rnd.range(14, 20), y = c.y + rnd.range(-6, 6);
-        if (m.at(x, y) == FLOOR && std::abs(y - c.y) > 1) m.place(x, y, STALL);
+      fl.down = down;
+      auto near_stairs = [&](int x, int y, int r) { return cheb(x, y, up.x, up.y) <= r || cheb(x, y, down.x, down.y) <= r; };
+      auto lay = [&](int x, int y, int t) {  // a thing on the floor; the ones that block only where they close no way
+        if (!m.in(x, y) || near_stairs(x, y, 1)) return false;
+        int u = m.at(x, y);
+        if (u != FLOOR && u != PLAZA && u != MARBLE && u != MOSAIC && u != STEP) return false;
+        if (!blocks(t)) { m.put(x, y, t); return true; }
+        if (u != FLOOR) { m.put(x, y, FLOOR); if (m.place(x, y, t)) return true; m.put(x, y, u); return false; }
+        return m.place(x, y, t);
+      };
+      // the dead on the great stair, stopped where they stood
+      for (int k = 0; k < 7; ++k) lay(c.x + rnd.range(-4, 4), rnd.range(sy0, sy1), k % 3 ? BONES : SKULL);
+      // the market on the plaza's edge: stalls with their awnings fallen, coins nobody came back for, a column down
+      for (int k = 0; k < 7; ++k) {
+        int x = c.x + (k % 2 ? 1 : -1) * rnd.range(13, 20), y = c.y + rnd.range(-7, 7);
+        if (std::abs(y - c.y) > 1 && lay(x, y, STALL)) lay(x, y + 1, AWNING), lay(x + 1, y + 1, AWNING);
       }
-      // the Ash-Mayor's hall at the head of the avenue, the way in at its foot
-      int hx0 = c.x - 10, hx1 = c.x + 10, hy0 = 3, hy1 = 12;
-      m.rect(hx0 - 1, hy0 - 1, hx1 + 1, hy1 + 1, WALL);
-      m.room(hx0, hy0, hx1, hy1);
-      for (int x = c.x - 1; x <= c.x + 1; ++x) m.put(x, hy1 + 1, FLOOR);
-      for (int y = hy1 + 2; y < c.y; ++y) for (int x = c.x - 1; x <= c.x + 1; ++x) if (m.at(x, y) == WALL || m.at(x, y) == WATER) m.put(x, y, FLOOR);
-      for (int x = hx0 + 3; x <= c.x - 3; x += 4) for (int y : {hy0 + 2, hy1 - 2}) { m.put(x, y, PILLAR); m.put(2 * c.x - x, y, PILLAR); }
-      m.put(c.x, hy0, THRONE);
-      down = {c.x, hy0 + 2};
+      for (int k = 0; k < 10; ++k) lay(c.x + rnd.range(-11, 11), c.y + rnd.range(-7, 7), COIN);
+      lay(c.x + rnd.range(4, 8) * (rnd.coin() ? 1 : -1), c.y + rnd.range(3, 5), STATUE);
+      // round the dry fountain the dead lie in white heaps, and a notice nobody read in time
+      for (int k = 0; k < 10; ++k) {
+        double a = rnd.real() * 6.2832, r = 2.6 + rnd.real() * 1.6;
+        lay(c.x + int(std::lround(std::cos(a) * r * 1.4)), c.y + int(std::lround(std::sin(a) * r)), DEADHEAP);
+      }
+      lay(c.x + 3, c.y - 3, NOTICE);
+      // lantern posts by the palace way, the lions' bronze vats, the palace litter
+      for (int y = py1 + 2; y < c.y - 9; y += 2) { lay(c.x - 3, y, POST); lay(c.x + 3, y, POST); }
+      for (int s : {-1, 1}) { lay(c.x + s * 20, iw - 1, VAT); lay(c.x + s * 14, iw + 1, VAT); lay(c.x + s * 18, py1 - 1, VAT); }
+      for (int k = 0; k < 8; ++k) lay(c.x + rnd.range(-10, 10), rnd.range(hy0 + 1, hy1 - 1), COIN);
+      for (auto& sd : sides) {
+        lay(sd[0], sd[1], VAT); lay(sd[2], sd[1], VAT);
+        for (int k = 0; k < 4; ++k) lay(rnd.range(sd[0], sd[2]), rnd.range(sd[1], sd[3]), k % 2 ? SKULL : BONES);
+        for (int k = 0; k < 3; ++k) lay(rnd.range(sd[0], sd[2]), rnd.range(sd[1], sd[3]), COIN);
+      }
+      for (int k = 0; k < 6; ++k) lay(rnd.range(px0 + 2, px1 - 2), rnd.range(iw + 1, py1 - 1), k % 2 ? BONES : SKULL);
+      // the great buildings, furnished
+      for (auto& bl : blds) {
+        int a = bl.x0 + 1, b = bl.x1 - 1, t = bl.y0 + 1, d = bl.y1 - 1, mx = (bl.x0 + bl.x1) / 2;
+        bool down_door = bl.door_y == bl.y1;
+        int far = down_door ? t : d, dir = down_door ? 1 : -1;  // the end away from the door, and the way towards it
+        auto row = [&](int k) { return far + dir * k; };
+        if (bl.kind == 0) {
+          // the bath house: a mosaic floor, two dry pools full of ash behind their rims, columns
+          m.rect(a, t, b, d, MOSAIC);
+          for (int s : {0, 1}) {
+            int qa = s ? b - 7 : a + 1, qb = s ? b - 1 : a + 7;
+            for (int y = t + 1; y <= d - 1; ++y)
+              for (int x = qa; x <= qb; ++x)
+                m.put(x, y, (x == qa || x == qb || y == t + 1 || y == d - 1) ? BASIN : DRYBATH);
+            m.put(s ? qa : qb, (t + d) / 2, DRYBATH);  // the steps down into it
+            m.put(rnd.range(qa + 1, qb - 1), (t + d) / 2, rnd.coin() ? BONES : SKULL);
+          }
+          for (int x : {a, b}) for (int y : {t, d}) m.put(x, y, PILLAR);
+        } else if (bl.kind == 1) {
+          // the inn: long tables with the tankards still on them, kegs along the back wall
+          for (int k : {1, 3}) for (int x = a + 2; x <= b - 2; ++x) if (std::abs(x - mx) > 1) m.put(x, row(k + 1), TABLE);
+          for (int x = a; x <= b; ++x) if (std::abs(x - mx) > 2 && rnd.real() < .5) m.put(x, row(0), KEG);
+          for (int k = 0; k < 7; ++k) lay(rnd.range(a, b), row(rnd.coin() ? 3 : 1), k % 3 ? TANKARD : STOOL);
+          for (int k = 0; k < 3; ++k) lay(rnd.range(a, b), row(rnd.range(1, 5)), k ? BONES : SKULL);
+        } else if (bl.kind == 2) {
+          // the scribes' hall: shelves of scrolls along the walls, rows of desks, scrolls dropped on the floor
+          for (int x = a; x <= b; ++x) { if (std::abs(x - mx) > 2) m.put(x, row(0), BOOKS); if (std::abs(x - mx) > 2 && x != a && x != b) m.put(x, row(6), BOOKS); }
+          for (int x = a + 2; x <= b - 2; x += 4) for (int k : {2, 4}) m.put(x, row(k), LECTERN);
+          for (int k = 0; k < 8; ++k) lay(rnd.range(a, b), row(rnd.range(1, 5)), SCROLL);
+          lay(rnd.range(a, b), row(rnd.range(1, 5)), SKULL);
+        } else {
+          // the sun temple: a golden image of the Pyreheart on the far wall, sagged where it melted, its gold run down
+          // over the steps; the dead kneeling in rows before it
+          for (int x = mx - 2; x <= mx + 2; ++x) { m.put(x, row(0), SUNDISC); if (std::abs(x - mx) <= 1) m.put(x, row(1), SUNDISC); }
+          m.put(mx, row(0), SUNHEART);
+          for (int x = mx - 3; x <= mx + 3; ++x) m.put(x, row(2), GOLDCRUST);
+          for (int x : {a + 2, b - 2}) for (int k : {1, 4}) m.put(x, row(k), PILLAR);
+          for (int k : {4, 5}) for (int x = mx - 6; x <= mx + 6; x += 3) if (x != mx) lay(x + rnd.range(0, 1), row(k), rnd.real() < .7 ? DEADHEAP : BONES);
+        }
+      }
+      // the houses, as their people left them in the night
+      for (auto& ho : houses) {
+        int a = ho.x0 + 1, b = ho.x1 - 1, t = ho.y0 + 1, d = ho.y1 - 1;
+        int back = ho.door_y == ho.y1 ? t : d;
+        bool left = rnd.coin();
+        int bx = left ? a : b - 1;
+        lay(bx, back, BUNK); lay(bx + 1, back, BUNK);
+        int tx = left ? b - 2 : a + 2, ty = (t + d) / 2;
+        if (lay(tx, ty, TABLE)) { lay(tx + (left ? 1 : -1), ty, STOOL); if (rnd.coin()) lay(tx, ty + 1, TANKARD); }
+        if (rnd.real() < .4) lay(left ? b : a, back, rnd.coin() ? BOOKS : CRATE);
+        int n = rnd.range(0, 3);
+        for (int k = 0; k < n; ++k) lay(rnd.range(a, b), rnd.range(t, d), k == 0 ? SKULL : BONES);
+        if (rnd.real() < .4) lay(rnd.range(a, b), rnd.range(t, d), BUCKET);
+        if (rnd.real() < .5) lay(ho.door_x + (rnd.coin() ? 2 : -2), ho.door_y + (ho.door_y == ho.y1 ? 1 : -1), SIGN);
+      }
+      // the streets: grates of the air shafts, lantern posts, drifts of ash, the dead where they fell
+      for (int k = 0, made = 0; k < 400 && made < 6; ++k) {
+        int x = rnd.range(4, w - 8), y = rnd.range(4, h - 6);
+        if (in_palace(x, y, x + 2, y + 1) || near_stairs(x, y, 4)) continue;
+        bool ok = true;
+        for (int yy = y - 1; yy <= y + 2 && ok; ++yy) for (int xx = x - 1; xx <= x + 3; ++xx) if (m.at(xx, yy) != FLOOR) { ok = false; break; }
+        if (!ok) continue;
+        m.rect(x, y, x + 2, y + 1, GRATE);
+        ++made;
+      }
+      for (int k = 0, made = 0; k < 400 && made < 16; ++k) {
+        int x = rnd.range(2, w - 3), y = rnd.range(2, h - 3);
+        if (in_palace(x, y, x, y)) continue;
+        bool street = true;
+        for (int yy = y - 1; yy <= y + 1; ++yy) for (int xx = x - 1; xx <= x + 1; ++xx) if (m.at(xx, yy) != FLOOR && m.at(xx, yy) != WALL) street = false;
+        if (street && lay(x, y, POST)) ++made;
+      }
+      for (int k = 0; k < 34; ++k) {
+        int cx = rnd.range(3, w - 4), cy = rnd.range(3, h - 4);
+        double r = 1 + rnd.real() * 1.8;
+        for (int y = cy - 2; y <= cy + 2; ++y)
+          for (int x = cx - 3; x <= cx + 3; ++x)
+            if ((x - cx) * (x - cx) / 2.0 + (y - cy) * (y - cy) <= r * r && (m.at(x, y) == FLOOR || m.at(x, y) == PLAZA || m.at(x, y) == MARBLE) && !near_stairs(x, y, 0))
+              m.put(x, y, DRIFT);
+      }
+      for (int k = 0; k < 26; ++k) lay(rnd.range(2, w - 3), rnd.range(2, h - 3), k % 4 == 0 ? SKULL : k % 4 == 1 ? RUBBLE : BONES);
       m.treasure.push_back(m.rooms[rnd.below(int(m.rooms.size()))]);
 
     } else if (act == VAULTS) {

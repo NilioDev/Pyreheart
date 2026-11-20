@@ -3,7 +3,7 @@
 #include "defs.hpp"
 
 namespace data {
-enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT, SNOW, PATH, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, OPENGRAVE, GUARD, BARRICADE, HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON, PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL, HAMMER, TONGS, STOOL, APRON, BUCKET, STAIN, TANKARD, BLADE, LADLE, SHOVEL, ARM, SKULL, SLUNG, HOOK, TROUGH, MOULD, CAST, SPILL, WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, TILE_COUNT };
+enum Tile { WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIRS, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED, OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, BONES, CRUST, NECK, BASALT, DAIS, RUNE, THRONE, EDGE, HEARTH, STONEWORK, ANVIL, SLAG, RAIL, CART, CHAIN, BRAZIER, OBELISK, ASH, VENT, OBSIDIAN, WRECK, SHIELD, STATUE, BANNER, FALLEN, SLUDGE, MIRE, GRATE, FLOODGATE, GEAR, WHEEL, HUB, MOSSWALL, PIPE, PUMP, LEVER, FLOATER, EGG, TIDESTATUE, BASIN, CHASM, COIN, SHAFT, SPOUT, LAMP, SLIME, FISSURE, PROP, BARS, VAULTDOOR, OPENVAULT, BUNK, TABLE, RACK, DUMMY, STALL, PLAZA, CRATE, BOOKS, DRYFOUNT, SNOW, PATH, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, DIGGER, OPENGRAVE, GUARD, BARRICADE, HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON, PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL, HAMMER, TONGS, STOOL, APRON, BUCKET, STAIN, TANKARD, BLADE, LADLE, SHOVEL, ARM, SKULL, SLUNG, HOOK, TROUGH, MOULD, CAST, SPILL, WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, DRIFT, MARBLE, MOSAIC, DRYBATH, STEP, GOLDCRUST, BRIDGE, SCROLL, AWNING, GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL, TILE_COUNT };
 inline const TileDef TILES[] = {
     {0x23, -1, false, false, "wall"},
     {0x2E, -1, true, true, "floor"},
@@ -165,8 +165,35 @@ inline const TileDef TILES[] = {
     {0x2584, 0x6E6056, false, true, "the rim of a quench trough"},
     {0x7E, 0x283846, false, true, "still black water under a skin of ash"},
     {0x26, 0xA0A0AA, false, true, "a heap of scrap iron"},
+    {0x2591, 0x78746E, true, true, "a drift of grey ash"},
+    {0x2E, 0xB0AAA0, true, true, "the marble of the terrace"},
+    {0xB7, 0x5A6E8C, true, true, "a mosaic floor under the ash"},
+    {0x2591, 0x605C58, true, true, "a dry bath, filled with ash"},
+    {0x2550, 0x969086, true, true, "a step of the great stair"},
+    {0x2248, 0x9A8040, true, true, "gold that melted and set again"},
+    {0x2550, 0xBEB8AC, true, true, "a marble bridge"},
+    {0x7E, 0xC8BC9C, true, true, "a scroll, dropped"},
+    {0x25AC, 0x783428, true, true, "a market awning, fallen and rotten"},
+    {0x2591, 0x6E5A30, false, true, "the dry bed of the golden river"},
+    {0x2593, 0x963428, false, false, "a palace wall of red plaster"},
+    {0x25CB, 0xAA3C2C, false, true, "a red lacquered column"},
+    {0x26, 0xA0783C, false, true, "a bronze lion"},
+    {0x398, 0x8C6438, false, true, "a bronze vat, dry"},
+    {0x2593, 0xAA8840, false, false, "a screen of beaten gold"},
+    {0x2500, 0xB4AEA4, false, true, "a marble balustrade"},
+    {0x2592, 0x6A4E34, false, false, "a shuttered window"},
+    {0x2640, 0x60606A, false, true, "an iron lantern post, an ember still in it"},
+    {0x393, 0xA08A50, false, true, "a brass street sign"},
+    {0xB6, 0xA08A50, false, true, "a brass notice"},
+    {0x263A, 0x96928C, false, true, "a statue of an ancestor, weeping soot"},
+    {0x25, 0xE0D8C4, false, true, "a white heap of the dead, turned to chalk"},
+    {0x398, 0x7A5434, false, true, "a keg"},
+    {0x2565, 0x7A5A3A, false, true, "a scribe's desk"},
+    {0x2593, 0xA88A40, false, false, "a great disc of gold, sagging where it melted"},
+    {0x263C, 0xE0C070, false, false, "a golden image of the Pyreheart"},
+    {0x2593, 0x70685E, false, false, "the wall of a house"},
 };
-inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: case SLUDGE: case FLOODGATE: case GEAR: case WHEEL: case HUB: case MOSSWALL: case PIPE: case PUMP: case LEVER: case FLOATER: case EGG: case TIDESTATUE: case BASIN: case CHASM: case SHAFT: case SPOUT: case LAMP: case PROP: case BARS: case VAULTDOOR: case BUNK: case TABLE: case RACK: case DUMMY: case STALL: case CRATE: case BOOKS: case DRYFOUNT: case GRAVE: case CROSS: case TREE: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case FIRE: case STONES: case CHIMNEY: case HEALER: case SMITH: case DIGGER: case GUARD: case BARRICADE: case HEAP: case BEAM: case ORE: case TIMBER: case COCOON: case STALAG: case BURROW: case TOTEM: case CAMPFIRE: case CRYSTAL: case WORKPIECE: case BELLOWS: case EMBERS: case SLAGPIT: case HOIST: case CRUCIBLE: case STACK: case BONEHEAP: case COALHEAP: case BARROW: case BENCH: case HUSK: case PLATES: case BOLTS: case RIM: case QUENCH: case SCRAP: return true; default: return false; } }
+inline bool blocks(int t) { switch (t) { case WALL: case DOOR: case WATER: case LAVA: case CHEST: case OPENCHEST: case SHRINE: case USED: case TORCH: case CANDLE: case ALTAR: case PEW: case PILLAR: case TOMB: case CRACKED: case OPENTOMB: case BIER: case CORPSE: case RESTLESS: case BONEWALL: case HEARTH: case STONEWORK: case ANVIL: case SLAG: case CART: case BRAZIER: case OBELISK: case VENT: case OBSIDIAN: case STATUE: case BANNER: case FALLEN: case SLUDGE: case FLOODGATE: case GEAR: case WHEEL: case HUB: case MOSSWALL: case PIPE: case PUMP: case LEVER: case FLOATER: case EGG: case TIDESTATUE: case BASIN: case CHASM: case SHAFT: case SPOUT: case LAMP: case PROP: case BARS: case VAULTDOOR: case BUNK: case TABLE: case RACK: case DUMMY: case STALL: case CRATE: case BOOKS: case DRYFOUNT: case GRAVE: case CROSS: case TREE: case EMBER: case WELL: case BOARD: case WINDOW: case LIT: case FIRE: case STONES: case CHIMNEY: case HEALER: case SMITH: case DIGGER: case GUARD: case BARRICADE: case HEAP: case BEAM: case ORE: case TIMBER: case COCOON: case STALAG: case BURROW: case TOTEM: case CAMPFIRE: case CRYSTAL: case WORKPIECE: case BELLOWS: case EMBERS: case SLAGPIT: case HOIST: case CRUCIBLE: case STACK: case BONEHEAP: case COALHEAP: case BARROW: case BENCH: case HUSK: case PLATES: case BOLTS: case RIM: case QUENCH: case SCRAP: case GOLDBED: case REDWALL: case REDCOL: case LION: case VAT: case SCREEN: case BALUSTER: case SHUTTER: case POST: case SIGN: case NOTICE: case ANCESTOR: case DEADHEAP: case KEG: case LECTERN: case SUNDISC: case SUNHEART: case HWALL: return true; default: return false; } }
 constexpr int STEPS = 6;
 constexpr int ZONES = 10;
 inline const ActDef ACTS[] = {

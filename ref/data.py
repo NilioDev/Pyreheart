@@ -13,7 +13,8 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     DIGGER, OPENGRAVE, GUARD, BARRICADE, \
     HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON, \
     PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL, \
-    HAMMER, TONGS, STOOL, APRON, BUCKET, STAIN, TANKARD, BLADE, LADLE, SHOVEL, ARM, SKULL, SLUNG, HOOK, TROUGH, MOULD, CAST, SPILL, WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP = range(160)
+    HAMMER, TONGS, STOOL, APRON, BUCKET, STAIN, TANKARD, BLADE, LADLE, SHOVEL, ARM, SKULL, SLUNG, HOOK, TROUGH, MOULD, CAST, SPILL, WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, \
+    DRIFT, MARBLE, MOSAIC, DRYBATH, STEP, GOLDCRUST, BRIDGE, SCROLL, AWNING, GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL = range(187)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -186,6 +187,34 @@ TILES = [
     ('▄', (110, 96, 86), False, True, 'the rim of a quench trough'),
     ('~', (40, 56, 70), False, True, 'still black water under a skin of ash'),
     ('&', (160, 160, 170), False, True, 'a heap of scrap iron'),
+    # the City, rich once and buried in one night of ash: drifts, marble, the palace's red walls and gold
+    ('░', (120, 116, 110), True, True, 'a drift of grey ash'),
+    ('.', (176, 170, 160), True, True, 'the marble of the terrace'),
+    ('·', (90, 110, 140), True, True, 'a mosaic floor under the ash'),
+    ('░', (96, 92, 88), True, True, 'a dry bath, filled with ash'),
+    ('═', (150, 144, 134), True, True, 'a step of the great stair'),
+    ('≈', (154, 128, 64), True, True, 'gold that melted and set again'),
+    ('═', (190, 184, 172), True, True, 'a marble bridge'),
+    ('~', (200, 188, 156), True, True, 'a scroll, dropped'),
+    ('▬', (120, 52, 40), True, True, 'a market awning, fallen and rotten'),
+    ('░', (110, 90, 48), False, True, 'the dry bed of the golden river'),
+    ('▓', (150, 52, 40), False, False, 'a palace wall of red plaster'),
+    ('○', (170, 60, 44), False, True, 'a red lacquered column'),
+    ('&', (160, 120, 60), False, True, 'a bronze lion'),
+    ('Θ', (140, 100, 56), False, True, 'a bronze vat, dry'),
+    ('▓', (170, 136, 64), False, False, 'a screen of beaten gold'),
+    ('─', (180, 174, 164), False, True, 'a marble balustrade'),
+    ('▒', (106, 78, 52), False, False, 'a shuttered window'),
+    ('♀', (96, 96, 106), False, True, 'an iron lantern post, an ember still in it'),
+    ('Γ', (160, 138, 80), False, True, 'a brass street sign'),
+    ('¶', (160, 138, 80), False, True, 'a brass notice'),
+    ('☺', (150, 146, 140), False, True, 'a statue of an ancestor, weeping soot'),
+    ('%', (224, 216, 196), False, True, 'a white heap of the dead, turned to chalk'),
+    ('Θ', (122, 84, 52), False, True, 'a keg'),
+    ('╥', (122, 90, 58), False, True, "a scribe's desk"),
+    ('▓', (168, 138, 64), False, False, 'a great disc of gold, sagging where it melted'),
+    ('☼', (224, 192, 112), False, False, 'a golden image of the Pyreheart'),
+    ('▓', (112, 104, 94), False, False, 'the wall of a house'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
@@ -194,7 +223,8 @@ BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, C
                CRATE, BOOKS, DRYFOUNT, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, FIRE, STONES, CHIMNEY, HEALER,
                SMITH, DIGGER, GUARD, BARRICADE, HEAP, BEAM, ORE, TIMBER, COCOON,
                STALAG, BURROW, TOTEM, CAMPFIRE, CRYSTAL,
-               WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP}
+               WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP, \
+               GOLDBED, REDWALL, REDCOL, LION, VAT, SCREEN, BALUSTER, SHUTTER, POST, SIGN, NOTICE, ANCESTOR, DEADHEAP, KEG, LECTERN, SUNDISC, SUNHEART, HWALL}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:
