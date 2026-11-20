@@ -12,8 +12,8 @@
 
 using namespace data;
 
-// the newer air of the other zones, all on by default; one by one with PYREHEART_ZONEFX=c1,d2, off for none.
-// c1 a cold draught through the Crypt, c2 its icy ghosts; d1 heat over the lava, d2 the Deep breathing; s1 the light
+// the newer air of the other zones, all on by default; one by one with PYREHEART_ZONEFX=c2,d2, off for none.
+// c2 the Crypt's icy ghosts; d1 heat over the lava, d2 the Deep breathing; s1 the light
 // the Cistern's water throws back, s2 bubbles of gas in the sludge; t2 gusts of wind in Charnfen, t3 its fire flaring
 // for the mock-ups: PYREHEART_FXPERIOD=4 makes the rare things (the Crypt's ghosts, the fire flaring in Charnfen) come every 4 s
 double fx_period(double p) {
@@ -202,8 +202,7 @@ void Client::draw_tiles() {
   // now and then the zone stirs as a whole: the mountain groans (Caves), a cold draught goes through the Crypt, the
   // Deep breathes, water roars behind the Cistern's walls
   double groan = 0, ev_age = 99;
-  const char* ev_text = actn == 1 && cave_fx(3) ? "The mountain groans." : actn == 0 && zone_fx("c1") ? "A cold draught moves through the crypt."
-                      : actn == 3 && zone_fx("d2") ? "The Deep breathes." : nullptr;
+  const char* ev_text = actn == 1 && cave_fx(3) ? "The mountain groans." : actn == 3 && zone_fx("d2") ? "The Deep breathes." : nullptr;
   if (!rest && ev_text) {
     static const char* every = SDL_getenv("PYREHEART_GROAN") ? SDL_getenv("PYREHEART_GROAN") : SDL_getenv("PYREHEART_EVENT");  // for the mock-ups: every n seconds
     if (groan_next_ < 0) groan_next_ = tt + (every ? 1.5 : 40 + nz(int(tt) % 997) * 50);
@@ -215,8 +214,6 @@ void Client::draw_tiles() {
     ev_age = tt - groan_t_;
     if (actn == 1 && ev_age < 2.6) groan = (1 - ev_age / 2.6) * (.5 + .5 * std::abs(std::sin(ev_age * 19)));
   }
-  double draught_x = -999;  // the Crypt: where the draught is now, sweeping across the view
-  if (actn == 0 && ev_age < 3) draught_x = camx_ - 6 + ev_age / 3 * (vw_ + 12);
   double breath = actn == 3 && ev_age < 3.5 ? std::sin(ev_age / 3.5 * PI) : 0;  // the Deep: the lava swells and glows
 
   // how much of a window's light falls on a cell, and in what colour
@@ -401,6 +398,14 @@ void Client::draw_tiles() {
       ghost_a_ = std::clamp(std::min(k / .15, (1 - k) / .15), 0.0, 1.0);
       frost.assign(W * H, 0.f);
       under.assign(W * H, 0);
+      // its cold glow round it, like the ghosts of old films
+      for (int dy = -3; dy <= 3; ++dy)
+        for (int dx = -4; dx <= 4; ++dx) {
+          int ix = int(std::floor(ghost_x_ + .5)) + dx, iy = int(std::floor(ghost_y_ + .5)) + dy;
+          if (ix < 0 || iy < 0 || ix >= W || iy >= H) continue;
+          double d = std::hypot(dx / 1.3, double(dy));
+          if (d < 3.2) frost[iy * W + ix] = std::max(frost[iy * W + ix], float((1 - d / 3.2) * .9 * ghost_a_));
+        }
       for (double back = 0; back <= 3 && back <= age; back += .2) {
         double fx2, fy2;
         at(age - back, fx2, fy2);
@@ -877,12 +882,6 @@ void Client::draw_tiles() {
             }
           }
         }
-        if (draught_x > -999) {
-          // the draught: the flames bow and shrink as it passes, the air goes grey and cold
-          double k = std::exp(-std::pow((x - draught_x) / 3.5, 2));
-          if (warm[i] > .05 && !bright) { fg = mixc(fg, scale(fg, .75), k); bg = mixc(bg, scale(bg, .75), k * warm[i]); }
-          if (!blocks(t)) bg = mixc(bg, 0x2A3240, k * .12);
-        }
         if (breath > 0) {
           // the Deep breathes: the lava swells brighter and its glow reaches further
           double k = breath * std::min(1.0, w * 1.6 + (t == LAVA ? .8 : 0));
@@ -924,23 +923,21 @@ void Client::draw_tiles() {
         fg = mixc(scale(fg, .35), 0x202430, .3);
         bg = scale(bg, .3);
       }
-      if (!frost.empty() && frost[i] > 0 && vis[i] == '1') {
-        // frost where the ghost went by, fading
-        bg = mixc(bg, 0x3A5A7A, frost[i] * .45);
-        if (!bright) fg = mixc(fg, 0xB8D8F8, frost[i] * .35);
+      if (!frost.empty() && frost[i] > 0) {
+        // the ghost's cold glow, and frost where it went by, fading
+        bg = mixc(bg, 0x3A5A7A, frost[i] * .5);
+        if (!bright) fg = mixc(fg, 0xB8D8F8, frost[i] * .4);
       }
       if (!under.empty()) under[i] = bg;
       put(X, Y, ch, fg, bg);
     }
   if (ghost_a_ > 0) {
-    // the ghost itself: a hood over a trailing shape, both half see-through and cold
-    int gx = int(std::floor(ghost_x_ + .5)), gy = int(std::floor(ghost_y_ + .5));
-    for (int dy = -1; dy <= 0; ++dy) {
-      int x = gx, y = gy + dy;
-      if (x < x0 || y < y0 || x >= x1 || y >= y1 || !seen[y * W + x]) continue;
+    // the ghost itself: someone long dead, an @ like any of the living, half see-through, glowing a cold blue-white
+    int x = int(std::floor(ghost_x_ + .5)), y = int(std::floor(ghost_y_ + .5));
+    if (x >= x0 && y >= y0 && x < x1 && y < y1) {
       int b = under[y * W + x];
-      double a = ghost_a_ * (vis[y * W + x] == '1' ? .8 : .5) * (.85 + .15 * std::sin(tt * 3));
-      put(x - camx_ + vx_, y - camy_ + vy_, dy < 0 ? 0x2229 : 0x2591, mixc(b, 0xDCEEFF, a), mixc(b, 0x34506E, a * .6));
+      double a = ghost_a_ * (.8 + .2 * std::sin(tt * 3));
+      put(x - camx_ + vx_, y - camy_ + vy_, '@', mixc(b, 0xE6F4FF, a * .85), mixc(b, 0x3A5A80, a * .55));
     }
   }
 }
@@ -1395,18 +1392,13 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
   int actp = snap_.value("act", 0);
   if (actp == 0 && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
     auto tl = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? int(WALL) : tile_of(map[y * W + x]); };
-    if (double age = tt - groan_t_; actp == 0 && zone_fx("c1") && age < 3) {
-      // the draught: dust and a few dead leaves of old wreaths blown across the view with it
-      double fx2 = camx_ - 6 + age / 3 * (vw_ + 12);
-      for (int j = 0; j < 80; ++j) {
-        double x = fx2 - nz(j * 3 + 5) * 6 + std::sin(tt * 4 + j) * .2, y = camy_ + nz(j * 7 + 1) * vh_ + std::sin(tt * 2 + j) * .3;
-        if (!open_at(x, y) || blocks(tl(int(x), int(y)))) continue;
-        double a = 1 - (fx2 - x) / 6;
-        bool leaf = j % 23 == 0;
-        dot(x, y, leaf ? 0x5A4A2A : 0xB8B4AC, a * (leaf ? .8 : .35), leaf ? 2 : 1);
-      }
-    }
     if (actp == 0 && zone_fx("c2") && ghost_a_ > 0) {
+      // a soft cold halo round it, brightest at the middle, breathing slowly
+      double pulse = .8 + .2 * std::sin(tt * 2.2);
+      for (int r2 = 4; r2 >= 1; --r2) {
+        double rr = r2 * .45 * pulse;
+        dot(ghost_x_ + .5 - rr, ghost_y_ + .5 - rr, 0x9AC8FF, ghost_a_ * .1, rr * 16);
+      }
       // the ghost breathes frost: pale glittering motes round it and falling behind it
       for (int j = 0; j < 18; ++j) {
         double ph = std::fmod(tt * .6 + nz(j * 7), 1.0);
