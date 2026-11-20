@@ -241,6 +241,7 @@ class Game {
 
   std::unique_ptr<Floor> make_floor(int depth, bool rest);
   std::unique_ptr<Floor> make_floor_from(int d, bool rest);
+  std::unique_ptr<Floor> make_town(const std::vector<std::string>& rows);
   void debug(Hero& h, const std::string& what);
   void build_waystation(Floor& f);
   void build_rooms(Floor& fl, int d, bool boss_floor);

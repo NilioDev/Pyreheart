@@ -10,6 +10,7 @@
 #include "k5.hpp"
 #include "pyre.hpp"
 #include "lore.hpp"
+#include "town_map.hpp"
 
 using namespace data;
 
@@ -84,36 +85,49 @@ Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, pyre::FROST_
     zfloor = std::clamp(std::atoi(zf), 0, ACTS[route.back()].floors - 1);
     depth += zfloor;
   }
-  floor = make_floor(depth, std::getenv("PYREHEART_REST") != nullptr);  // PYREHEART_REST=1: the waystation after it
-  // a first look at Charnfen, drawn by hand: PYREHEART_TOWN=ref/charnfen.txt
-  if (const char* town = std::getenv("PYREHEART_TOWN")) {
-    std::ifstream in(town);
-    std::string line;
-    auto f = std::make_unique<Floor>();
-    f->depth = 0; f->act = 0; f->rest = true; f->id = floor_ids_++; f->w = W; f->h = H;
-    static const std::map<std::string, int> KEY = {
-        {"#", WALL}, {".", SNOW}, {":", PATH}, {"+", DOOR}, {"n", GRAVE}, {"t", CROSS}, {"\u2663", TREE}, {"\u2261", PEW},
-        {"\u2021", ALTAR}, {"E", EMBER}, {"O", WELL}, {"?", BOARD}, {"w", WINDOW}, {"L", LIT}, {"\u2248", ICE}, {"%", CRACK},
-        {">", STAIRS}, {"<", UPSTAIRS}, {"o", PILLAR}, {"_", FLAGS}, {"F", FIRE}, {"r", STONES}, {"C", CHIMNEY}, {"h", HEALER},
-        {"b", SMITH}, {"g", DIGGER}, {"T", TORCH}, {"i", CANDLE}, {"U", OPENGRAVE}, {"G", GUARD}, {"X", BARRICADE}, {",", RUBBLE},
-        {"$", PATH}, {"@", PATH}};
-    for (int y = 0; y < H && std::getline(in, line); ++y) {
-      int x = 0;
-      for (size_t i = 0; i < line.size() && x < W; ++x) {
-        size_t n = (line[i] & 0x80) == 0 ? 1 : (line[i] & 0xE0) == 0xC0 ? 2 : (line[i] & 0xF0) == 0xE0 ? 3 : 4;
-        std::string c = line.substr(i, n);
-        i += n;
-        auto k = KEY.find(c);
-        f->t[y * W + x] = k == KEY.end() ? SNOW : k->second;
-        if (c == "$") { f->has_merchant = true; f->merchant = {x, y}; }
-        if (c == "@") f->up = {x, y};
-        if (c == ">") f->down = {x, y};
-        if (c == "U") f->open_graves.push_back({x, y});
-      }
+  // a dive starts in Charnfen; a test start in a zone (above) begins on that map instead, and PYREHEART_TOWN=off skips
+  // the village. PYREHEART_TOWN=<file> reads the village from a file instead of the copy built in (ref/charnfen.txt).
+  const char* town_env = std::getenv("PYREHEART_TOWN");
+  bool test_start = std::getenv("PYREHEART_ZONE") || std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_REST") ||
+                    std::getenv("PYREHEART_ZFLOOR");
+  if (town_env ? std::string(town_env) != "off" : !test_start) {
+    std::vector<std::string> rows;
+    if (town_env && std::string(town_env) != "on") {
+      std::ifstream in(town_env);
+      for (std::string line; std::getline(in, line);) rows.push_back(line);
     }
-    floor = std::move(f);
+    if (rows.empty()) rows.assign(town::MAP, town::MAP + town::ROWS);
+    floor = make_town(rows);
     depth = 0;
+  } else floor = make_floor(depth, std::getenv("PYREHEART_REST") != nullptr);  // PYREHEART_REST=1: the waystation after it
+}
+
+// Charnfen, from its hand-drawn rows
+std::unique_ptr<Floor> Game::make_town(const std::vector<std::string>& rows) {
+  auto f = std::make_unique<Floor>();
+  f->depth = 0; f->act = 0; f->rest = true; f->id = floor_ids_++; f->w = W; f->h = H;
+  static const std::map<std::string, int> KEY = {
+      {"#", WALL}, {".", SNOW}, {":", PATH}, {"+", DOOR}, {"n", GRAVE}, {"t", CROSS}, {"\u2663", TREE}, {"\u2261", PEW},
+      {"\u2021", ALTAR}, {"E", EMBER}, {"O", WELL}, {"?", BOARD}, {"w", WINDOW}, {"L", LIT}, {"\u2248", ICE}, {"%", CRACK},
+      {">", STAIRS}, {"<", UPSTAIRS}, {"o", PILLAR}, {"_", FLAGS}, {"F", FIRE}, {"r", STONES}, {"C", CHIMNEY}, {"h", HEALER},
+      {"b", SMITH}, {"g", DIGGER}, {"T", TORCH}, {"i", CANDLE}, {"U", OPENGRAVE}, {"G", GUARD}, {"X", BARRICADE}, {",", RUBBLE},
+      {"$", PATH}, {"@", PATH}};
+  for (int y = 0; y < H && y < int(rows.size()); ++y) {
+    const std::string& line = rows[y];
+    int x = 0;
+    for (size_t i = 0; i < line.size() && x < W; ++x) {
+      size_t n = (line[i] & 0x80) == 0 ? 1 : (line[i] & 0xE0) == 0xC0 ? 2 : (line[i] & 0xF0) == 0xE0 ? 3 : 4;
+      std::string c = line.substr(i, n);
+      i += n;
+      auto k = KEY.find(c);
+      f->t[y * W + x] = k == KEY.end() ? SNOW : k->second;
+      if (c == "$") { f->has_merchant = true; f->merchant = {x, y}; }
+      if (c == "@") f->up = {x, y};
+      if (c == ">") f->down = {x, y};
+      if (c == "U") f->open_graves.push_back({x, y});
+    }
   }
+  return f;
 }
 
 bool Game::final_floor() const { return route.back() == DEEP && zfloor == ACTS[DEEP].floors - 1 && !floor->rest; }
@@ -185,7 +199,14 @@ void Game::leave(int pid) {
 
 void Game::place(Hero& h) {
   P s;
-  if (floor->depth == 0) { h.x = floor->up.x; h.y = floor->up.y; h.seen.assign(W * H, 1); return; }
+  if (floor->depth == 0) {  // Charnfen: by the fire, side by side when friends come along
+    h.x = h.y = -1;
+    P at = floor->up;
+    if (hero_at(at.x, at.y) && free_near(at.x, at.y, 4, s)) at = s;
+    h.x = at.x; h.y = at.y;
+    h.seen.assign(W * H, 1);
+    return;
+  }
   if (std::getenv("PYREHEART_BOSS") && floor->boss) {
     auto& b = *floor->boss;
     if (free_near(b.x, b.y, 8, s, [&](int x, int y) { return floor->walk(x, y) && cheb(x, y, b.x, b.y) >= 4; })) { h.x = s.x; h.y = s.y; return; }
@@ -652,16 +673,18 @@ void Game::unique(Mon& m) {
 }
 
 void Game::next_floor() {
-  bool was_rest = floor->rest;
+  bool from_town = floor->depth == 0;  // down from Charnfen: the first map of the first zone
+  bool was_rest = floor->rest && !from_town;
   const ActDef& zone = ACTS[route.back()];
   // after a zone's boss comes a waystation, and from there the stairs the party took lead into the next zone
-  bool to_rest = !was_rest && zfloor == zone.floors - 1;
-  if (was_rest) {
+  bool to_rest = !from_town && !was_rest && zfloor == zone.floors - 1;
+  if (from_town) zfloor = 0;
+  else if (was_rest) {
     route.push_back(chosen_ >= 0 ? chosen_ : zone.next.empty() ? route.back() : zone.next[0]);
     zfloor = 0;
     chosen_ = -1;
   } else if (!to_rest) ++zfloor;
-  if (!to_rest) ++depth;
+  if (!to_rest) ++depth;  // Charnfen is depth 0, so the Crypt's first map is depth 1
   floor = make_floor(depth, to_rest);
   scaled_ = 1.0;
   rescale();
