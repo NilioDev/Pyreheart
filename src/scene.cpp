@@ -357,7 +357,7 @@ void Client::draw_tiles() {
         // the ember left in the lantern's cage: a small red light, now and then a little brighter
         double fl2 = .5 + .5 * std::sin(tt * .7 + sd) * std::sin(tt * .23 + sd * 3);
         pool(x, y, 1.8 + 1.2 * fl2, base + .2 + .25 * fl2, .9);
-        if (vis[i] == '1') emits_.push_back({float(x), float(y), 'L', sd});
+        if (vis[i] == '1') emits_.push_back({float(x), float(y), 'c', sd});  // a thin smoke, like the other zones' lamps
       } else if (actn == CITY && t == ANCESTOR && vis[i] == '1' && zone_fx("k3")) {
         emits_.push_back({float(x), float(y), 'T', sd});  // the ancestors weep soot
       } else if (actn == CITY && t == GRATE && vis[i] == '1' && zone_fx("k4")) {
@@ -1025,7 +1025,14 @@ void Client::draw_tiles() {
           }
           break;
         }
-        case POST: bg = floor_bg(); break;
+        case POST: {
+          // like the torches, candles and lamps elsewhere, the sign itself is the light: here only a dull ember, breathing
+          bg = floor_bg();
+          double fl2 = .5 + .5 * std::sin(tt * .7 + hh % 97) * std::sin(tt * .23 + (hh % 97) * 3);
+          fg = mixc(0x7A2408, 0xE0682A, fl2);
+          bright = true;
+          break;
+        }
         case ANCESTOR: bg = 0x2A2622; break;
         case DEADHEAP: bg = 0x34322E; break;
         default: bg = floor_bg(); break;
@@ -1378,19 +1385,6 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
           }
         }
         break;
-      case 'L': {
-        // the ember in a lantern's cage: a red point that breathes, a spark lifting off it now and then
-        double fl2 = .5 + .5 * std::sin(tt * .7 + sd) * std::sin(tt * .23 + sd * 3);
-        // a faint warm glow over the post's head, and a few tiny motes of fire hanging and winking above it
-        dot(ex + .5 - 3 * px / cell, ey - .15 - 3 * px / cell, 0xC04010, .12 + .12 * fl2, 6);
-        for (int j = 0; j < 4; ++j) {
-          double ph = std::fmod(tt * (.15 + .05 * j) + nz(sd * 7 + j), 1.0);
-          double x = ex + .5 + (nz(sd + j * 3) - .5) * .6 + std::sin(tt * 1.3 + j + sd) * .12, y = ey - .05 - ph * .9;
-          double tw = std::sin(ph * PI) * (.5 + .5 * std::sin(tt * 4 + j * 2 + sd));
-          dot(x, y, mixc(0xFFB050, 0x8A2008, ph), tw * (.5 + .5 * fl2));
-        }
-        break;
-      }
       case 'T':
         // soot running from a statue's eyes, a black drop now and then
         for (int j = 0; j < 2; ++j) {

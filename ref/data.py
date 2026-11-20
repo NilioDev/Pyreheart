@@ -205,7 +205,7 @@ TILES = [
     ('▓', (170, 136, 64), False, False, 'a screen of beaten gold'),
     ('─', (180, 174, 164), False, True, 'a marble balustrade'),
     ('▒', (106, 78, 52), False, False, 'a shuttered window'),
-    ('¡', (120, 120, 130), False, True, 'an iron lantern post, an ember still in it'),
+    ('¡', (200, 96, 40), False, True, 'an iron lantern post, an ember still in it'),
     ('Γ', (160, 138, 80), False, True, 'a brass street sign'),
     ('¶', (160, 138, 80), False, True, 'a brass notice'),
     ('☺', (150, 146, 140), False, True, 'a statue of an ancestor, weeping soot'),

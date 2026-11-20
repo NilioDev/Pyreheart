@@ -182,7 +182,7 @@ inline const TileDef TILES[] = {
     {0x2593, 0xAA8840, false, false, "a screen of beaten gold"},
     {0x2500, 0xB4AEA4, false, true, "a marble balustrade"},
     {0x2592, 0x6A4E34, false, false, "a shuttered window"},
-    {0xA1, 0x787882, false, true, "an iron lantern post, an ember still in it"},
+    {0xA1, 0xC86028, false, true, "an iron lantern post, an ember still in it"},
     {0x393, 0xA08A50, false, true, "a brass street sign"},
     {0xB6, 0xA08A50, false, true, "a brass notice"},
     {0x263A, 0x96928C, false, true, "a statue of an ancestor, weeping soot"},
