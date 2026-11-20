@@ -204,22 +204,64 @@ static void dress_caves(Map& m, Floor& fl, const std::vector<int>& cave, P up, P
       out.push_back(a);
       return out;
     };
+    // it comes out of the rock at one edge of the map and runs back into it at the other
+    bool across = rnd.coin();
+    auto pick_near = [&](bool low) {
+      std::vector<int> c;
+      for (int j : cave) {
+        int v = across ? j % W : j / W, size = across ? w : h;
+        if (low ? v < size / 6 : v > size - 1 - size / 6) c.push_back(j);
+      }
+      if (c.empty()) return P{-1, -1};
+      int j = c[rnd.below(int(c.size()))];
+      return P{j % W, j / W};
+    };
+    // from a cell out through the rock to the edge, wandering a little
+    auto to_edge = [&](P from, int dir) {
+      std::vector<P> out;
+      P c = from;
+      for (int k = 0; k < 200; ++k) {
+        if (across ? (c.x <= 1 || c.x >= w - 2) : (c.y <= 1 || c.y >= h - 2)) break;
+        if (across) c.x += dir; else c.y += dir;
+        out.push_back(c);
+        if (rnd.real() < .25) {
+          int o = rnd.coin() ? 1 : -1;
+          if (across && c.y + o >= 3 && c.y + o <= h - 4) { c.y += o; out.push_back(c); }
+          if (!across && c.x + o >= 3 && c.x + o <= w - 4) { c.x += o; out.push_back(c); }
+        }
+      }
+      return out;
+    };
     for (int tries = 0; tries < 20; ++tries) {
-      int ja = cave[rnd.below(int(cave.size()))], jb = cave[rnd.below(int(cave.size()))], jm = cave[rnd.below(int(cave.size()))];
-      P a{ja % W, ja / W}, b{jb % W, jb / W}, mid{jm % W, jm / W};
-      if (cheb(a.x, a.y, b.x, b.y) < 40) continue;
+      P a = pick_near(true), b = pick_near(false);
+      if (a.x < 0 || b.x < 0) break;
+      int jm = cave[rnd.below(int(cave.size()))];
+      P mid{jm % W, jm / W};
+      int va = across ? a.x : a.y, vb = across ? b.x : b.y, vm = across ? mid.x : mid.y;
+      if (vm < va + 10 || vm > vb - 10) continue;
       auto p1 = path_to(a, mid), p2 = path_to(mid, b);
       if (p1.empty() || p2.empty()) continue;
-      std::vector<P> path(p1.rbegin(), p1.rend());
+      auto ea = to_edge(a, -1), eb = to_edge(b, 1);
+      std::vector<P> path(ea.rbegin(), ea.rend());
+      path.insert(path.end(), p1.rbegin(), p1.rend());
       path.insert(path.end(), p2.rbegin() + 1, p2.rend());
+      path.insert(path.end(), eb.begin(), eb.end());
       std::vector<std::pair<P, int>> laid;
-      int n = int(path.size()), bridge = n / 2;
+      int n = int(path.size()), bridge = int(ea.size()) + int(p1.size() + p2.size()) / 2;
+      P side = across ? P{0, 1} : P{1, 0};
       for (int k = 0; k < n; ++k) {
         P c = path[k];
-        bool ford = k % 9 >= 6, plank = std::abs(k - bridge) <= 0;
-        for (P d : {P{0, 0}, P{1, 0}}) {
+        bool ford = k % 9 >= 6, plank = k == bridge;
+        for (P d : {P{0, 0}, side}) {
           int x = c.x + d.x, y = c.y + d.y;
-          if (!open(x, y) || near_stairs(x, y, 2)) continue;
+          if (!m.in(x, y) || near_stairs(x, y, 2)) continue;
+          int was = m.at(x, y);
+          if (was == WALL) {  // out in the rock it runs deep, where nobody walks
+            laid.push_back({{x, y}, WALL});
+            m.put(x, y, WATER);
+            continue;
+          }
+          if (!open(x, y)) continue;
           laid.push_back({{x, y}, FLOOR});
           // deep only out in the open: where the stream runs down a narrow way it is shallow, or it would close it
           int room = 0;
@@ -232,7 +274,7 @@ static void dress_caves(Map& m, Floor& fl, const std::vector<int>& cave, P up, P
         fprintf(stderr, "stream %zu cells, %d deep, whole %d\n", laid.size(), deep, int(whole(fl)));
       }
       if (!whole(fl))
-        for (auto& [c, t] : laid) if (m.at(c.x, c.y) == WATER) m.put(c.x, c.y, SHALLOW);
+        for (auto& [c, t] : laid) if (m.at(c.x, c.y) == WATER && t == FLOOR) m.put(c.x, c.y, SHALLOW);
       if (!whole(fl)) for (auto& [c, t] : laid) m.put(c.x, c.y, t);
       break;
     }
