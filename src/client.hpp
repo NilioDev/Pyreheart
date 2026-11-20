@@ -5,7 +5,10 @@
 #include <chrono>
 #include <deque>
 #include <libtcod.hpp>
+#include <map>
+#include <array>
 #include <memory>
+#include <set>
 
 #include "music.hpp"
 #include "net.hpp"
@@ -19,10 +22,11 @@ class Client {
   void event(SDL_Event& ev);
   void frame();
   void remember_window();  // the window's size and fullscreen, for the next start
+  void shot(const std::string& path) { shot_ = path; frame(); }  // the screen as shown, particles too, as a PNG
 
  private:
-  enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Game };
-  enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring };
+  enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
+  enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring, Epigraph, Debug };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -47,6 +51,7 @@ class Client {
   std::deque<std::pair<std::string, int>> log_;
   struct Fx { json kw; double start; };
   std::vector<Fx> fx_;
+  bool numbers_on_ = true;  // floating combat numbers
   bool waiting_ = false, pending_join_ = false;
   int sent_turn_ = -1;
   std::vector<int> ready_;
@@ -89,6 +94,37 @@ class Client {
   int menu_top() const;
   void draw_game();
   void draw_map();
+  void draw_tiles();  // scene.cpp: stone, light and the dressing of the rooms
+  struct Emit { float x, y; char kind; int seed; };
+  std::vector<Emit> emits_;  // where particles rise this frame
+  std::string shot_;
+  std::vector<int> ldist_;  // each lava cell's distance from land, for the current map
+  int hot_floor_ = -1;
+  std::vector<char> hot_;  // in the Forge: how near the running metal each cell lies (1, 2), for the heat shimmer
+  int ldist_floor_ = -1;
+  // the Crypt's air (mock-ups, PYREHEART_CRYPTFX=1): how near each cell is to an open grave or the ossuary, for the
+  // grave chill; the coloured light of the chapel windows; where a hero last stepped, for bone dust
+  int chill_floor_ = -1;
+  std::vector<float> chill_;
+  struct Beam { int wx, wy, len, col, dir; };  // dir: +1 the light falls down the screen, -1 up
+  std::vector<Beam> beams_;
+  int step_x_ = -1, step_y_ = -1;
+  double step_t_ = -9;
+  std::string ldist_map_;
+  // the Caves' air: mist over the stream, the wet rock beside it, the draught in the propped tunnels and down the
+  // fallen shafts, the mountain groaning now and then, eyes at the edge of the light
+  int cave_floor_ = -1, wind_ = 1, eyes_gone_ = -1;
+  std::vector<float> damp_, draft_;
+  std::vector<char> wetw_;
+  double groan_t_ = -99, groan_next_ = -1;
+  double drum_t_ = -99, drum_next_ = -1;
+  double rattle_t_ = -99, rattle_next_ = -1;  // the Prison: something rattles a cell door, or chains clink
+  bool rattle_door_ = true;  // the Barracks: a war-drum booming far off, now and then
+  std::map<int, int> ent_cell_;  // the Barracks: where each foe stood, so soot puffs up when it takes a step
+  std::deque<std::array<double, 3>> puffs_;  // and those puffs: x, y, when
+  double ghost_x_ = 0, ghost_y_ = 0, ghost_dx_ = 1, ghost_a_ = 0;  // the Crypt's ghost, if one is passing
+  void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
+  void present(const TCOD_ViewportOptions& vp);
   void draw_side(int x, int y, int w, int h);
   void draw_status_tall(int y);
   void draw_log(int x, int y, int w, int h);
@@ -99,8 +135,44 @@ class Client {
   void draw_shop();
   void draw_help();
   void draw_menu();
+  // the debug and testing menu (debug.cpp)
+  int dbg_tab_ = 0, dbg_scroll_ = 0, bug_next_ = 1;
+  bool typing_ = false, dbg_skip_ = false, dbg_pending_ = false, tests_loaded_ = false;
+  std::string note_, note_test_, dbg_msg_;
+  std::map<std::string, int> tests_;  // 1 ok, 2 a bug
+  std::vector<std::string> test_items() const;
+  void load_tests();
+  void save_tests();
+  void open_debug();
+  void close_debug();
+  void debug_tab(int t);
+  void debug_key(SDL_Keycode k);
+  void debug_tool(int i);
+  std::string bug_context() const;
+  void save_bug();
+  void draw_debug();
   void draw_ring();
   void draw_end();
+  // a zone's book fragment, shown once when it is first entered; each zone keeps a bag so all five come before one again
+  struct Epi { std::string title, text, source; int col; };
+  std::deque<Epi> epis_;
+  double epi_start_ = 0;
+  int epi_floor_ = -1;
+  std::map<std::string, std::vector<int>> bags_;
+  // the Pyre: Sparks earned (all of them, spent or not), the gifts bought with them, the Frost levels opened and chosen,
+  // and the zone bosses already paid out for, as "zone@frost"
+  int sparks_ = 0, frost_max_ = 0, frost_ = 0, pyre_sel_ = 0;
+  std::map<std::string, int> talents_;
+  std::set<std::string> claimed_;
+  void claim_sparks(const json& s);
+  void draw_pyre();
+  void draw_town();  // Charnfen (town.cpp)
+  void draw_town_particles(SDL_Renderer* r, double ox, double oy, double cell);
+  P town_fire_{-99, -99};
+  void pyre_key(SDL_Keycode k);
+  void queue_epigraph(const std::string& zone);
+  void draw_epigraph();
+  void draw_route();
   void put(int x, int y, int ch, int fg, int bg = -1);
   void text(int x, int y, const std::string& s, int fg, int bg = -1);
   int wrap(int x, int y, int w, const std::string& s, int fg, int max_lines = 99);

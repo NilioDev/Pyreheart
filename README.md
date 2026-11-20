@@ -4,7 +4,9 @@ A coffeebreak roguelike in ASCII. Sixteen floors down, about half an hour from t
 
 Long ago a forgotten dwarven clan unearthed the Pyreheart, the molten crystal core that kept the world warm. They dug too deep beneath its altar and woke the Ashen King, a fallen god, who slaughtered the clan and forced the crystal into his own hollowed chest. The world has been freezing ever since. Now the Ashen King stirs beneath the backwater town of Charnfen: ash poisons the wells, and the dead claw their way out of the graveyard mud. You have come to Charnfen at the edge of ruin. Descend, and tear the heart back out.
 
-- Four acts: the Crypt, the Caves of the old dwarven mines, the Forge of the fallen dwarves, and the Deep. A great foe waits at the end of each.
+- Ten zones on a branching way down: always the Crypt, the Sanctum and the Deep, and between them a choice of the Caves or the
+  Cistern, the Forge, the City or the Vaults, and the Barracks or the Prison. A great foe waits at the end of each, and in the
+  waystation after it you choose the stairs to the next. Each zone opens with a fragment from an old book.
 - After each of the first three, a waystation: a fountain, a trader, and the fallen wake again.
 - Three callings: the warrior, the ranger and the adept. Each has two skills and a handful of perks to choose from as it levels.
 - Loot in the old way: magic, rare and unique things, with blue champions and gold uniques that carry the better ones.
@@ -87,6 +89,10 @@ To put the watch app on a Wear OS watch without a computer: turn on developer op
 `build/music_preview <folder> [seconds]` renders each mood of the music to a WAV file.
 
 To see another layout on the desktop, set `PYREHEART_LAYOUT=tall` (a phone) or `PYREHEART_LAYOUT=watch`.
+For screenshots, `PYREHEART_SEED=n` fixes the dive, `PYREHEART_NEAR=t` starts next to the first tile of kind `t`
+(20 a stone tomb, 17 an altar), `PYREHEART_FILM=frame%03d.png` saves every frame, particles included, and
+`PYREHEART_WHOLE=1` shows the whole map at once, `PYREHEART_ZONE=vaults` starts in that zone (`PYREHEART_BOSS=1` on its
+boss's map, `PYREHEART_REST=1` in the waystation after it).
 
 ## Credits
 

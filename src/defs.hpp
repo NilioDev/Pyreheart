@@ -17,10 +17,11 @@
 #include <vector>
 
 struct TileDef { int ch; int col; bool walk; bool see; std::string name; };
-struct ActDef { std::string name; int wall, floor; std::string mood, boss; };
+struct ActDef { std::string name; int wall, floor; std::string mood, boss, key; int step; std::vector<int> next; int floors, w, h; };
 struct MonDef {
   std::string key, name; int ch; int col; int hp, lo, hi, acc, ar, spd, xp; std::string ai; int rng; int shot_ch; int shot_col;
-  bool boss, gear; int poison; bool fire, cold; std::vector<std::string> moves; bool undead;
+  bool boss, gear; int poison; bool fire, cold; std::vector<std::string> moves; bool undead; std::vector<std::string> traits;
+  bool has(const std::string& t) const { return std::find(traits.begin(), traits.end(), t) != traits.end(); }
 };
 struct ClassDef {
   std::string key, name; int col; int hp, mana, hp_lvl, mana_lvl, acc;

@@ -89,6 +89,7 @@ int main(int argc, char** argv) {
       w = 800 * k; h = 400 * k;
     }
     p.pixel_width = w; p.pixel_height = h;
+    if (SDL_getenv("PYREHEART_WHOLE")) { p.pixel_width = W * 16; p.pixel_height = H * 16; }
     if (full) p.sdl_window_flags |= SDL_WINDOW_FULLSCREEN;
   }
   auto ctx = tcod::Context(p);
@@ -99,8 +100,15 @@ int main(int argc, char** argv) {
   std::string script = keys ? keys : "";
   size_t at = 0;
   int frames = 0;
+  const char* film = SDL_getenv("PYREHEART_FILM");  // like PYREHEART_SHOT with a %d, but every frame from the start
+  int filmed = 0, tail = 0;
   while (client.running) {
-    client.frame();
+    if (film && at >= std::min<size_t>(script.size(), 12)) {
+      char name[512];
+      std::snprintf(name, sizeof name, film, filmed++);
+      client.shot(name);
+      if (at >= script.size() && ++tail > 40) break;
+    } else client.frame();
     if (shot || keys) {
       if (++frames % 4 == 0 && at < script.size()) {
         char c = script[at++];
@@ -115,14 +123,15 @@ int main(int argc, char** argv) {
           }
         }
       }
-      if (at >= script.size() && shot && frames > int(script.size()) * 4 + 20) {
+      const char* from = SDL_getenv("PYREHEART_SHOTS_FROM");  // start saving frames once this many keys are pressed
+      if (shot && (from ? at >= size_t(std::atoi(from)) : (at >= script.size() && frames > int(script.size()) * 4 + 20))) {
         // PYREHEART_SHOTS=n with a %d in the name saves n frames in a row, for an animation
         const char* many = SDL_getenv("PYREHEART_SHOTS");
         int n = many ? std::atoi(many) : 1;
         static int saved = 0;
         char name[512];
         std::snprintf(name, sizeof name, shot, saved);
-        ctx.save_screenshot(name);
+        client.shot(name);
         if (++saved >= n) break;
       }
     }

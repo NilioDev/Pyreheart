@@ -1,6 +1,6 @@
 // The host keeps the one true game. Every player, the host's own too, talks to it through a Link: in-process for the
 // host, a TCP socket for the others. Messages are lines of JSON.
-//   player -> host: {"hello": {"name", "cls", "ver"}}, {"act": {...}}
+//   player -> host: {"hello": {"name", "cls", "ver", "talents": {key: rank}}}, {"act": {...}}
 //   host -> player: {"welcome": pid}, {"snap": {...}}, {"ready": [pids]}, {"error": "..."}
 // The world steps when every hero has chosen; whoever has not chosen 4 seconds after the first did, waits.
 // On a local network hosts also answer a UDP call on the same port, so phones and watches can find them.
@@ -17,7 +17,7 @@
 #include "game.hpp"
 
 constexpr int PORT = 7777;
-constexpr int NET_VERSION = 1;
+constexpr int NET_VERSION = 3;
 constexpr int AUTO_WAIT_MS = 4000;
 
 class Link {
@@ -32,7 +32,7 @@ class Host {
  public:
   // journal: a file every move is written to, so the dive can go on after the app is closed or killed.
   // resume: play that file back first; the first player to say hello takes up the hero in it.
-  Host(uint64_t seed, bool open, const std::string& journal = "", bool resume = false);
+  Host(uint64_t seed, bool open, const std::string& journal = "", bool resume = false, int frost = 0);
   ~Host();
   std::shared_ptr<Link> local();
   std::string error() { std::lock_guard<std::mutex> l(mu_); return error_; }

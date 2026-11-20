@@ -9,6 +9,7 @@ namespace {
 const double STEP = .02, BOLT_MAX = .12, BURST_FRAME = .05, ROUND_STEP = .03, FRONT = .04, ROUND_DUR = .22;
 const double SWING_TICK = .045, SWING_LIT = .12, SPIN_TICK = .03, CRIT_TIME = .26, BLOOD_TIME = .3, CLOUD_DUR = .22;
 const Rgb STEEL_DIM{150, 152, 160}, GOLD_CRIT{255, 214, 90}, BLOOD_RED{200, 30, 30}, DUST{150, 140, 130};
+const double NUM_TIME = .9;
 const Rgb WHITE{255, 255, 255}, HOT{255, 250, 220}, DARK{14, 12, 12};
 // the signs, as code points of the tile set
 const int MID = 0x00B7, BUL = 0x2219, DOT = 0x2022, SHADE = 0x2591;
@@ -108,6 +109,7 @@ double life(const nlohmann::json& kw) {
   if (kind == "swing") return d + SWING_TICK * 3 + SWING_LIT;
   if (kind == "spin") return d + SPIN_TICK * 8 + SWING_LIT;
   if (kind == "crit") return d + CRIT_TIME;
+  if (kind == "num") return d + NUM_TIME;
   if (kind == "blood") return d + BLOOD_TIME;
   return d + kw.value("dur", .4);
 }
@@ -119,6 +121,15 @@ std::vector<Cell> cells(const nlohmann::json& kw, double age) {
   if (age < 0) return out;
   Rgb col = rgb(kw.value("col", 0xFFFFFF));
   int x = kw.value("x", 0), y = kw.value("y", 0), r = kw.value("r", 1);
+  if (kind == "num") {  // a number rises two cells over the spot and fades
+    std::string t = kw.value("t", "");
+    double k = std::clamp(age / NUM_TIME, 0.0, 1.0);
+    int ty = y - std::min(2, int(k * 3));
+    Rgb c = k < .5 ? col : mix(col, DARK, (k - .5) * 1.6);
+    int x0 = x - (int(t.size()) - 1) / 2;
+    for (size_t i = 0; i < t.size(); ++i) out.push_back({x0 + int(i), ty, (unsigned char)t[i], c});
+    return out;
+  }
   if (kind == "bolt") {
     auto cs = pts(kw["cells"]);
     if (cs.empty()) return out;

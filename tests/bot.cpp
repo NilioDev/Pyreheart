@@ -2,10 +2,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <map>
 #include <set>
 #include <tuple>
 
 #include "game.hpp"
+#include "pyre.hpp"
 
 using namespace data;
 
@@ -22,6 +24,7 @@ static json toward(Game& g, Hero& h, int tx, int ty) {
         if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
         int t = f.tile(nx, ny);
         if (blocks(t) && t != DOOR) continue;
+        if (f.has_merchant && f.merchant == P{nx, ny}) continue;  // the trader stands in the way
         int j = ny * W + nx;
         if (d[j] > d[i] + 1) { d[j] = d[i] + 1; q.push_back(j); }
       }
@@ -89,10 +92,11 @@ static json choose(Game& g, Hero& h) {
   MonP seen;
   int visible = 0;
   for (auto& m : f.mons)
-    if (h.sees(m->x, m->y) || cheb(m->x, m->y, h.x, h.y) <= 1) {
+    if ((h.sees(m->x, m->y) || cheb(m->x, m->y, h.x, h.y) <= 1) && !(m->dormant || m->hidden)) {  // statues and gold wait
       ++visible;
       if (!seen || cheb(h.x, h.y, m->x, m->y) < cheb(h.x, h.y, seen->x, seen->y)) seen = m;
     }
+  if (seen && std::getenv("BOTDBG") && g.turn > 19990) std::printf("seen %s at %d,%d tile %d dormant %d hidden %d\n", seen->name.c_str(), seen->x, seen->y, f.tile(seen->x, seen->y), seen->dormant, seen->hidden);
   if (seen) {
     if (!h.cls->fury() && h.mana < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
     int d = cheb(h.x, h.y, seen->x, seen->y);
@@ -133,7 +137,8 @@ static json choose(Game& g, Hero& h) {
       if (foe_on && M >= 4) return skill(2);
       if (d <= 1 && L >= 6 && mine > 0 && M >= 6) return skill(4);
       if (!on && M >= 3 && d <= 6) return skill(1);
-      if (d >= 2 && on) {  // step back and let them come over it
+      static std::map<int, int> waited;  // a foe that does not come is gone after, runes or not
+      if (d >= 2 && on && ++waited[seen->id] < 16) {  // step back and let them come over it
         int bx = 0, by = 0, bd = d;
         for (int dy = -1; dy <= 1; ++dy)
           for (int dx = -1; dx <= 1; ++dx) {
@@ -154,7 +159,7 @@ static json choose(Game& g, Hero& h) {
     auto a = toward(g, h, seen->x, seen->y);
     if (!still(a)) return a;
   }
-  if (f.tile(h.x, h.y) == STAIRS) return {{"t", "down"}};
+  if (way_down(f.tile(h.x, h.y))) return {{"t", "down"}};
   const FloorItem* loot = nullptr;
   // things it stands on and could not take (a full belt or pack): leave them be
   static std::set<std::tuple<int, int, int>> left;
@@ -162,21 +167,49 @@ static json choose(Game& g, Hero& h) {
   for (auto& fi : f.items)
     if (!left.count({f.id, fi.x, fi.y}) && (!fi.owner || fi.owner == h.pid) && cheb(h.x, h.y, fi.x, fi.y) < 14 && (!loot || cheb(h.x, h.y, fi.x, fi.y) < cheb(h.x, h.y, loot->x, loot->y))) loot = &fi;
   if (std::getenv("BOTDBG2")) std::printf("seen=%d loot=%d,%d down=%d,%d tile=%d\n", seen?1:0, loot?loot->x:-1, loot?loot->y:-1, f.down.x, f.down.y, f.tile(f.down.x,f.down.y));
+  // a thing it has walked toward for long without getting there lies the long way round (the Deep's maze): let it be
+  static std::map<std::tuple<int, int, int>, int> chased;
+  if (loot && ++chased[{f.id, loot->x, loot->y}] > 40) { left.insert({f.id, loot->x, loot->y}); loot = nullptr; }
   if (loot) { auto a = toward(g, h, loot->x, loot->y); if (!still(a)) return a; }
-  auto a = toward(g, h, f.down.x, f.down.y);
+  P down = f.down;
+  if (f.exits.size() > 1) {  // a waystation with two ways on: the dives spread over the routes
+    auto it = f.exits.begin();
+    std::advance(it, (g.depth + int(g.heroes.begin()->second->cls->key.size())) % 2);
+    down = {it->first % W, it->first / W};
+  }
+  auto a = toward(g, h, down.x, down.y);
   if (still(a)) return {{"t", "move"}, {"dx", g.rnd.range(-1, 1)}, {"dy", g.rnd.range(-1, 1)}};
   return a;
 }
 
 static void run(const std::vector<std::string>& classes, uint64_t seed) {
-  Game g(seed);
-  for (size_t i = 0; i < classes.size(); ++i) g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i]);
+  // BOTFROST=n plays on that Frost level; BOTTALENTS=all gives every bot the whole Pyre tree (or "kindled:3,glint:1")
+  Game g(seed, std::getenv("BOTFROST") ? std::atoi(std::getenv("BOTFROST")) : 0);
+  json talents = json::object();
+  if (const char* t = std::getenv("BOTTALENTS")) {
+    std::string s = t;
+    if (s == "all") for (auto& d : pyre::TALENTS) talents[d.key] = d.ranks;
+    else
+      for (size_t i = 0; i < s.size();) {
+        size_t j = s.find(',', i);
+        if (j == std::string::npos) j = s.size();
+        auto part = s.substr(i, j - i);
+        auto c = part.find(':');
+        if (c != std::string::npos) talents[part.substr(0, c)] = std::atoi(part.c_str() + c + 1);
+        i = j + 1;
+      }
+  }
+  for (size_t i = 0; i < classes.size(); ++i) g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents);
   int steps = 0;
   while (g.state == "play" && steps < 20000) {
     std::map<int, json> acts;
     for (auto& [id, h] : g.heroes) if (h->present()) acts[id] = choose(g, *h);
     if (std::getenv("BOTACT")) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%5d %d,%d hp%d mp%d %s\n", g.turn + 1, h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
-    if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%d,%d hp%d mana%d %s\n", h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
+    if (std::getenv("BOTDBG") && steps == 19995) for (auto& [id, h] : g.heroes) {
+      for (int y = h->y - 6; y <= h->y + 6; ++y) { for (int x = h->x - 10; x <= h->x + 10; ++x) std::printf("%c", x == h->x && y == h->y ? '@' : char(TILE0 + g.floor->tile(x, y))); std::printf("\n"); }
+      std::printf("up %d,%d down %d,%d whole %d\n", g.floor->up.x, g.floor->up.y, g.floor->down.x, g.floor->down.y, int(whole(*g.floor)));
+    }
+    if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; int tx = h.x + a.value("dx", 0), ty = h.y + a.value("dy", 0); std::printf("%d,%d hp%d mana%d %s tile %d mon %d\n", h.x, h.y, h.hp, h.mana, a.dump().c_str(), g.floor->tile(tx, ty), g.mon_at(tx, ty) ? 1 : 0); }
     g.step(acts);
     if (std::getenv("BOTLOG")) for (auto& [id, h] : g.heroes) { for (auto& l : h->log) std::printf("%5d hp%3d mp%2d %s\n", g.turn, h->hp, h->mana, l.text.c_str()); h->log.clear(); }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, h] : g.heroes) for (auto& l : h->log) std::printf("  %s\n", l.text.c_str());
@@ -188,8 +221,11 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
   int kills = 0;
   for (auto& [id, h] : g.heroes) { lvls += std::to_string(h->lvl) + " "; kills += h->kills; }
   for (auto& [s, it] : g.heroes.begin()->second->equip) gear += it->shortname() + ", ";
-  std::printf("%-22s seed %2llu: %-4s depth %2d%s turn %5d lvl %s kills %3d gold %4d | %s\n", names.c_str(), (unsigned long long)seed,
-              g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, gear.c_str());
+  std::string way;
+  for (int z : g.route) way += (way.empty() ? "" : ">") + ACTS[z].key.substr(0, 4);
+  std::printf("%-22s seed %2llu: %-4s depth %2d%s turn %5d lvl %s kills %3d gold %4d | %s | %s\n", names.c_str(), (unsigned long long)seed,
+              g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
+              gear.c_str());
 }
 
 int main() {
