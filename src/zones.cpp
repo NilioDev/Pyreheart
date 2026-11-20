@@ -6,6 +6,8 @@
 // the Prison a star of cell blocks round the pit, the Sanctum a temple with a nave, chapels and the empty altar.
 // Each returns the rooms (for treasure) and leaves fl.up and fl.down set; the way from one to the other always exists.
 #include <deque>
+#include <map>
+#include <array>
 
 #include "game.hpp"
 
@@ -369,6 +371,176 @@ static void dress_caves(Map& m, Floor& fl, const std::vector<int>& cave, P up, P
   }
 }
 
+// The Forge, left in haste long ago: every hall gets one of the smiths' places as they left it, tools dropped where
+// they fell and the work half done. The fires are out; only the metal in the channels still runs, and the old embers
+// in the great furnace and the slag still glow a little.
+static void dress_forge(Map& m, Floor& fl, const std::vector<std::array<int, 4>>& halls, const std::vector<int>& chan,
+                        int furnace, P up, P down) {
+  Rng& rnd = m.rnd;
+  auto near_stairs = [&](int x, int y, int r) { return cheb(x, y, up.x, up.y) <= r || cheb(x, y, down.x, down.y) <= r; };
+  // one sign a thing; the ones that block are only laid where they close no way
+  auto tile_for = [](const std::string& c) -> int {
+    static const std::map<std::string, int> K = {
+        {"π", ANVIL}, {"I", WORKPIECE}, {"τ", HAMMER}, {"√", TONGS}, {"n", STOOL}, {"a", APRON}, {"o", BUCKET},
+        {":", STAIN}, {"u", TANKARD}, {"!", BLADE}, {"¥", RACK}, {"▲", SLAG}, {"%", BONES}, {"Ω", SKULL}, {"S", SLAGPIT},
+        {"e", EMBERS}, {"Ü", LADLE}, {"~", SLUNG}, {"¦", HOOK}, {"■", HOIST}, {"§", CHAIN}, {"V", CRUCIBLE}, {"s", SPILL},
+        {"=", TROUGH}, {"m", MOULD}, {"c", CAST}, {"H", STACK}, {"E", EMBERS}, {"B", BONEHEAP}, {"k", COALHEAP},
+        {"∩", BARROW}, {"/", SHOVEL}, {"b", BENCH}, {"G", HUSK}, {"◘", PLATES}, {"¤", BOLTS}, {"¬", ARM}, {"R", RIM},
+        {"Q", QUENCH}, {"J", SCRAP}, {"O", STONEWORK}, {"L", BELLOWS}};
+    auto it = K.find(c);
+    return it == K.end() ? -1 : it->second;
+  };
+  // the signs of a row, one cell each (some are more than a byte)
+  auto cells_of = [](const std::string& row) {
+    std::vector<std::string> v;
+    for (size_t i = 0; i < row.size();) {
+      unsigned char c = row[i];
+      size_t n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+      v.push_back(row.substr(i, n));
+      i += n;
+    }
+    return v;
+  };
+  auto stamp = [&](const std::vector<std::string>& plan, int x0, int y0, bool force = false) {
+    for (size_t r = 0; r < plan.size(); ++r) {
+      auto cs = cells_of(plan[r]);
+      for (size_t k = 0; k < cs.size(); ++k) {
+        int t = tile_for(cs[k]), x = x0 + int(k), y = y0 + int(r);
+        if (t < 0 || !m.in(x, y) || near_stairs(x, y, 1)) continue;
+        if (force) { m.put(x, y, t); continue; }
+        if (m.at(x, y) != FLOOR) continue;
+        if (blocks(t)) m.place(x, y, t);
+        else m.put(x, y, t);
+      }
+    }
+  };
+  auto size_of = [&](const std::vector<std::string>& plan) {
+    int wd = 0;
+    for (auto& r : plan) wd = std::max(wd, int(cells_of(r).size()));
+    return P{wd, int(plan.size())};
+  };
+  // the room for a place in a hall: above its channel, or the whole hall between the pillar rows
+  auto put_in = [&](const std::vector<std::string>& plan, size_t i) {
+    auto [x0, y0, x1, y1] = halls[i];
+    int top = y0 + 4, bot = chan[i] >= 0 ? chan[i] - 2 : y1 - 4;
+    P sz = size_of(plan);
+    if (sz.x > x1 - x0 - 3 || sz.y > bot - top + 1) return;
+    int x = x0 + 2 + rnd.range(0, std::max(0, (x1 - x0 - 3) - sz.x)), y = top + (bot - top + 1 - sz.y) / 2;
+    if (rnd.coin()) {  // the other way round, now and then
+      std::vector<std::string> flipped;
+      for (auto& r : plan) { auto cs = cells_of(r); std::string o; for (auto it = cs.rbegin(); it != cs.rend(); ++it) o += *it; flipped.push_back(o); }
+      stamp(flipped, x, y);
+    } else stamp(plan, x, y);
+  };
+
+  static const std::vector<std::vector<std::string>> PLACES = {
+      // the smiths' row: anvils with the work still on them, hammers thrown down, a stool kicked over
+      {"¥.¥.¥.¥........¥...¥.",
+       "..........τ.........!.",
+       "πI....π.....πI....π.%Ω",
+       ".n√.....a..τ......o:..",
+       "...........τ...::....."},
+      // the chain hall's hoist, stopped half way with its load, and a chain that snapped
+      {".¦..",
+       ".■..",
+       "§§§.",
+       "..§."},
+      // the slag pit, gone grey and cold, a ladle dropped by it
+      {"....▲...SSSSSS...▲.",
+       "......SSSSSSSSSS...",
+       "...√SSSSSeSSSSSSS..",
+       ".....SSSSSSSSeeSS..",
+       "......SSSSSSSSSS.τ.",
+       "....▲....SSSS......",
+       ".........Ü........."},
+      // the casting floor: the crucible tipped over, the metal set where it ran, two blades cast and the rest not
+      {".........Vsss...",
+       "..........sss...",
+       "===========s====",
+       ".c...c...m.s.m..",
+       ".c...c...m.s.m..",
+       "ccc.ccc.mmmsmmm.",
+       ".c...c...m.s.m..",
+       ".....τ.....s...."},
+      // the chimney hall: soot-black stacks, the fire doors gone dull
+      {"HHH.......HHH.......",
+       "HHH.......HHH.......",
+       "HEH....k..HEH.......",
+       ".......k....../....."},
+      // the bone-coal store: a barrow tipped on the way to the fire pit, its bones strewn behind it
+      {"BBBBBΩ............OOOO.",
+       "BBBBBBB..%....%...OEEO.",
+       "BBBB/BB..%.∩%%....OOOO.",
+       "BBBBB......%.....%Ω....",
+       "............/....kkkk..",
+       "..................kkkk."},
+      // the golem workshop: golems left half built on the benches
+      {"¤.◘.¤.◘..........◘.¤",
+       "...........τ........",
+       ".bGb.....bGb....bGb.",
+       ".........◘.......¬..",
+       ".bGb.....bGb....bbb.",
+       "......√.......◘.◘..."},
+      // the quench troughs: still black water, a blade left in it
+      {"RRRRRRRRRR.....¥...¥",
+       "RQQQQQQQQR....!.....",
+       "RRRRRRRRRR..........",
+       ".......o::..........",
+       "..........RRRRRRRRRR",
+       "..........RQQQQQQQQR",
+       "..........RRRRRRRRRR"},
+      // the scrap heaps, sorted by hand and left half sorted
+      {".JJJ.....bbbb.....JJJJJ.",
+       "JJJJJ....b!bb....JJJJJJJ",
+       ".JJJ...∩.........JJJJJ..",
+       ".......¬..........J.JJ..",
+       ".........o.............."},
+  };
+  std::vector<int> bag;
+  for (int k = 0; k < int(PLACES.size()); ++k) bag.push_back(k);
+  rnd.shuffle(bag);
+  size_t next = 0;
+  for (size_t i = 0; i < halls.size(); ++i) {
+    auto [x0, y0, x1, y1] = halls[i];
+    int cx = (x0 + x1) / 2;
+    if (int(i) == furnace) {
+      // the great furnace in the hall's top wall: a bed of embers that still glows, the bellows hanging slack,
+      // and before it a barrow of coal turned over, the shovel and hammer where they were dropped
+      stamp({"LLOEEEEEEEOLL", "LLOEEEEEEEOLL", "..OOOO.OOOO.."}, cx - 6, y0, true);
+      stamp({"...k.k.......", "..k∩k.....n..", "τ..k...../..u"}, cx - 13, y0 + 4);
+      continue;
+    }
+    int pick = bag[next++ % bag.size()];
+    if (pick == 1) {
+      // the chain hall: chains slung between the pillars of each row, sagging in the middle
+      for (int y : {y0 + 2, y1 - 2})
+        for (int x = x0 + 3; x + 5 <= cx - 2 || x + 5 <= x1 - 3; x += 5) {
+          if (m.at(x, y) != PILLAR) continue;
+          int x2 = x + 1;
+          while (x2 <= x1 && m.at(x2, y) != PILLAR) ++x2;
+          if (x2 > x1 || x2 - x > 12) continue;
+          for (int k = x + 1; k < x2; ++k) {
+            int sag = (k - x == 1 || x2 - k == 1) ? 0 : 1;
+            int yy = y + (y == y0 + 2 ? sag : -sag);
+            if (m.at(k, yy) == FLOOR && !near_stairs(k, yy, 0)) m.put(k, yy, SLUNG);
+          }
+        }
+    }
+    put_in(PLACES[pick], i);
+  }
+  // all over: things dropped in the flight, and here and there the bones of one who did not get away
+  static const int LITTER[] = {HAMMER, TONGS, TANKARD, STOOL, BUCKET, APRON, BLADE, SHOVEL, SKULL, BONES};
+  for (int k = 0, made = 0; k < 400 && made < 14; ++k) {
+    int x = rnd.range(2, m.w - 3), y = rnd.range(2, m.h - 3);
+    if (m.at(x, y) != FLOOR || near_stairs(x, y, 2)) continue;
+    int t = LITTER[rnd.below(10)];
+    m.put(x, y, t);
+    if (t == SKULL) for (int j = 0; j < 2; ++j) { int bx = x + rnd.range(-1, 1), by = y + rnd.range(-1, 1); if (m.at(bx, by) == FLOOR) m.put(bx, by, BONES); }
+    ++made;
+  }
+  (void)fl;
+}
+
 bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>>& treasure) {
   int act = fl.act;
   if (act != 1 && act != 2 && act < CITY) return false;
@@ -474,27 +646,28 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       fl.up = up;
       int furnace = cols * rows - 1;
       down = mid(furnace);
+      std::vector<int> chan(halls.size(), -1);
       for (size_t i = 0; i < halls.size(); ++i) {
         auto [x0, y0, x1, y1] = halls[i];
         int cx = (x0 + x1) / 2;
         // two rows of pillars, mirrored, two in from the walls
         for (int x = x0 + 3; x <= cx - 2; x += 5) for (int y : {y0 + 2, y1 - 2}) { m.place(x, y, PILLAR); m.place(x0 + x1 - x, y, PILLAR); }
         if (int(i) == furnace || rnd.real() < .5) {
-          // a channel of molten metal across the hall, with two stone crossings
-          bool from_furnace = int(i) == furnace;
+          // a channel of molten metal across the hall, with two stone crossings: left running when the smiths fled
           int y = (y0 + y1) / 2 + 4;
+          chan[i] = y;
           for (int x = x0; x <= x1; ++x) for (int o = 0; o < 2; ++o) m.put(x, y + o, LAVA);
           for (int x : {x0 + (x1 - x0) / 4, x1 - (x1 - x0) / 4}) for (int o = 0; o < 2; ++o) { m.put(x, y + o, FLOOR); m.put(x + 1, y + o, FLOOR); }
-          if (from_furnace) {  // the furnace at the top of the hall, the channel running from it
-            m.rect(cx - 2, y0, cx + 2, y0 + 1, HEARTH);
+          if (int(i) == furnace) {  // the great furnace at the top of the hall, its metal still running down to the channel
             for (int yy = y0 + 2; yy < y; ++yy) m.put(cx, yy, LAVA);
-            down = {cx + 4, y0 + 3};
+            down = {cx + 5, y0 + 4};
           }
           // anvils and slag on the banks
-          for (int k = 0; k < 4; ++k) m.place(rnd.range(x0 + 2, x1 - 2), y + (rnd.coin() ? -2 : 3), rnd.coin() ? ANVIL : SLAG);
+          for (int k = 0; k < 3; ++k) m.place(rnd.range(x0 + 2, x1 - 2), y + (rnd.coin() ? -2 : 3), rnd.coin() ? ANVIL : SLAG);
         }
-        for (int k = 0; k < 6; ++k) { int x = rnd.range(x0 + 1, x1 - 1), y = rnd.range(y0 + 1, y1 - 1); if (m.at(x, y) == FLOOR) m.put(x, y, CHAIN); }
+        for (int k = 0; k < 2; ++k) { int x = rnd.range(x0 + 1, x1 - 1), y = rnd.range(y0 + 1, y1 - 1); if (m.at(x, y) == FLOOR) m.put(x, y, CHAIN); }
       }
+      dress_forge(m, fl, halls, chan, furnace, up, down);
       m.treasure.push_back(m.rooms[cols]);
 
     } else if (act == CITY) {

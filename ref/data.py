@@ -12,7 +12,8 @@ WALL, FLOOR, DOOR, OPEN, STAIRS, WATER, SHALLOW, RUBBLE, FOUNTAIN, LAVA, UPSTAIR
     SNOW, PATH, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, ICE, CRACK, FLAGS, FIRE, STONES, CHIMNEY, HEALER, SMITH, \
     DIGGER, OPENGRAVE, GUARD, BARRICADE, \
     HEAP, BEAM, ORE, PICK, TURNTABLE, TIMBER, COCOON, \
-    PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL = range(125)
+    PLANK, STALAG, STUB, MIDDEN, BURROW, TOTEM, HIDE, CAMPFIRE, CRYSTAL, \
+    HAMMER, TONGS, STOOL, APRON, BUCKET, STAIN, TANKARD, BLADE, LADLE, SHOVEL, ARM, SKULL, SLUNG, HOOK, TROUGH, MOULD, CAST, SPILL, WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP = range(160)
 TILES = [
     ('#', None, False, False, 'wall'),
     ('.', None, True, True, 'floor'),
@@ -149,6 +150,42 @@ TILES = [
     ('≡', (140, 100, 70), True, True, 'a hide on the ground'),
     ('▲', (255, 150, 40), False, True, 'a trog fire'),
     ('♦', (240, 170, 70), False, False, 'crystals in the rock'),
+    # the Forge, left in haste long ago: tools dropped where they fell, work half done, the fires out
+    ('τ', (138, 106, 84), True, True, 'a hammer, dropped and rusted'),
+    ('√', (138, 106, 84), True, True, "a smith's tongs, rusted shut"),
+    ('╥', (96, 74, 54), True, True, 'a stool on its side'),
+    ('≈', (92, 68, 48), True, True, 'a leather apron, thrown down'),
+    ('o', (110, 110, 118), True, True, 'a bucket, knocked over'),
+    ('∙', (64, 78, 92), True, True, 'an old stain where water ran out'),
+    ('u', (128, 110, 86), True, True, 'a tankard on its side'),
+    ('!', (138, 106, 84), True, True, 'an unfinished blade'),
+    ('Ü', (122, 122, 132), True, True, 'a slag ladle'),
+    ('/', (138, 106, 68), True, True, 'a shovel'),
+    ('¬', (138, 138, 148), True, True, "a golem's iron arm"),
+    ('Ω', (224, 212, 188), True, True, 'the bones of a dwarf'),
+    ('~', (154, 154, 164), True, True, 'a chain slung overhead'),
+    ('¦', (138, 138, 148), True, True, 'a hook on a chain'),
+    ('═', (84, 66, 54), True, True, 'a pouring trough, dry'),
+    ('║', (84, 66, 54), True, True, 'an empty blade mould'),
+    ('║', (130, 118, 110), True, True, 'a blade, cast and left in its mould'),
+    ('≈', (138, 122, 112), True, True, 'spilled metal, set hard'),
+    ('▬', (96, 84, 78), False, True, 'cold work on the anvil'),
+    ('▀', (70, 52, 38), False, True, 'great bellows, the leather split'),
+    ('∙', (192, 80, 26), False, True, 'old embers, still faintly aglow'),
+    ('░', (98, 90, 84), False, True, 'a pit of cold slag'),
+    ('■', (110, 82, 58), False, True, 'a crate hanging from a hoist'),
+    ('◄', (138, 138, 148), False, True, 'a crucible, tipped over'),
+    ('█', (62, 54, 48), False, False, 'a soot-black chimney'),
+    ('%', (200, 188, 160), False, True, 'a heap of bones for the fires'),
+    ('▪', (96, 86, 78), False, True, 'a heap of coal'),
+    ('∩', (122, 90, 58), False, True, 'a barrow, tipped over'),
+    ('═', (122, 106, 90), False, True, 'a work bench'),
+    ('G', (138, 138, 148), False, True, 'an unfinished golem'),
+    ('◘', (122, 122, 132), False, True, 'iron plates, stacked'),
+    ('¤', (138, 122, 100), False, True, 'a crate of bolts'),
+    ('▄', (110, 96, 86), False, True, 'the rim of a quench trough'),
+    ('~', (40, 56, 70), False, True, 'still black water under a skin of ash'),
+    ('&', (160, 160, 170), False, True, 'a heap of scrap iron'),
 ]
 BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, CANDLE, ALTAR, PEW, PILLAR, TOMB, CRACKED,
                OPENTOMB, BIER, CORPSE, RESTLESS, BONEWALL, HEARTH, STONEWORK, ANVIL, SLAG, CART, BRAZIER, OBELISK, VENT,
@@ -156,7 +193,8 @@ BLOCKS_MOVE = {WALL, DOOR, WATER, LAVA, CHEST, OPENCHEST, SHRINE, USED, TORCH, C
                EGG, TIDESTATUE, BASIN, CHASM, SHAFT, SPOUT, LAMP, PROP, BARS, VAULTDOOR, BUNK, TABLE, RACK, DUMMY, STALL,
                CRATE, BOOKS, DRYFOUNT, GRAVE, CROSS, TREE, EMBER, WELL, BOARD, WINDOW, LIT, FIRE, STONES, CHIMNEY, HEALER,
                SMITH, DIGGER, GUARD, BARRICADE, HEAP, BEAM, ORE, TIMBER, COCOON,
-               STALAG, BURROW, TOTEM, CAMPFIRE, CRYSTAL}
+               STALAG, BURROW, TOTEM, CAMPFIRE, CRYSTAL,
+               WORKPIECE, BELLOWS, EMBERS, SLAGPIT, HOIST, CRUCIBLE, STACK, BONEHEAP, COALHEAP, BARROW, BENCH, HUSK, PLATES, BOLTS, RIM, QUENCH, SCRAP}
 
 # ------------------------------------------------------------------ the four acts
 # The zones of a dive. A dive always goes Crypt, then one of two, one of three, one of two, the Sanctum and the Deep:

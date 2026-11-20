@@ -62,6 +62,13 @@ double flick(double t, int seed) { return .86 + .08 * std::sin(t * 4.1 + seed * 
 const int FIREC[] = {0xFFF4C0, 0xFFD050, 0xFFA030, 0xFF7020, 0xE04818, 0xA02810};
 bool tombish(int t) { return t == TOMB || t == CRACKED || t == OPENTOMB; }
 bool bierish(int t) { return t == BIER || t == CORPSE || t == RESTLESS; }
+// now and then a draught comes down the Forge's halls: 0 most of the time, rising to 1 and falling again
+// (PYREHEART_DRAUGHT=seconds sets how often, for recording)
+const double DRAUGHT = SDL_getenv("PYREHEART_DRAUGHT") ? std::atof(SDL_getenv("PYREHEART_DRAUGHT")) : 13.0;
+double draught(double tt) {
+  double ph = std::fmod(tt / DRAUGHT, 1.0);
+  return ph < .3 ? std::sin(ph / .3 * PI) : 0;
+}
 }  // namespace
 
 void Client::draw_tiles() {
@@ -97,6 +104,20 @@ void Client::draw_tiles() {
         }
     }
   }
+  bool forge = actn == 2 && !rest;
+  if (forge && (int(hot_.size()) != W * H || ldist_floor_ != fl || hot_floor_ != fl)) {
+    hot_floor_ = fl;
+    hot_.assign(W * H, 0);
+    for (int i = 0; i < W * H; ++i) {
+      if (tile_of(map[i]) == LAVA || blocks(tile_of(map[i]))) continue;
+      int x = i % W, y = i / W, best = 0;
+      for (int dy = -2; dy <= 2; ++dy)
+        for (int dx = -2; dx <= 2; ++dx)
+          if (tile(x + dx, y + dy) == LAVA) { int d = std::max(std::abs(dx), std::abs(dy)); if (!best || d < best) best = d; }
+      hot_[i] = char(best);
+    }
+  }
+  double gust = forge ? draught(tt) : 0;
   double glow = .35 + .2 * std::sin(tt * .8);
   bool cfx = actn == 0 && crypt_fx() && !rest;
   if (cfx && chill_floor_ != fl) {
@@ -188,6 +209,7 @@ void Client::draw_tiles() {
       } else if (t == LAVA) {
         if (ldist_[i] <= 2) pool(x, y, 2.2, .95, .9);
         if (vis[i] == '1' && ldist_[i] >= 2 && hash(x, y, 8) % 41 == 0) emits_.push_back({float(x), float(y), 'l', sd});
+        if (forge && vis[i] == '1' && hash(x, y, 35) % 9 == 0) emits_.push_back({float(x), float(y), 'K', sd});  // sparks off the channel
       } else if (t == SHALLOW && vis[i] == '1' && hash(x, y, 5) % 19 == 0) {
         emits_.push_back({float(x), float(y), 'w', sd});
       } else if (t == CRACKED && vis[i] == '1') {
@@ -245,6 +267,14 @@ void Client::draw_tiles() {
         if (hash(x, y, 15) % 11 == 0) emits_.push_back({float(x), float(y), 'm', sd});
       } else if (actn == CISTERN && (t == FLOOR || t == GRATE) && vis[i] == '1') {
         if (hash(x, y, 16) % 47 == 0) emits_.push_back({float(x), float(y), 'r', sd});
+      } else if (t == EMBERS) {
+        // the old embers: a little dull red light, a thin smoke, brighter while the draught blows
+        if (hash(x, y, 31) % 3) pool(x, y, 2.4 + 1.5 * gust, base + .3 + .3 * gust, .7);
+        if (vis[i] == '1' && hash(x, y, 32) % 3 == 0) emits_.push_back({float(x), float(y), 'g', sd});
+      } else if (forge && t == FLOOR && vis[i] == '1') {
+        // the Forge's air: dust turning in the light, ash and soot coming down
+        if (hash(x, y, 33) % 61 == 0) emits_.push_back({float(x), float(y), 'd', sd});
+        if (hash(x, y, 34) % 67 == 0) emits_.push_back({float(x), float(y), 'A', sd});
       } else if ((t == CRUST || t == NECK) && vis[i] == '1') {
         // smoke seeping out of the crust, red embers drifting in loops, ash falling
         if (hash(x, y, 12) % 37 == 0) emits_.push_back({float(x), float(y), 'g', sd});
@@ -690,7 +720,85 @@ void Client::draw_tiles() {
           break;
         }
         case TOTEM: case HIDE: case STUB: bg = floor_bg(); break;
+        // ---- the Forge, left in haste
+        case EMBERS: {
+          // old embers in the ash, breathing slowly; some all but out; the draught wakes them a little
+          double k = (hh % 3 ? .65 + .35 * ((hh / 3) % 3) / 2.0 : .2) * (1 + .6 * gust);
+          double g = std::min(1.0, (.5 + .5 * std::sin(tt * .9 + hh % 7)) * k);
+          ch = hh % 3 ? 0x2219 : ',';
+          fg = mixc(0x4A4440, 0xD05A1C, g); bg = mixc(0x161210, 0x4A1606, g); bright = true;
+          break;
+        }
+        case BELLOWS: ch = tile(x, y + 1) == BELLOWS ? 0x2584 : 0x2580; bg = 0x161210; break;
+        case SLAGPIT: ch = hh % 3 ? 0x2591 : 0x2592; fg = mixc(0x4A4440, 0x625A54, (hh % 5) / 5.0); bg = 0x1A1714; break;
+        case SLUNG: ch = (x + y) % 2 ? '~' : '-'; fg = (x + y) % 2 ? 0x9A9AA4 : 0x7A7A84; bg = floor_bg(); break;
+        case STACK: {
+          bool edge = false;
+          for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) if (tile(x + d4.x, y + d4.y) != STACK && tile(x + d4.x, y + d4.y) != EMBERS) edge = true;
+          ch = edge ? 0x2593 : 0x2588; fg = mixc(0x2A2420, 0x3E3630, (hh % 4) / 4.0); bg = 0x0E0A08;
+          break;
+        }
+        case SPILL: {
+          // metal that ran from the tipped crucible and set; where it lies thickest it is still warm
+          bool thick = false;
+          for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) if (tile(x + dx, y + dy) == CRUCIBLE) thick = true;
+          ch = hh % 2 ? 0x2248 : '~';
+          if (thick) {
+            double g = .45 * (.5 + .5 * std::sin(tt * .9 + hh % 7)) * (1 + .5 * gust);
+            fg = mixc(0x6A4A3A, 0xC0501A, g); bg = mixc(0x241C18, 0x4A1606, g); bright = true;
+          } else { fg = 0x8A7A70; bg = 0x2A2420; }
+          break;
+        }
+        case MOULD: case CAST: {
+          // the shape of a blade cut in the floor: a point, the blade, a cross-guard and the grip
+          auto mo = [&](int a, int b) { int u = tile(a, b); return u == MOULD || u == CAST || u == SPILL; };
+          bool lf = mo(x - 1, y), rt = mo(x + 1, y), upm = mo(x, y - 1), dn = mo(x, y + 1);
+          bool under_guard = upm && mo(x - 1, y - 1) && mo(x + 1, y - 1);
+          if (lf && rt) ch = (upm || dn) ? 0x253C : 0x2500;
+          else if (under_guard) ch = 0x2502;
+          else if (!upm) ch = 0x2206;
+          else ch = 0x2551;
+          if (t == MOULD) { fg = 0x4A3A30; bg = 0x120C0A; } else { fg = 0x7A6E68; bg = 0x1E1816; }
+          break;
+        }
+        case TROUGH: fg = 0x4A3A30; bg = 0x120C0A; break;
+        case RIM: {
+          auto q = [&](int a, int b) { return tile(a, b) == QUENCH; };
+          if (q(x - 1, y + 1) || q(x, y + 1) || q(x + 1, y + 1)) ch = 0x2584;
+          else if (q(x - 1, y - 1) || q(x, y - 1) || q(x + 1, y - 1)) ch = 0x2580;
+          else if (q(x + 1, y)) ch = 0x2590;
+          else ch = 0x258C;
+          bg = 0x1E1612;
+          break;
+        }
+        case QUENCH: {
+          // still water under a skin of ash: no ripple, only a faint sheen and the flakes on it
+          ch = hh % 4 == 0 ? 0x00B7 : ' '; fg = 0x5A5650;
+          bg = mixc(0x06090C, 0x0E161E, .4 + .2 * ((hh % 3) / 3.0));
+          break;
+        }
+        case HUSK: ch = hh % 5 == 0 ? 'o' : hh % 3 ? 'G' : 'g'; bg = 0x1E1C1C; break;
+        case BENCH: bg = 0x1E1C1C; break;
+        case PLATES: case BOLTS: bg = 0x1A1816; break;
+        case SCRAP: {
+          static const int SC[] = {'&', '%', 0xA5, '/', '\\', 0xAC, 0x2310, '=', 0x2534, 0x252C, 0xF7, '+'};
+          ch = SC[hh % 12];
+          double rust = (hash(x, y, 36) % 4) / 4.0;
+          fg = mixc(0xA0A0AA, 0xB0603A, rust); bg = mixc(0x16100C, 0x241A14, rust);
+          break;
+        }
+        case COALHEAP: fg = mixc(0x3A3430, 0x5A5048, (hh % 3) / 3.0); bg = 0x16120E; break;
+        case BONEHEAP: ch = hh % 3 ? '%' : ','; fg = mixc(0xC8BCA0, 0xE8DCC4, (hh % 4) / 4.0); bg = 0x241F1A; break;
+        case HOIST: bg = 0x1A120E; break;
+        case WORKPIECE: bg = 0x221A16; break;
         default: bg = floor_bg(); break;
+      }
+      if (forge && hot_.size() == size_t(W * H) && hot_[i] && !blocks(t)) {
+        // the air wavers over the running metal: the floor beside it comes and goes, reddened
+        double wv = std::sin(tt * 5 + x * 1.3 + y * 2.1) * std::sin(tt * 2.3 - x * .7);
+        if (t == FLOOR) ch = wv > .35 ? 0x2219 : wv < -.35 ? ' ' : ch;
+        bg = mixc(bg, 0x5A1E0A, (hot_[i] == 1 ? .18 : .08) * (1 + wv));
+        fg = mixc(fg, 0xC85A28, .3);
       }
       if (vis[i] == '1') {
         double l = L[i], w = warm[i];
@@ -929,6 +1037,25 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         dot(x, y, mixc(0xC02810, 0xFF8040, tw), .65 + .35 * tw, tw > .8 ? 2 : 1);
         break;
       }
+      case 'K':
+        // sparks lifting off the running metal, drifting up and away as they cool
+        for (int j = 0; j < 2; ++j) {
+          double ph = std::fmod(tt * .32 + j / 2.0 + nz(sd + j * 5), 1.0);
+          double x = ex + .5 + (nz(sd * 3 + j) - .5) * .8 + std::sin(tt * 1.7 + j + sd) * .35 * ph, y = ey + .4 - ph * 3.2;
+          dot(x, y, ph < .3 ? mixc(0xFFE6A0, 0xFFB050, ph / .3) : mixc(0xF07828, 0x7A2008, (ph - .3) / .7), 1 - ph * .5);
+        }
+        break;
+      case 'A':
+        // grey ash and black soot coming down from the dark above, catching fire over the metal
+        for (int j = 0; j < 3; ++j) {
+          double ph = std::fmod(tt * .1 + j / 3.0 + nz(sd + j), 1.0);
+          double x = ex + (nz(sd + j * 7) - .5) * 6 + std::sin(tt * .5 + j + sd) * .7, y = ey - 3 + ph * 6;
+          if (!open_at(x, y)) continue;
+          int under = tile_of(map[int(y) * W + int(x)]);
+          int c = under == LAVA ? 0xFFB050 : (sd + j) % 3 ? 0x8A8480 : 0x2A2420;
+          dot(x, y, c, .85 * std::sin(ph * PI));
+        }
+        break;
       case 'a':
         // flakes of ash, falling
         for (int j = 0; j < 4; ++j) {
@@ -1081,6 +1208,25 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         dot(x, y, 0x141012, 1);
         dot(x - .14, y - (wing ? .1 : -.05), 0x2A2224, 1);
         dot(x + .14, y - (wing ? .1 : -.05), 0x2A2224, 1);
+      }
+    }
+  }
+  if (snap_.value("act", 0) == 2 && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+    // the draught: ash and grit skim across the floor through the hero's light, all one way, then it dies down
+    double g = draught(tt), cyc = std::floor(tt / DRAUGHT);
+    if (g > .05) {
+      int seed = int(cyc) * 4447, dir = nz(seed) < .5 ? 1 : -1;
+      int hx = snap_["heroes"][0]["x"], hy = snap_["heroes"][0]["y"];
+      double ph = std::fmod(tt / DRAUGHT, 1.0) / .3;
+      for (int j = 0; j < 110; ++j) {
+        double st = nz(seed + j * 3) * .6, k = (ph - st) / .4;
+        if (k < 0 || k > 1) continue;
+        double x = hx + .5 + dir * (-12 + k * 24), y = hy + .5 + (nz(seed + j * 7) - .5) * 12 + std::sin(k * 6 + j) * .35;
+        if (!open_at(x, y) || blocks(tile_of(map[int(y) * W + int(x)]))) continue;
+        double a = std::min(1.0, std::sin(k * PI) * 2) * std::min(1.0, g * 2);
+        int c = j % 3 ? 0x9A928A : 0xC8BEB0;
+        dot(x, y, c, .9 * a);
+        dot(x - dir * .15, y, c, .5 * a);  // a short streak behind it
       }
     }
   }

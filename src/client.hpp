@@ -97,6 +97,8 @@ class Client {
   std::vector<Emit> emits_;  // where particles rise this frame
   std::string shot_;
   std::vector<int> ldist_;  // each lava cell's distance from land, for the current map
+  int hot_floor_ = -1;
+  std::vector<char> hot_;  // in the Forge: how near the running metal each cell lies (1, 2), for the heat shimmer
   int ldist_floor_ = -1;
   // the Crypt's air (mock-ups, PYREHEART_CRYPTFX=1): how near each cell is to an open grave or the ossuary, for the
   // grave chill; the coloured light of the chapel windows; where a hero last stepped, for bone dust
