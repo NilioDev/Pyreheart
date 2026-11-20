@@ -1381,9 +1381,14 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
       case 'L': {
         // the ember in a lantern's cage: a red point that breathes, a spark lifting off it now and then
         double fl2 = .5 + .5 * std::sin(tt * .7 + sd) * std::sin(tt * .23 + sd * 3);
-        dot(ex + .4, ey + .1, mixc(0x8A2008, 0xFF9040, fl2), .9, 2);
-        double ph = std::fmod(tt * .2 + nz(sd), 1.0);
-        if (fl2 > .6 && ph < .5) dot(ex + .5 + std::sin(tt * 2 + sd) * .2 * ph, ey + .1 - ph * 1.6, mixc(0xFFC060, 0x7A2008, ph * 2), 1 - ph * 2);
+        // a faint warm glow over the post's head, and a few tiny motes of fire hanging and winking above it
+        dot(ex + .5 - 3 * px / cell, ey - .15 - 3 * px / cell, 0xC04010, .12 + .12 * fl2, 6);
+        for (int j = 0; j < 4; ++j) {
+          double ph = std::fmod(tt * (.15 + .05 * j) + nz(sd * 7 + j), 1.0);
+          double x = ex + .5 + (nz(sd + j * 3) - .5) * .6 + std::sin(tt * 1.3 + j + sd) * .12, y = ey - .05 - ph * .9;
+          double tw = std::sin(ph * PI) * (.5 + .5 * std::sin(tt * 4 + j * 2 + sd));
+          dot(x, y, mixc(0xFFB050, 0x8A2008, ph), tw * (.5 + .5 * fl2));
+        }
         break;
       }
       case 'T':
