@@ -490,8 +490,13 @@ void Client::draw_tiles() {
   std::vector<float> frost;
   std::vector<int> under;
   if (actn == 0 && zone_fx("c2") && !rest && !s["heroes"].empty()) {
-    double period = fx_period(20), cyc = std::floor(tt / period), age = tt - cyc * period, dur = std::min(8.0, period * .85);
-    if (age < dur) {
+    // a ghost is rare: one chance in three every 25 s, never two cycles running (about one every two minutes; it used to be every 20 s);
+    // with PYREHEART_FXPERIOD set (the mock-ups) one comes every cycle
+    double period = fx_period(25), cyc = std::floor(tt / period), age = tt - cyc * period, dur = std::min(8.0, period * .85);
+    static const bool every = SDL_getenv("PYREHEART_FXPERIOD") != nullptr;
+    auto comes = [](int c) { return nz(c * 613 + 5) < .33; };
+    bool here = every || (comes(int(cyc)) && !comes(int(cyc) - 1));
+    if (here && age < dur) {
       int seed = int(cyc) * 613, hx = s["heroes"][0]["x"], hy = s["heroes"][0]["y"];
       static int start_cyc = -1;
       static double sx = 0, sy = 0, ex = 0, ey = 0;
