@@ -152,7 +152,7 @@ struct Floor {
   std::vector<MonP> mons;
   P up, down;
   int keys = 0;  // vault keys the party carries (the Vaults' guardians drop them)
-  std::vector<P> open_graves;  // Charnfen: where the dead climb out
+  std::vector<P> open_graves;  // Charnfen: where the dead climb out; the Prison: the dead prisoners that will rise
   int risen = 0;
   bool warned = false;
   bool has_merchant = false;
@@ -303,6 +303,7 @@ class Game {
   void hurt(Mon& m, int dmg, Hero* by, const std::string& text = "");
   void kill(Mon& m, Hero* by);
   void town_tick();
+  void prison_tick();
   void gain_xp(Hero& h, int xp);
   void choose_perk(Hero& h, const std::string& k);
   void drops(const Mon& m);

@@ -256,7 +256,7 @@ void Client::draw_tiles() {
       log_.push_back({"A war-drum booms, far off.", 0xA0A0A0});
     }
   }
-  // the Prison: now and then something rattles a cell door, or chains clink somewhere in the dark
+  // the Prison, empty for centuries: now and then a draught swings a cell door, or old chains clink in the dark
   if (!rest && actn == PRISON && zone_fx("p1") && !s.value("town", false)) {
     static const char* every = SDL_getenv("PYREHEART_RATTLE");  // for the mock-ups: every n seconds
     if (rattle_next_ < 0) rattle_next_ = tt + (every ? 1.0 : 20 + nz(int(tt) % 983) * 25);
@@ -264,7 +264,7 @@ void Client::draw_tiles() {
       rattle_t_ = tt;
       rattle_door_ = !rattle_door_;
       rattle_next_ = tt + (every ? std::atof(every) : 30 + nz(int(tt * 3) % 983) * 40);
-      log_.push_back({rattle_door_ ? "Something rattles a cell door." : "Chains clink somewhere in the dark.", 0xA0A0A0});
+      log_.push_back({rattle_door_ ? "A cell door creaks on its hinges in a draught." : "Old chains clink somewhere in the dark.", 0xA0A0A0});
     }
   }
   double rattle = actn == PRISON && tt - rattle_t_ < 1.6 ? 1 - (tt - rattle_t_) / 1.6 : 0;
@@ -876,8 +876,6 @@ void Client::draw_tiles() {
         }
         case GRATE:
           bg = 0x0E100E; ch = '#'; fg = 0x5A5A60;
-          // an oubliette in the Prison: now and then a pale hand at the grate
-          if (actn == PRISON && std::fmod(tt * .08 + (hh % 100) / 100.0, 1.0) < .05) fg = 0xD8CCB8;
           break;
         case CHASM: {
           // the floor falls away into the dark; its lip catches the light
@@ -998,7 +996,7 @@ void Client::draw_tiles() {
         case SLIME: bg = mixc(floor_bg(), 0x1A2416, .5); break;
         case DOOR: case OPEN:
           bg = floor_bg(); keep = true;
-          // the cell door something rattles
+          // a cell door the draught swings
           if (t == DOOR && rattle > 0 && rattle_door_ && (tile(x - 1, y) == BARS || tile(x, y - 1) == BARS) && hash(x, y, int(rattle_t_)) % 4 == 0 && int(tt * 18) % 2)
             { fg = 0xE0D0B8; bright = true; }
           break;

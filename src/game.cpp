@@ -858,11 +858,6 @@ void Game::bleed(Hero& h, Mon& m, int dmg) {
 
 bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   Stats st = stats(h);
-  if (floor->act == PRISON) {  // the Prison's sleepers wake to the noise of a fight
-    bool woke = false;
-    for (auto& o : floor->mons) if (o->sleep && cheb(o->x, o->y, h.x, h.y) <= 8) { o->sleep = 0; o->awake = true; woke = true; }
-    if (woke) { say_near(h.x, h.y, "The noise wakes the cells. Chains rattle all around.", 0xC0A080); tip(h, "noise", "In the Prison the sleepers in the cells wake to the noise of a fight."); }
-  }
   bool opening = h.cls->key == "cutthroat" && !ranged && busy(m, h);
   m.awake = true;
   m.open = 0;
@@ -1808,6 +1803,7 @@ void Game::compute_dist() {
 void Game::monsters() {
   if (active().empty()) return;
   if (floor->depth == 0) town_tick();
+  if (floor->act == PRISON && floor->depth > 0) prison_tick();
   compute_dist();
   auto ms = floor->mons;
   for (auto& m : ms) {
@@ -2200,6 +2196,25 @@ void Game::forge(Hero& h) {
   wi->second = best;
   add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xFFB040}});
   h.say("The Spark reforges " + old->name + " into " + best->name + ".", rarity_col(best->rarity));
+}
+
+// the Prison: a dead prisoner in its cell gets up, rattling its chains, when one of the living comes close
+void Game::prison_tick() {
+  Floor& f = *floor;
+  for (auto& h : living())
+    for (size_t k = 0; k < f.open_graves.size(); ++k) {
+      P g = f.open_graves[k];
+      if (cheb(g.x, g.y, h->x, h->y) > 3 || mon_at(g.x, g.y) || rnd.below(100) >= 40) continue;
+      f.open_graves.erase(f.open_graves.begin() + long(k));
+      f.set(g.x, g.y, FLOOR);
+      if (auto m = spawn("prisoner", g.x, g.y)) {
+        m->awake = true;
+        add_fx({{"k", "rise"}, {"x", g.x}, {"y", g.y}, {"col", 0xB0A090}});
+        say_all("The bones in a cell stir. A dead prisoner drags itself up, its chains scraping the stone.", 0xC0B090);
+        tip(*h, "prisoners", "In the Prison the dead in the cells rise when you come close.");
+      }
+      return;
+    }
 }
 
 // Charnfen: the dead climb from the open graves as heroes pass, and the guards at the gate shoot what comes near

@@ -1305,8 +1305,10 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
             }
             if (inside.size() < 9) { for (auto q : inside) m.put(q.x, q.y, WALL); continue; }
             for (int l = -1; l <= 1; ++l) m.put(front.x + (wg.dx ? l : 0), front.y + (wg.dy ? l : 0), BARS);
-            bool broken = rnd.real() < .25;
-            m.put(front.x, front.y, broken ? RUBBLE : DOOR);
+            // the prison was left centuries ago: most cell doors hang open, some were broken out, a few still shut
+            double dr = rnd.real();
+            bool broken = dr < .25;
+            m.put(front.x, front.y, broken ? RUBBLE : dr < .8 ? OPEN : DOOR);
             m.rooms.push_back(inside);
             cells_in.push_back(inside);
             if (broken) m.treasure.push_back(inside);
@@ -1647,7 +1649,7 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
 }
 
 // The foes a zone sets to guard something, after the rest are out: the Vaults' guardians by the locked doors (they
-// carry the keys) and mimics among the coins, the Prison's prisoners asleep in their cells, the Barracks' squads
+// carry the keys) and mimics among the coins, the Prison's dead prisoners that rise in their cells, the Barracks' squads
 // (a shield in front, bows behind), the Sanctum's knights kneeling by the empty altar.
 void Game::zone_foes(Floor& fl) {
   int act = fl.act;
@@ -1682,19 +1684,19 @@ void Game::zone_foes(Floor& fl) {
     for (size_t i = 3; i < coins.size() && i < 9; ++i) { fl.set(coins[i].x, coins[i].y, FLOOR); fl.items.push_back({coins[i].x, coins[i].y, nullptr, lvl * rnd.range(3, 7), "", 0}); }
   }
   if (act == PRISON) {
-    // a cell is a room of nine behind bars; some hold a sleeper
+    // the prison has stood empty for centuries: no one is held here any more. The dead prisoners still lie in their
+    // cells, and some of them get up when the living come near; the cell-rats nest in the straw
+    fl.open_graves.clear();
+    for (int i = W; i < W * (H - 1); ++i) {
+      if ((fl.t[i] != BONES && fl.t[i] != SKULL) || rnd.real() > .6) continue;
+      bool cell = false;
+      for (int dy = -3; dy <= 3; ++dy) for (int dx = -3; dx <= 3; ++dx) if (fl.tile(i % W + dx, i / W + dy) == BARS) cell = true;
+      if (cell) fl.open_graves.push_back({i % W, i / W});
+    }
     for (int i = 0; i < W * H; ++i) {
-      if (fl.t[i] != BARS || rnd.real() > .12) continue;
-      P b{i % W, i / W};
-      for (int dy = -2; dy <= 2; ++dy)
-        for (int dx = -2; dx <= 2; ++dx) {
-          if (std::abs(dx) + std::abs(dy) != 2 || (dx && dy)) continue;
-          int x = b.x + dx, y = b.y + dy;
-          if (!open(x, y)) continue;
-          static const std::vector<std::string> who = {"prisoner", "prisoner", "ratswarm", "turnkey"};
-          if (auto mm = spawn(rnd.pick(who), x, y)) { mm->sleep = 1; }
-          dx = dy = 3;
-        }
+      if (fl.t[i] != BARS || fl.t[i - 1] != BARS || fl.t[i + 1] == BARS || rnd.real() > .1) continue;
+      P at;
+      if (free_near(i % W, i / W, 3, at, [&](int x, int y) { return open(x, y); })) spawn("ratswarm", at.x, at.y);
     }
   }
   if (act == BARRACKS) {
