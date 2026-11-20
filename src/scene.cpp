@@ -499,18 +499,67 @@ void Client::draw_tiles() {
       };
       switch (t) {
         case WALL: {
-          // laid blocks in courses, with dark joints; now and then a skull niche facing a room (the crypt)
-          int course = (x + (y % 2) * 2) / 4;
-          bg = scale(col, .22 + .08 * ((hash(course, y, 2) % 7) / 7.0));
-          if ((x + (y % 2) * 2) % 4) { ch = 0x2593; fg = scale(col, .4 + .1 * noise(x, y, 3, 4)); }
-          else { ch = 0x2502; fg = scale(col, .16); }
-          if (actn == CISTERN) {
-            fg = scale(fg, .75);
-            if (noise(x, y, 2.5, 4) > .66) fg = mixc(fg, 0x2E4A30, .45);  // slime running down the wet stone
+          // every zone has its own wall: its own signs and colours, one cell at a time (walls are one cell thick);
+          // the laid blocks in courses belong to the Caves (and the village)
+          double r = (hash(x, y, 11) % 1000) / 1000.0;
+          // the marks (niches, hooks, rivets, veins) sit on the face of the wall, never deep in the rock
+          bool face = false;
+          for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) if (!blocks(tile(x + d4.x, y + d4.y))) face = true;
+          if (!face) r = 1;
+          auto shade = [&](int lo, int hi, int k = 1) { return mixc(lo, hi, .6 * noise(x, y, 2.5, k) + .4 * ((hash(x, y, k + 11) % 1000) / 1000.0)); };
+          if (rest || actn == 1) {
+            int course = (x + (y % 2) * 2) / 4;
+            bg = scale(col, .22 + .08 * ((hash(course, y, 2) % 7) / 7.0));
+            if ((x + (y % 2) * 2) % 4) { ch = 0x2593; fg = scale(col, .4 + .1 * noise(x, y, 3, 4)); }
+            else { ch = 0x2502; fg = scale(col, .16); }
+            if (hh % 23 == 0) { ch = '/'; fg = scale(col, .18); }  // a crack
+          } else if (actn == 0) {  // the Crypt: pale bone stone and old plaster, skull niches, cut crosses
+            bg = 0x1C1A18;
+            if (r < .08) { ch = 0x3A9; fg = 0xC8BCA0; bg = 0x100E0C; }
+            else if (r < .13) { ch = 0x253C; fg = 0x968C78; }
+            else if (r < .30) { ch = 0x2592; fg = shade(0x544E46, 0x787064); }
+            else { ch = 0x2591; fg = shade(0x645E54, 0x968E7E); }
+          } else if (actn == 2) {  // the Forge: fire brick, black with soot here, still hot there, iron ties
+            bg = 0x1E0E0A;
+            if (r < .06) { ch = '#'; fg = mixc(0xC85A1E, 0xFF8A30, .5 + .5 * std::sin(tt * 1.3 + hh % 7)); bg = 0x401408; bright = true; }
+            else if (r < .22) { ch = '#'; fg = shade(0x281A16, 0x3C261E); bg = 0x120A08; }
+            else if (r < .30) { ch = 0x2261; fg = 0x5A3C32; }
+            else { ch = '#'; fg = shade(0x642C1C, 0x9C482C); }
+          } else if (actn == DEEP) {  // the Deep: basalt columns with glints of glass
+            bg = 0x100E1A;
+            if (r < .07) { ch = 0x2219; fg = 0xC8B4FF; }
+            else { ch = r < .45 ? 0x258C : 0x2590; fg = shade(0x322A50, 0x5C5088); }
+          } else if (actn == CISTERN) {  // the Cistern: wet stone, slime, water seeping down
+            bg = 0x101818;
+            if (r < .08) { ch = 0xA6; fg = 0x4A7C76; }
+            else if (r < .30) { ch = 0x2592; fg = shade(0x28462E, 0x40643E); }
+            else { ch = 0x2592; fg = shade(0x2C4240, 0x506A62); }
+          } else if (actn == CITY) {  // the City: dressed ashlar, carved courses, rosettes
+            bg = 0x282622;
+            if (r < .10) { ch = 0x2580; fg = shade(0x6E685E, 0x8C8476); bg = 0x3C3832; }
+            else if (r < .16) { ch = 0xA4; fg = 0x96825A; bg = 0x464038; }
+            else { ch = 0x2588; fg = shade(0x56524A, 0x746E64); }
+          } else if (actn == VAULTS) {  // the Vaults: dark banded stone, bronze plates, rivets
+            bg = 0x120F0C;
+            if (r < .12) { ch = 0x25D8; fg = 0x826436; bg = 0x281E10; }
+            else if (r < .20) { ch = 0x2022; fg = 0xAA823C; bg = 0x1E1810; }
+            else { ch = 0x2580; fg = shade(0x423624, 0x645030); }
+          } else if (actn == BARRACKS) {  // the Barracks: fieldstone, empty weapon hooks
+            bg = 0x1E1814;
+            if (r < .06) { ch = 0xAC; fg = 0x96969C; }
+            else if (r < .30) { ch = 0x2593; fg = shade(0x503E32, 0x705A4C); }
+            else { ch = 0x2584; fg = shade(0x5A463A, 0x846A5A); }
+          } else if (actn == PRISON) {  // the Prison: slate, chisel scars, shackle rings
+            bg = 0x0E0E12;
+            if (r < .06) { ch = 0xB0; fg = 0x786E64; }
+            else if (r < .14) { ch = '/'; fg = 0x646470; bg = 0x282A34; }
+            else { ch = 0x2588; fg = shade(0x282A34, 0x444654); }
+          } else {  // the Sanctum: polished black stone, gold veins, gold inlay
+            bg = 0x0A080C;
+            if (r < .07) { ch = 0x2593; fg = 0x9C783A; }
+            else if (r < .11) { ch = 0x2666; fg = 0xBE9646; bg = 0x1A141C; }
+            else { ch = 0x2593; fg = shade(0x28202E, 0x483C50); }
           }
-          if (actn == 0 && hh % 41 == 0 && !blocks(tile(x, y + 1)) && blocks(tile(x - 1, y)) && blocks(tile(x + 1, y))) {
-            ch = 0x3A9; fg = 0xC8BCA0; bg = 0x14120F;
-          } else if (hh % 23 == 0) { ch = '/'; fg = scale(col, .18); }  // a crack
           break;
         }
         case FLOOR: case RUBBLE: {
