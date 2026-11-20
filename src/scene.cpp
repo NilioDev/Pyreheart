@@ -347,7 +347,7 @@ void Client::draw_tiles() {
         if (vis[i] == '1') emits_.push_back({float(x), float(y), 'p', sd});
       } else if (t == EGG) {
         if (actn != 1) pool(x, y, 2.5, .85, .5, true);
-      } else if (t == HEAP) {
+      } else if (t == HEAP && actn == 1) {
         // grey daylight down the fallen shaft, onto the heap and round it
         pool(x + .5, y + .5, 3.8, 1.05, 0);
         heaps.push_back({x, y});

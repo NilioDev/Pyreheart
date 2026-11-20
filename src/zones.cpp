@@ -1211,6 +1211,29 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
         hall(x0, 6, x1, yy0 - 4, true, i == 0 || (i == 1 && rnd.coin()));
         hall(x0, yy1 + 4, x1, h - 7, false, i == 0 || (i == 1 && rnd.coin()));
       }
+      // the great halls either side of the yard, where the way from the patrol round runs through: the feast hall
+      // and the drill hall, each with doors to the ways along the yard above and below
+      bool feast_left = rnd.coin();
+      for (int side = 0; side < 2; ++side) {
+        int x0 = side ? yx1 + 4 : 7, x1 = side ? w - 8 : yx0 - 4, y0 = yy0 + 2, y1 = yy1 - 2, mx = (x0 + x1) / 2;
+        m.room(x0, y0, x1, y1);
+        for (int x : {mx - 6, mx + 6}) { m.put(x, y0 - 1, FLOOR); m.put(x, y0 - 2, DOOR); m.put(x, y1 + 1, FLOOR); m.put(x, y1 + 2, DOOR); }
+        auto clear = [&](int x, int y) { return std::abs(y - cy) > 2 && std::abs(x - mx + 6) > 1 && std::abs(x - mx - 6) > 1; };
+        if ((side == 0) == feast_left) {
+          // the feast hall: two long tables, the high table across the end, banners along the walls, kegs
+          for (int y : {y0 + 2, y1 - 2}) for (int x = x0 + 3; x <= x1 - 3; ++x) if (clear(x, y)) lay(x, y, TABLE);
+          for (int y = y0 + 1; y <= y1 - 1; ++y) if (clear(side ? x1 - 1 : x0 + 1, y) && std::abs(y - cy) > 3) lay(side ? x1 - 1 : x0 + 1, y, TABLE);
+          for (int x = x0; x <= x1; x += 3) { on_wall(x, y0 - 1, HANGING); }
+          for (int k = 0; k < 6; ++k) lay(rnd.range(x0, x1), rnd.range(y0, y1), k % 2 ? TANKARD : STOOL);
+          lay(side ? x0 : x1, y0, KEG); lay(side ? x0 : x1, y1, KEG);
+          for (int k = 0; k < 3; ++k) lay(rnd.range(x0, x1), rnd.range(y0, y1), BONES);
+        } else {
+          // the drill hall: dummies in two rows near the walls, racks along them, spears and shields dropped
+          for (int x = x0 + 2; x <= x1 - 2; x += 4) for (int y : {y0 + 2, y1 - 2}) if (clear(x, y)) lay(x, y, DUMMY);
+          for (int x = x0 + 1; x <= x1 - 1; x += 2) if (clear(x, y0)) { lay(x, y0, RACK); lay(x, y1, RACK); }
+          for (int k = 0; k < 6; ++k) lay(rnd.range(x0, x1), rnd.range(y0, y1), k % 2 ? SPEAR : SHIELD);
+        }
+      }
       // the gate at the foot of the west side: a portcullis half raised
       m.put(1, cy - 1, BARS); m.put(1, cy + 1, BARS);
       up = {5, cy};
@@ -1303,6 +1326,19 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       m.way(gn, ge, 2);
       m.way(ge, {ge.x, gs.y}, 2); m.way({ge.x, gs.y}, gs, 2);
       m.way(gs, gw, 2);
+      // the great halls in the four corners between the wings: the prisoners' mess, the wardens' quarters, the
+      // kitchen and the workhouse; each opens on the outer way twice
+      std::vector<Box> halls;
+      for (int qx = 0; qx < 2; ++qx)
+        for (int qy = 0; qy < 2; ++qy) {
+          int x0 = qx ? w - 1 - 36 : 12, x1 = qx ? w - 1 - 12 : 36, y0 = qy ? 42 : 10, y1 = qy ? h - 10 : 24;
+          if (y1 - y0 < 8) continue;
+          m.room(x0, y0, x1, y1);
+          halls.push_back({x0, y0, x1, y1});
+          int my = (y0 + y1) / 2, mx = (x0 + x1) / 2;
+          m.way({qx ? gs.x + (ge.x - gs.x) : gw.x, my}, {qx ? x1 : x0, my}, 3);
+          m.way({mx, qy ? gs.y : gn.y}, {mx, qy ? y1 : y0}, 3);
+        }
       up = guards[0];
       down = {c.x, c.y - 3};
       fl.up = up; fl.down = down;
@@ -1367,6 +1403,45 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
             for (int x = b.x1 - 4; x <= b.x1 - 1; ++x) lay(x, b.y0, GALLOWS);
             lay(cxr, (b.y0 + b.y1) / 2 + 1, BLOCK); lay(cxr - 1, (b.y0 + b.y1) / 2 + 2, STAIN); lay(cxr + 1, (b.y0 + b.y1) / 2 + 2, STAIN);
             lay(rx(), b.y1, SKULL);
+            break;
+        }
+      }
+      std::vector<int> hk = {0, 1, 2, 3};
+      rnd.shuffle(hk);
+      for (size_t k = 0; k < halls.size(); ++k) {
+        auto b = halls[k];
+        auto rx = [&]() { return rnd.range(b.x0, b.x1); };
+        auto ry = [&]() { return rnd.range(b.y0, b.y1); };
+        int mx = (b.x0 + b.x1) / 2, my = (b.y0 + b.y1) / 2;
+        auto clear = [&](int x, int y) { return std::abs(x - mx) > 1 && std::abs(y - my) > 1; };  // keep the ways through free
+        switch (hk[k]) {
+          case 0:  // the prisoners' mess: two long tables near the walls, benches, bowls and tankards, a cold hearth
+            for (int y : {b.y0 + 2, b.y1 - 2}) for (int x = b.x0 + 3; x <= b.x1 - 3; ++x) if (clear(x, y)) lay(x, y, TABLE);
+            for (int y : {b.y0 + 1, b.y0 + 3, b.y1 - 3, b.y1 - 1}) for (int x = b.x0 + 3; x <= b.x1 - 3; x += 2) if (clear(x, y) && rnd.real() < .5) lay(x, y, STOOL);
+            for (int j = 0; j < 6; ++j) lay(rx(), ry(), TANKARD);
+            for (int dx = -1; dx <= 1; ++dx) lay(b.x0 + 3 + dx, b.y0, EMBERS);
+            lay(b.x1, b.y0, KEG); lay(b.x1, b.y1, KEG);
+            for (int j = 0; j < 3; ++j) lay(rx(), ry(), BONES);
+            break;
+          case 1:  // the wardens' quarters: bunks along the walls, chests, racks, a table with a candle
+            for (int x = b.x0 + 1; x <= b.x1 - 1; x += 3) if (clear(x, b.y0)) { lay(x, b.y0, BUNK); lay(x, b.y1, BUNK); lay(x, b.y0 + 1, CRATE); }
+            for (int y = b.y0 + 2; y <= b.y1 - 2; y += 2) if (clear(b.x0, y)) { lay(b.x0, y, RACK); lay(b.x1, y, RACK); }
+            lay(mx + 4, my + 3, TABLE); lay(mx + 5, my + 3, CANDLE); lay(mx + 3, my + 3, LEDGER);
+            for (int j = 0; j < 3; ++j) lay(rx(), ry(), SKULL);
+            break;
+          case 2:  // the kitchen: hearths of old embers along the far wall, troughs, kegs and crates, buckets dropped
+            for (int x = b.x0 + 2; x <= b.x1 - 2; x += 6) if (clear(x, b.y0)) for (int dx = 0; dx < 3; ++dx) lay(x + dx, b.y0, EMBERS);
+            for (int x = b.x0 + 2; x <= b.x0 + 5; ++x) lay(x, b.y1, QUENCH);
+            for (int j = 0; j < 6; ++j) { int e2 = rnd.below(2); lay(e2 ? b.x0 : b.x1, ry(), rnd.coin() ? KEG : CRATE); }
+            for (int j = 0; j < 3; ++j) lay(rx(), ry(), BUCKET);
+            lay(mx - 5, my - 3, TABLE); lay(mx + 5, my + 3, TABLE);
+            break;
+          default:  // the workhouse: heaps of broken stone along the walls, hammers, chains to the floor, carts
+            for (int j = 0; j < 14; ++j) { int s2 = rnd.below(4); P e2 = s2 == 0 ? P{rx(), b.y0} : s2 == 1 ? P{rx(), b.y1} : s2 == 2 ? P{b.x0, ry()} : P{b.x1, ry()}; if (clear(e2.x, e2.y)) lay(e2.x, e2.y, HEAP); }
+            for (int j = 0; j < 6; ++j) lay(rx(), ry(), CHAIN);
+            for (int j = 0; j < 4; ++j) lay(rx(), ry(), HAMMER);
+            for (int j = 0; j < 2; ++j) lay(rx(), b.y1, BARROW);
+            for (int j = 0; j < 3; ++j) lay(rx(), ry(), BONES);
             break;
         }
       }
