@@ -58,6 +58,12 @@ bool crypt_fx() {
   return on;
 }
 const int GLASS[] = {0xC83848, 0x3C5AD0, 0xD8A840, 0x6A3CB0};
+// the Caves' air, one by one for the mock-ups: PYREHEART_CAVESFX=1,3 (1 mist over the stream, 2 heat over the
+// fissures, 3 the mountain groans, 4 eyes in the dark, 5 wet rock by the stream, 6 draught); off leaves them all out
+bool cave_fx(int n) {
+  static std::string v = SDL_getenv("PYREHEART_CAVESFX") ? SDL_getenv("PYREHEART_CAVESFX") : "all";
+  return v == "all" || v.find(char('0' + n)) != std::string::npos;
+}
 double flick(double t, int seed) { return .86 + .08 * std::sin(t * 4.1 + seed * 1.7) + .06 * std::sin(t * 9.7 + seed * 3.1); }
 const int FIREC[] = {0xFFF4C0, 0xFFD050, 0xFFA030, 0xFF7020, 0xE04818, 0xA02810};
 bool tombish(int t) { return t == TOMB || t == CRACKED || t == OPENTOMB; }
@@ -135,6 +141,50 @@ void Client::draw_tiles() {
         beams_.push_back({wx, wy, std::max(4, depth), GLASS[(k + 1 + x) % 4], dir});
       }
     }
+  }
+  bool cvx = actn == 1 && !rest;
+  if (cvx && cave_floor_ != fl) {
+    cave_floor_ = fl;
+    wind_ = hash(fl, 5, 9) % 2 ? 1 : -1;
+    auto spread = [&](auto src, int reach, std::vector<float>& out) {
+      out.assign(W * H, 0.f);
+      std::vector<int> d(W * H, -1), q;
+      for (int i = 0; i < W * H; ++i) if (src(tile_of(map[i]))) { d[i] = 0; q.push_back(i); }
+      for (size_t k = 0; k < q.size(); ++k) {
+        int i = q[k];
+        if (d[i] >= reach) continue;
+        for (P d4 : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}}) {
+          int x = i % W + d4.x, y = i / W + d4.y;
+          if (x < 0 || y < 0 || x >= W || y >= H || d[y * W + x] >= 0 || blocks(tile_of(map[y * W + x]))) continue;
+          d[y * W + x] = d[i] + 1;
+          q.push_back(y * W + x);
+        }
+      }
+      for (int i = 0; i < W * H; ++i) if (d[i] >= 0) out[i] = float(1 - d[i] / double(reach + 1));
+    };
+    auto wet = [](int t) { return t == WATER || t == SHALLOW || t == PLANK; };
+    spread(wet, 3, damp_);
+    spread([](int t) { return t == BEAM || t == HEAP; }, 5, draft_);
+    wetw_.assign(W * H, 0);
+    for (int i = 0; i < W * H; ++i) {
+      if (tile_of(map[i]) != WALL) continue;
+      int x = i % W, y = i / W;
+      for (int dy = -2; dy <= 2 && !wetw_[i]; ++dy)
+        for (int dx = -2; dx <= 2; ++dx) if (wet(tile(x + dx, y + dy))) { wetw_[i] = 1; break; }
+    }
+  }
+  // now and then the mountain groans: grit falls all over, the flames shrink
+  double groan = 0;
+  if (cvx && cave_fx(3)) {
+    static const char* every = SDL_getenv("PYREHEART_GROAN");  // for the mock-ups: a groan every n seconds
+    if (groan_next_ < 0) groan_next_ = tt + (every ? 1.5 : 40 + nz(int(tt) % 997) * 50);
+    if (tt >= groan_next_) {
+      groan_t_ = tt;
+      groan_next_ = tt + (every ? std::atof(every) : 45 + nz(int(tt * 7) % 997) * 60);
+      log_.push_back({"The mountain groans.", 0xA0A0A0});
+    }
+    double age = tt - groan_t_;
+    if (age < 2.6) groan = (1 - age / 2.6) * (.5 + .5 * std::abs(std::sin(age * 19)));
   }
   // how much of a window's light falls on a cell, and in what colour
   auto beam_at = [&](int x, int y, int& col) {
@@ -252,6 +302,18 @@ void Client::draw_tiles() {
         if (hash(x, y, 14) % 61 == 0) emits_.push_back({float(x), float(y), 'a', sd});
       }
     }
+  if (cvx)
+    for (int y = y0; y < y1; ++y)
+      for (int x = x0; x < x1; ++x) {
+        int i = y * W + x, t = tile(x, y), sd = int(hash(x, y) % 97);
+        if (vis[i] != '1') continue;
+        if (cave_fx(2) && t == FISSURE) {
+          pool(x, y, 1.8 * flick(tt * .7, sd), .95, .9);
+          emits_.push_back({float(x), float(y), 'H', sd});
+        }
+        if (cave_fx(6) && !draft_.empty() && draft_[i] > 0 && !blocks(t) && hash(x, y, 31) % 3 == 0)
+          emits_.push_back({float(x), float(y), 'D', sd});
+      }
   if (s.contains("ground"))
     for (auto& g : s["ground"])
       if (g[2] == 0) {
@@ -693,7 +755,7 @@ void Client::draw_tiles() {
         default: bg = floor_bg(); break;
       }
       if (vis[i] == '1') {
-        double l = L[i], w = warm[i];
+        double l = L[i] * (1 - .3 * groan), w = warm[i];
         if (keep) l = std::max(l, 1.0);
         if (!bright) fg = mixc(mixc(scale(fg, l), 0x101828, std::max(0.0, 1 - l) * .35), scale(0xFF9A48, l), w * .35);
         bg = mixc(scale(bg, l), 0x5A2A0A, w * .5 * std::min(l, 1.2));
@@ -709,6 +771,29 @@ void Client::draw_tiles() {
             k *= .85 + .15 * std::sin(tt * .7);
             bg = mixc(bg, 0x5A6274, k * .5);
             if (!bright) fg = mixc(fg, 0xC8CEDA, k * .3);
+          }
+        }
+        if (cvx && !damp_.empty()) {
+          // cold mist lying low over the stream, drifting slowly downstream, thinning round a hero
+          if (cave_fx(1) && damp_[i] > 0 && (!blocks(t) || t == WATER)) {
+            double n = .6 * vnoise(x * .16 - tt * .1 * wind_, y * .35 + tt * .03) + .4 * vnoise(x * .4 - tt * .22 * wind_, y * .7);
+            double m = std::clamp((n - .28) / .42, 0.0, 1.0) * damp_[i];
+            for (auto& h : s["heroes"]) {
+              double hd = std::hypot(x - h["x"].get<int>(), (y - h["y"].get<int>()) * 1.3);
+              if (hd < 2.2) m *= hd / 2.2;
+            }
+            bg = mixc(bg, scale(0x6A7C92, .35 + .5 * std::min(l, 1.2)), m * .55);
+            if (!bright) fg = mixc(fg, 0x8A9CB4, m * .3);
+          }
+          // the rock by the stream is wet: darker, bluer, and here and there it catches the light
+          if (cave_fx(5) && t == WALL && wetw_[i]) {
+            bg = mixc(bg, 0x0C1622, .45);
+            fg = mixc(fg, scale(0x36506A, std::min(l, 1.2)), .4);
+            double ph = std::fmod(tt * .21 + (hh % 1000) / 1000.0, 1.0);
+            if (hh % 3 == 0 && ph < .2) {
+              double k = std::sin(ph / .2 * PI) * std::min(1.0, l + .2);
+              fg = mixc(fg, 0xE6F4FF, k); bg = mixc(bg, 0x2A4460, k * .7);
+            }
           }
         }
         if (cfx) {
@@ -1017,6 +1102,35 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         if (ph < .5) dot(ex + .3 + nz(sd + 1) * .4, ey - .3 + ph * 3, 0x968C78, 1 - ph * 2);
         break;
       }
+      case 'H': {
+        // the air over a glowing fissure shivers with heat, and now and then a spark goes up
+        for (int j = 0; j < 7; ++j) {
+          double ph = std::fmod(tt * .5 + j / 7.0 + nz(sd + j) * .3, 1.0);
+          double x = ex + .2 + nz(sd * 3 + j) * .6 + std::sin(tt * 9 + j * 2.1 + ph * 6) * (.1 + ph * .2), y = ey + .4 - ph * 1.9;
+          if (!open_at(x, y)) continue;
+          dot(x, y, mixc(0xFFC060, 0x8A3010, ph), .75 * (1 - ph * .8), ph < .4 ? 1 : 2);
+        }
+        if (sd % 2 == 0) {
+          double ph = std::fmod(tt * .2 + nz(sd * 3), 1.0);
+          if (ph < .22) {
+            double k = ph / .22;
+            double x = ex + .5 + std::sin(k * 7 + sd) * .3, y = ey + .4 - k * 3.4;
+            if (open_at(x, y)) dot(x, y, mixc(0xFFF0A0, 0xFF4810, k), 1 - k * .7);
+          }
+        }
+        break;
+      }
+      case 'D':
+        // a draught through the tunnel: dust blown along, all one way
+        for (int j = 0; j < 3; ++j) {
+          double ph = std::fmod(tt * .45 + j / 3.0 + nz(sd * 5 + j), 1.0);
+          double x = ex + .5 + wind_ * (ph * 3.5 - 1.75), y = ey + .2 + nz(sd + j * 7) * .6 + std::sin(tt * 3 + j + sd) * .12;
+          if (!open_at(x, y) || blocks(tile_of(map[int(y) * W + int(x)]))) continue;
+          dot(x, y, j ? 0xB8AC98 : 0xDED4C0, .75 * std::sin(ph * PI));
+          dot(x - wind_ * .14, y, 0xA89C88, .4 * std::sin(ph * PI));
+          dot(x - wind_ * .28, y, 0xA89C88, .15 * std::sin(ph * PI));  // a short streak behind it
+        }
+        break;
       case 's':
         // dust trickling from the crack in a lid
         for (int j = 0; j < 3; ++j) {
@@ -1081,6 +1195,54 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         dot(x, y, 0x141012, 1);
         dot(x - .14, y - (wing ? .1 : -.05), 0x2A2224, 1);
         dot(x + .14, y - (wing ? .1 : -.05), 0x2A2224, 1);
+      }
+    }
+  }
+  if (snap_.value("act", 0) == 1 && !snap_["heroes"].empty() && !snap_.value("rest", false)) {
+    if (double age = tt - groan_t_; cave_fx(3) && age < 2.6) {
+      // the mountain groans: grit and dust come down all over the view, a stone or two among them
+      for (int j = 0; j < 700; ++j) {
+        double st = nz(j * 5 + int(groan_t_)) * 1.2, ag = age - st;
+        if (ag < 0 || ag > 1.2) continue;
+        double x = camx_ + nz(j * 3 + 1) * vw_, y = camy_ + nz(j * 11 + 2) * vh_ - 1.5 + ag * ag * 4;
+        if (!open_at(x, y)) continue;
+        bool grit = j % 5 == 0, stone = j % 37 == 0;
+        dot(x, y, stone ? 0x6A6052 : grit ? 0x9A8E7A : 0xD8CEBC, (1 - ag / 1.2) * (grit ? 1 : .8), stone ? 3 : grit ? 2 : 1);
+      }
+    }
+    if (cave_fx(4)) {
+      // eyes in the dark at the edge of the light, watching; they are gone when you come near
+      int hx = snap_["heroes"][0]["x"], hy = snap_["heroes"][0]["y"];
+      double period = 9;
+      int cyc = int(std::floor(tt / period));
+      double ph = tt / period - cyc;
+      for (int e = 0; e < 2; ++e) {
+        int seed = cyc * 7919 + e * 131;
+        if (nz(seed + 5) < .35 || eyes_gone_ == cyc * 2 + e) continue;
+        // a spot out of sight, seven to ten steps off, on open ground, chosen when they open
+        static int cyc_at[2] = {-1, -1};
+        static P spot[2];
+        if (cyc_at[e] != cyc) { cyc_at[e] = cyc; spot[e] = {-1, -1}; }
+        P& at = spot[e];
+        for (int k = 0; k < 40 && at.x < 0 && ph > .07 && ph < .1; ++k) {
+          double a = nz(seed + k * 3) * 2 * PI, rr = 7 + nz(seed + k * 3 + 1) * 3;
+          int x = hx + int(std::lround(std::cos(a) * rr)), y = hy + int(std::lround(std::sin(a) * rr * .7));
+          if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1 || blocks(tile_of(map[y * W + x])) || vis[y * W + x] == '1') continue;
+          at = {x, y};
+        }
+        if (at.x < 0) continue;
+        double d = std::hypot(at.x - hx, (at.y - hy) * 1.3);
+        if (d < 5.5 || vis[at.y * W + at.x] == '1') { eyes_gone_ = cyc * 2 + e; continue; }
+        double on = std::min({1.0, (ph - .08) / .08, (.85 - ph) / .08});
+        if (on <= 0) continue;
+        double blink = std::fmod(tt * .7 + nz(seed + 9), 1.0) < .06 ? 0 : 1;
+        bool rat = nz(seed + 7) < .5;
+        int c = rat ? 0xE04828 : 0xE8D070;
+        double x = at.x + .3 + std::sin(tt * .5 + seed) * .08, y = at.y + .45;
+        for (double ox2 : {0.0, rat ? .25 : .4}) {
+          dot(x + ox2 - px / cell, y - px / cell, c, on * blink * .22, 4);
+          dot(x + ox2, y, c, on * blink, 2);
+        }
       }
     }
   }

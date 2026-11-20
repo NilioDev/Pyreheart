@@ -107,6 +107,12 @@ class Client {
   int step_x_ = -1, step_y_ = -1;
   double step_t_ = -9;
   std::string ldist_map_;
+  // the Caves' air: mist over the stream, the wet rock beside it, the draught in the propped tunnels and down the
+  // fallen shafts, the mountain groaning now and then, eyes at the edge of the light
+  int cave_floor_ = -1, wind_ = 1, eyes_gone_ = -1;
+  std::vector<float> damp_, draft_;
+  std::vector<char> wetw_;
+  double groan_t_ = -99, groan_next_ = -1;
   void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
   void present(const TCOD_ViewportOptions& vp);
   void draw_side(int x, int y, int w, int h);
