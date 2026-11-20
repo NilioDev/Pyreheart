@@ -152,6 +152,8 @@ struct Floor {
   std::vector<MonP> mons;
   P up, down;
   int keys = 0;  // vault keys the party carries (the Vaults' guardians drop them)
+  std::vector<int> flooded;  // the Cistern's reservoir: the low floor the Sluice-Keeper flooded, top rows first
+  int flood_t = 0;           // turns the sludge stands before it drains
   std::vector<P> open_graves;  // Charnfen: where the dead climb out; the Prison: the dead prisoners that will rise
   int risen = 0;
   bool warned = false;
@@ -230,6 +232,7 @@ class Game {
 
  private:
   std::unordered_set<std::string> used_writings_;
+  std::vector<std::vector<P>> side_rooms_;  // the Cistern's halls of the waterworks, for its themes
   int mon_id_ = 1, floor_ids_ = 1;
   double scaled_ = 1.0;
   std::vector<int> dist_;

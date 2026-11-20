@@ -16,6 +16,11 @@ using namespace data;
 
 namespace {
 struct Rect { int x, y, w, h; };
+unsigned hash3(int x, int y, int s) {
+  unsigned v = unsigned(x) * 374761393u + unsigned(y) * 668265263u + unsigned(s) * 2246822519u;
+  v = (v ^ (v >> 13)) * 1274126177u;
+  return v ^ (v >> 16);
+}
 using Cells = std::vector<std::pair<P, int>>;
 }  // namespace
 
@@ -48,6 +53,7 @@ void Game::dress_cistern(Floor& fl, const k5::Plan& plan) {
   std::stable_sort(rooms.begin(), rooms.end(), [](auto* a, auto* b) { return a->cells.size() / 30 > b->cells.size() / 30; });
   // the themes that need a big room are tried first, so the small ones do not take the big rooms
   std::vector<std::string> themes = {"sluice", "wheel", "basins", "fountain", "pillars", "aqueduct"}, small = {"pumps", "nest"};
+  if (plan.mood == "own") themes.pop_back();  // the Cistern's own layout has its great aqueduct already
   rnd.shuffle(themes);
   rnd.shuffle(small);
   themes.insert(themes.end(), small.begin(), small.end());
@@ -310,7 +316,7 @@ void Game::dress_cistern(Floor& fl, const k5::Plan& plan) {
 
   // the old aqueducts: a channel of sludge two wide across the level one way and one down it the other, wherever it runs
   // over open floor; grates cross it now and then, and wherever the level would otherwise be cut in two
-  for (int dir = 0; dir < 2; ++dir) {
+  for (int dir = 0; dir < 2 && plan.mood != "own"; ++dir) {  // the Cistern's own layout has its channels already
     bool across = dir == 0;
     int len = across ? fl.w : fl.h, span = across ? fl.h : fl.w;
     int at = rnd.range(span / 4, span * 3 / 4);
@@ -353,6 +359,21 @@ void Game::dress_cistern(Floor& fl, const k5::Plan& plan) {
       for (int o = 0; o < 2; ++o) { P c = cell(cols[k], o); fl.set(c.x, c.y, GRATE); }
     if (!whole(fl) || extra * 4 > cols.size()) for (auto& [c, t] : put) fl.set(c.x, c.y, t);
   }
+
+  // the other halls of the waterworks: cisterns of stored water once, rows of pillars holding up the roof, the floor
+  // gone to shallow sludge in the hollows
+  if (plan.mood == "own")
+    for (auto* r : rooms) {
+      if (themed.count(*r->cells.begin())) continue;
+      int x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (auto c : r->cells) { x0 = std::min(x0, c.x); y0 = std::min(y0, c.y); x1 = std::max(x1, c.x); y1 = std::max(y1, c.y); }
+      int sx = rnd.range(3, 4), sy = 3, seed = rnd.below(1000);
+      for (int y = y0 + 2; y <= y1 - 2; y += sy)
+        for (int x = x0 + 2; x <= x1 - 2; x += sx)
+          if (fl.tile(x, y) == FLOOR && cheb(x, y, fl.up.x, fl.up.y) > 2 && cheb(x, y, fl.down.x, fl.down.y) > 2) fl.set(x, y, PILLAR);
+      for (auto c : r->cells)
+        if (fl.tile(c.x, c.y) == FLOOR && (hash3(c.x / 3, c.y / 2, seed) % 100) < 30 && cheb(c.x, c.y, fl.up.x, fl.up.y) > 1) fl.set(c.x, c.y, MIRE);
+    }
 
   // everywhere: glowing moss on the sweating walls, broken pipes pouring sludge, shafts down to the dead city
   std::vector<P> moss;

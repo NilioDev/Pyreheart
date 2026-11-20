@@ -438,6 +438,18 @@ void Game::build_rooms(Floor& fl, int d, bool boss_floor) {
     if (build_zone(fl, boss_floor, rooms, treasure)) {  // zones.cpp
       fl.t[fl.up.y * W + fl.up.x] = UPSTAIRS;
       if (!boss_floor) fl.t[fl.down.y * W + fl.down.x] = STAIRS;
+      if (act == CISTERN) {
+        // the Cistern's own layout: its themes go into the halls of the waterworks
+        k5::Plan plan;
+        plan.up = fl.up; plan.down = fl.down; plan.mood = "own";
+        for (auto& r : side_rooms_) {
+          k5::Room kr;
+          kr.id = int(plan.rooms.size()); kr.kind = "room";
+          for (auto c : r) kr.cells.insert(c);
+          plan.rooms.push_back(kr);
+        }
+        dress_cistern(fl, plan);
+      }
       furnish(fl, rooms, treasure);
       return;
     }

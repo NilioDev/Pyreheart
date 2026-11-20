@@ -141,6 +141,20 @@ bool Game::trait_cells(Mon& m, Hero& h, const std::string& name, Blow& b) {
     P c = round_foe ? P{m.x, m.y} : P{h.x, h.y};
     int r = round_foe ? 2 : 1;
     for (int dy = -r; dy <= r; ++dy) for (int dx = -r; dx <= r; ++dx) if (!round_foe || dx || dy) add(c.x + dx, c.y + dy);
+  } else if (name == "flood" && floor->act == CISTERN) {
+    // in his reservoir he floods the whole low floor; only the raised slabs of stone stay dry. Three turns to get up
+    P hub{-1, -1};
+    for (int i = 0; i < W * H; ++i) if (floor->t[i] == HUB && cheb(i % W, i / W, m.x, m.y) <= 30) hub = {i % W, i / W};
+    if (hub.x >= 0) {
+      for (int y = hub.y + 1; y <= hub.y + 22; ++y)
+        for (int x = hub.x - 22; x <= hub.x + 22; ++x)
+          if (floor->tile(x, y) == FLOOR || floor->tile(x, y) == MIRE) b.cells.push_back({x, y});
+      b.turns = 3;
+    } else {
+      int other = h.y + (rnd.coin() ? 4 : -5);
+      for (int y : {h.y - 1, h.y, other, other + 1})
+        for (int x = h.x - 14; x <= h.x + 14; ++x) add(x, y);
+    }
   } else if (name == "flood") {
     // two lanes of sludge across the hall, two rows each: one where the hero stands, one a little way off
     int other = h.y + (rnd.coin() ? 4 : -5);
@@ -208,7 +222,15 @@ void Game::trait_land(Mon& m, const Blow& b, const std::vector<Hero*>& hit) {
   } else if (b.name == "flood") {
     hurt_all(1.0);
     for (auto* o : hit) { o->poison = std::max(o->poison, 4); o->poison_dmg = std::max(o->poison_dmg, 2 + lvl / 3); }
-    for (auto& c : b.cells) if (rnd.real() < .5) lay(c, G_ACID, 3, 2 + lvl / 3);
+    if (b.cells.size() > 120) {
+      // the reservoir fills: the low floor goes under black sludge for a while, then drains through the grates
+      for (auto& c : b.cells)
+        if (floor->tile(c.x, c.y) == FLOOR) { floor->set(c.x, c.y, MIRE); floor->flooded.push_back(c.y * W + c.x); }
+      floor->flood_t = 5;
+      say_near(m.x, m.y, "Black sludge pours over the floor of the reservoir. Get up on the stone!", 0xA0B080);
+      for (auto* o : active()) tip(*o, "flood", "When the Sluice-Keeper hauls on his wheel the floor floods: climb onto the raised slabs of stone.");
+    } else
+      for (auto& c : b.cells) if (rnd.real() < .5) lay(c, G_ACID, 3, 2 + lvl / 3);
   } else if (b.name == "ashbreath") {
     hurt_all(1.0);
     for (auto* o : hit) { o->ashen = 6; o->say("Ash fills the hall. You can hardly see.", 0xA0A0A0); }
@@ -345,6 +367,17 @@ bool Game::trait_step(Mon& m, Hero& h) {
 
 // every turn: the ground of the foes, leeches drinking, a chill around the cold dead, the marks the tricks left
 void Game::traits_tick() {
+  // the Sluice-Keeper's flood stands a few turns, then drains away through the grates, the far rows first
+  if (!floor->flooded.empty() && --floor->flood_t <= 0) {
+    if (floor->flood_t == 0) say_all("The sludge drains away through the grates.", 0x8A9A7A);
+    std::sort(floor->flooded.begin(), floor->flooded.end());
+    size_t n = std::max<size_t>(1, floor->flooded.size() / 3 + 1);
+    for (size_t k = 0; k < n && !floor->flooded.empty(); ++k) {
+      int i = floor->flooded.back();
+      floor->flooded.pop_back();
+      if (floor->t[i] == MIRE) floor->set(i % W, i / W, FLOOR);
+    }
+  }
   for (auto* h : active()) {
     // the Cistern's shallow sludge is acid: it poisons whoever wades in it
     if (floor->tile(h->x, h->y) == MIRE && floor->act == CISTERN) {

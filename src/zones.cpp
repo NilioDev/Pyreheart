@@ -8,6 +8,7 @@
 #include <deque>
 #include <map>
 #include <array>
+#include <set>
 
 #include "game.hpp"
 
@@ -543,10 +544,11 @@ static void dress_forge(Map& m, Floor& fl, const std::vector<std::array<int, 4>>
 
 bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>>& treasure) {
   int act = fl.act;
-  if (act != 1 && act != 2 && act < CITY) return false;
+  if (act != 1 && act != 2 && act != CISTERN && act < CITY) return false;
   for (int tries = 0; tries < 12; ++tries) {
     fl.ground.clear();
     fl.writings.clear();
+    fl.sleepers.clear();
     Map m(fl, rnd);
     int w = m.w, h = m.h;
     P up{-1, -1}, down{-1, -1};
@@ -1451,6 +1453,176 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
       for (int k = 0; k < 14; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), k % 3 ? SLUNG : CHAIN);
       for (int k = 0; k < 6; ++k) lay(rnd.range(3, w - 4), rnd.range(3, h - 4), k % 2 ? STAIN : BONES);
 
+    } else if (act == CISTERN) {
+      // ---------------------------------------------------------------- the Cistern: the dwarves' waterworks
+      // A chain of great basins where the dwarves caught the water of the Deep-Tide, each in a rough hall with a walkway
+      // round its stone rim; walkways with a sludge channel beside them between the basins; the halls of the
+      // waterworks off them (sluices, wheels, settling basins, pumps, the fountain: the themes go in those); and an
+      // aqueduct over the chasm down to the dead city. On the boss floor the last basin is the Sluice-Keeper's
+      // reservoir: a low floor he can flood, with raised slabs of stone to climb onto.
+      side_rooms_.clear();
+      std::set<int> chan;  // the channel cells: a way that crosses one puts a grate over it
+      auto ell = [&](int cx, int cy, double rx, double ry, int t, double rough, bool only_rock) {
+        for (int y = int(cy - ry - 2); y <= int(cy + ry + 2); ++y)
+          for (int x = int(cx - rx - 2); x <= int(cx + rx + 2); ++x) {
+            double e = std::pow((x - cx) / rx, 2) + std::pow((y - cy) / ry, 2);
+            if (e < 1 + rough * (rnd.real() - .5) && (!only_rock || m.at(x, y) == WALL)) m.put(x, y, t);
+          }
+      };
+      // dig a way (across first, or down first), three wide unless told; over a channel it lays a grate
+      auto dig = [&](P a, P b, int wd, bool down_first) {
+        int lo = -(wd - 1) / 2, hi = wd / 2;
+        auto cut = [&](int x, int y) {
+          if (!m.in(x, y)) return;
+          int t = m.at(x, y);
+          if (t == WALL) m.put(x, y, FLOOR);
+          else if (chan.count(y * W + x)) m.put(x, y, GRATE);
+        };
+        P mid = down_first ? P{a.x, b.y} : P{b.x, a.y};
+        for (int x = std::min(a.x, mid.x); x <= std::max(a.x, mid.x); ++x) for (int o = lo; o <= hi; ++o) cut(x, (down_first ? b.y : a.y) + o);
+        for (int y = std::min(a.y, b.y); y <= std::max(a.y, b.y); ++y) for (int o = lo; o <= hi; ++o) cut((down_first ? a.x : b.x) + o, y);
+      };
+      // a walkway five wide with a channel two wide along its edge, grates over the channel now and then
+      auto walkway = [&](P a, P b, bool down_first) {
+        std::vector<P> carved;
+        int lo = -2, hi = 2;
+        P mid = down_first ? P{a.x, b.y} : P{b.x, a.y};
+        auto cut = [&](int x, int y) { if (m.in(x, y) && m.at(x, y) == WALL) { m.put(x, y, FLOOR); carved.push_back({x, y}); } };
+        if (down_first) {
+          for (int y = std::min(a.y, b.y); y <= std::max(a.y, b.y); ++y) for (int o = lo; o <= hi; ++o) cut(a.x + o, y);
+          for (int x = std::min(a.x, b.x); x <= std::max(a.x, b.x); ++x) for (int o = lo; o <= hi; ++o) cut(x, b.y + o);
+        } else {
+          for (int x = std::min(a.x, b.x); x <= std::max(a.x, b.x); ++x) for (int o = lo; o <= hi; ++o) cut(x, a.y + o);
+          for (int y = std::min(a.y, b.y); y <= std::max(a.y, b.y); ++y) for (int o = lo; o <= hi; ++o) cut(b.x + o, y);
+        }
+        int n = 0;
+        for (auto c : carved) {
+          bool horiz_part = down_first ? c.y >= b.y - 2 && c.y <= b.y + 2 && !(c.x >= a.x - 2 && c.x <= a.x + 2) : c.y >= a.y - 2 && c.y <= a.y + 2;
+          int edge = horiz_part ? c.y - (down_first ? b.y : a.y) : c.x - (down_first ? a.x : b.x);
+          if (edge < 1) continue;
+          bool grate = (horiz_part ? c.x : c.y) % 9 == 4;
+          m.put(c.x, c.y, grate ? GRATE : SLUDGE);
+          if (!grate) chan.insert(c.y * W + c.x);
+          ++n;
+        }
+        (void)mid; (void)n;
+      };
+      std::vector<std::vector<P>> drowned;  // where the drowned float, to rise
+      auto basin = [&](int cx, int cy, int rx, int ry, bool pillars) {
+        ell(cx, cy, rx + 6, ry + 4, FLOOR, .45, true);
+        ell(cx, cy, rx + 1, ry + 1, BASIN, 0, false);
+        ell(cx, cy, rx, ry, SLUDGE, 0, false);
+        if (pillars)
+          for (int y = cy - ry + 1; y < cy + ry; y += 3)
+            for (int x = cx - rx + 2; x < cx + rx - 1; x += 4) if (m.at(x, y) == SLUDGE) m.put(x, y, PILLAR);
+        std::vector<P> fl2;
+        for (int k = 0; k < rx / 3; ++k) {
+          P c{cx + rnd.range(-rx + 2, rx - 2), cy + rnd.range(-ry + 1, ry - 1)};
+          if (m.at(c.x, c.y) == SLUDGE) { m.put(c.x, c.y, FLOATER); fl2.push_back(c); }
+        }
+        drowned.push_back(fl2);
+        m.rooms.push_back({});
+        for (int y = cy - ry - 4; y <= cy + ry + 4; ++y)
+          for (int x = cx - rx - 6; x <= cx + rx + 6; ++x) if (m.in(x, y) && m.at(x, y) == FLOOR) m.rooms.back().push_back({x, y});
+      };
+      P b1{26 + rnd.range(-3, 3), 16 + rnd.range(-2, 2)}, b2{86 + rnd.range(-3, 3), 18 + rnd.range(-2, 2)}, b3{60 + rnd.range(-4, 3), 47 + rnd.range(-1, 2)};
+      int r1x = rnd.range(12, 14), r1y = rnd.range(5, 6), r2x = rnd.range(14, 16), r2y = rnd.range(6, 7), r3x = rnd.range(15, 17), r3y = rnd.range(6, 7);
+      basin(b1.x, b1.y, r1x, r1y, false);
+      basin(b2.x, b2.y, r2x, r2y, rnd.real() < .6);
+      P arena0{-1, -1}, arena1{-1, -1};
+      if (!boss_floor) basin(b3.x, b3.y, r3x, r3y, false);
+      else {
+        // the reservoir: a low floor in a great rough hall, the floodgates and the sluice wheel in its far wall
+        int ax0 = b3.x - 21, ax1 = b3.x + 21, ay0 = b3.y - 10, ay1 = b3.y + 10;
+        ell(b3.x, b3.y, 22, 11, FLOOR, .3, true);
+        m.rect(ax0 + 2, ay0 + 1, ax1 - 2, ay1 - 1, FLOOR);
+        arena0 = {ax0, ay0}; arena1 = {ax1, ay1};
+        int top = ay0 + 1;
+        for (int x = b3.x - 7; x <= b3.x + 7; ++x) for (int y = top - 2; y <= top - 1; ++y) m.put(x, y, std::abs(x - b3.x) <= 3 ? WHEEL : FLOODGATE);
+        m.put(b3.x, top - 1, HUB);
+        down = {b3.x, top};
+        // the raised slabs: within three steps of any spot on the low floor, the middle before the wheel left clear
+        for (int py = top + 2; py + 2 <= ay1 - 2; py += 6)
+          for (int px = ax0 + 4 + (py / 6) % 2 * 3; px + 4 <= ax1 - 3; px += 9) {
+            if (std::abs(px + 2 - b3.x) <= 4 && py < top + 5) continue;
+            bool ok = true;
+            for (int y = py - 1; y <= py + 3 && ok; ++y) for (int x = px - 1; x <= px + 5; ++x) if (m.at(x, y) != FLOOR) ok = false;
+            if (ok) m.rect(px, py, px + 4, py + 2, DAIS);
+          }
+        for (int x = ax0 + 4; x <= ax1 - 4; x += 4) if (m.at(x, ay1 - 1) == FLOOR) m.put(x, ay1 - 1, GRATE);
+        m.rooms.push_back(m.cells(ax0 + 2, ay0 + 1, ax1 - 2, ay1 - 1));
+      }
+      // the chasm down to the dead city, and the aqueduct across it
+      P ch{104 + rnd.range(-2, 2), 46};
+      ell(ch.x, ch.y, 9, 8, CHASM, .5, true);
+      // the walkways between the basins
+      walkway({b1.x + r1x + 4, b1.y}, {b2.x - r2x - 4, b2.y}, false);
+      walkway({b1.x - 2, b1.y + r1y + 3}, {b3.x - (boss_floor ? 20 : r3x + 4), b3.y}, true);
+      dig({ch.x, b2.y}, {ch.x, ch.y - 9}, 3, true);
+      for (int y = ch.y - 9; y <= ch.y + 9; ++y) for (int x = ch.x - 1; x <= ch.x + 1; ++x) if (m.at(x, y) == CHASM || m.at(x, y) == WALL) m.put(x, y, BRIDGE);
+      int land = std::min(h - 5, ch.y + 12);
+      dig({ch.x, ch.y + 9}, {ch.x, land}, 3, true);
+      dig({ch.x, land}, {b3.x, land}, 3, false);
+      dig({b3.x, land}, {b3.x, b3.y + 4}, 3, true);
+      // the way in, and the way on
+      up = {4, b1.y - 4 + rnd.range(0, 3)};
+      fl.up = up;
+      dig(up, {b1.x - r1x - 4, b1.y}, 3, false);
+      if (!boss_floor) { down = {w - 5, land}; dig({ch.x, land}, down, 3, false); }
+      // the halls of the waterworks: wherever there is room for one, off the walkways
+      // first the great settling hall in the middle if it fits, then halls of every size into what rock is left, the
+      // big ones first, so no great grey patch is left
+      std::vector<std::array<int, 4>> cand = {{34, 27, 80, 37}};
+      for (auto sz : std::vector<std::array<int, 2>>{{26, 13}, {20, 11}, {16, 10}, {13, 8}})
+        for (int y = 2; y + sz[1] < h - 2; y += 2)
+          for (int x = 2; x + sz[0] < w - 2; x += 2) cand.push_back({x, y, x + sz[0] - 1, y + sz[1] - 1});
+      for (auto [x0, y0, x1, y1] : cand) {
+        for (int t2 = 0; t2 < 1; ++t2) {
+          int a0 = x0, a1 = x1, c0 = y0, c1 = y1;
+          if (a0 < 2 || c0 < 2 || a1 > w - 3 || c1 > h - 3) continue;
+          bool ok = true;
+          for (int y = c0 - 1; y <= c1 + 1 && ok; ++y) for (int x = a0 - 1; x <= a1 + 1; ++x) if (m.at(x, y) != WALL) { ok = false; break; }
+          if (!ok) continue;
+          m.room(a0, c0, a1, c1);
+          side_rooms_.push_back(m.rooms.back());
+          // joined to the nearest open ground outside it
+          P mid{(a0 + a1) / 2, (c0 + c1) / 2}, best{-1, -1};
+          int bd = 1 << 30;
+          for (int y = 1; y < h - 1; ++y)
+            for (int x = 1; x < w - 1; ++x) {
+              if (x >= a0 && x <= a1 && y >= c0 && y <= c1) continue;
+              int t3 = m.at(x, y);
+              if (t3 != FLOOR) continue;
+              int dd = std::abs(x - mid.x) + std::abs(y - mid.y);
+              if (dd < bd) { bd = dd; best = {x, y}; }
+            }
+          if (best.x >= 0) dig(mid, best, 3, std::abs(best.y - mid.y) > std::abs(best.x - mid.x));
+          break;
+        }
+      }
+      // the odd cell the rough edges left shut in goes back to rock
+      {
+        auto d = m.walk(up);
+        for (int y = 1; y < h - 1; ++y)
+          for (int x = 1; x < w - 1; ++x) {
+            int t = m.at(x, y);
+            if ((!blocks(t) || t == DOOR) && d[y * W + x] < 0 && P{x, y} != down) m.put(x, y, WALL);
+          }
+      }
+      // the drowned float in the basins; some of them get up
+      for (auto& v : drowned)
+        for (auto c : v)
+          if (rnd.real() < .5) { Sleeper sl; sl.at = c; sl.cells = {c}; sl.kind = "drowned"; fl.sleepers.push_back(sl); }
+      // now and then the whole map turned about, so the basins are not always in the same corners
+      if (rnd.coin()) {
+        for (int y = 0; y < h; ++y) for (int x = 0; x < w / 2; ++x) std::swap(fl.t[y * W + x], fl.t[y * W + w - 1 - x]);
+        auto fx = [&](P& c) { c.x = w - 1 - c.x; };
+        fx(up); fx(down); fl.up = up;
+        for (auto& r : m.rooms) for (auto& c : r) fx(c);
+        for (auto& r : side_rooms_) for (auto& c : r) fx(c);
+        for (auto& sl : fl.sleepers) { fx(sl.at); for (auto& c : sl.cells) fx(c); }
+      }
+      (void)arena0; (void)arena1;
     } else if (act == SANCTUM) {
       // ---------------------------------------------------------------- the Sanctum: the temple where the Pyreheart lay
       int cx = w / 2;
@@ -1629,7 +1801,23 @@ bool Game::build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& r
     if (blocks(m.at(down.x, down.y))) m.put(down.x, down.y, FLOOR);
     fl.up = up; fl.down = down;
     // nothing may stand on the stairs, and every open cell must be reachable
-    if (!whole(fl)) { if (getenv("PYREHEART_GENDBG")) fprintf(stderr, "not whole\n"); continue; }
+    if (!whole(fl)) {
+      if (getenv("PYREHEART_GENDBG")) {
+        fprintf(stderr, "not whole\n");
+        if (std::string(getenv("PYREHEART_GENDBG")) == "2") {
+          auto d = m.walk(up);
+          for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+              int t = fl.tile(x, y);
+              bool open = !blocks(t) || t == DOOR;
+              fputc(P{x, y} == up ? '<' : open && d[y * W + x] < 0 ? '!' : open ? '.' : t == WALL ? '#' : 'x', stderr);
+            }
+            fputc('\n', stderr);
+          }
+        }
+      }
+      continue;
+    }
     auto d = m.walk(up);
     if (d[down.y * W + down.x] < 0) { if (getenv("PYREHEART_GENDBG")) fprintf(stderr, "no way down\n"); continue; }
     rooms = m.rooms;
@@ -1720,6 +1908,14 @@ void Game::zone_foes(Floor& fl) {
       spawn_near("crossbow", {c.x, c.y + 2});
       spawn_near("pikeman", {c.x + 1, c.y});
     }
+  }
+  if (act == CISTERN && std::getenv("PYREHEART_FLOOD")) {
+    // for the screenshots: the reservoir as it stands flooded
+    for (int i = 0; i < W * H; ++i)
+      if (fl.t[i] == HUB)
+        for (int y = i / W + 1; y <= i / W + 22; ++y)
+          for (int x = i % W - 22; x <= i % W + 22; ++x)
+            if (fl.tile(x, y) == FLOOR) fl.set(x, y, MIRE);
   }
   if (act == SANCTUM) {
     // the altar-guards kneel at the corners of the platform, still until someone comes near the empty altar

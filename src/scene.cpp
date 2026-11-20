@@ -378,6 +378,13 @@ void Client::draw_tiles() {
         emits_.push_back({float(x), float(y), 'u', sd});
       } else if ((t == SLUDGE || t == MIRE) && vis[i] == '1') {
         if (hash(x, y, 15) % 11 == 0) emits_.push_back({float(x), float(y), 'm', sd});
+        if (actn == CISTERN && t == SLUDGE) {
+          // in the great basins: grey ash floating on the sludge with the slow current, sour vapour curling off it
+          bool basin = false;
+          for (int dy = -4; dy <= 4 && !basin; ++dy) for (int dx = -4; dx <= 4; ++dx) if (tile(x + dx, y + dy) == BASIN) { basin = true; break; }
+          if (basin && hash(x, y, 41) % 4 == 0) emits_.push_back({float(x), float(y), 'Q', sd});
+          if (basin && hash(x, y, 42) % 11 == 0) emits_.push_back({float(x), float(y), 'W', sd});
+        }
       } else if (actn == CISTERN && (t == FLOOR || t == GRATE) && vis[i] == '1') {
         if (hash(x, y, 16) % 47 == 0) emits_.push_back({float(x), float(y), 'r', sd});
       } else if (t == EMBERS) {
@@ -701,6 +708,12 @@ void Client::draw_tiles() {
             ch = RUNES[(x * 3 + y) % 6]; fg = mixc(0x4A1E10, 0xC04A16, .25 + .9 * glow); bright = true;
           }
           if (t == DAIS) { bg = mixc(0x383A46, 0x44465A, (hash(x / 3, y / 3, 6) % 3) / 3.0); ch = tile(x, y + 1) == DAIS ? ' ' : 0x25AC; fg = 0x5A5C6E; }
+          if (t == DAIS && actn == CISTERN) {
+            // a raised slab of stone in the Sluice-Keeper's reservoir: dry ground above the flood, a lip along its edge
+            bg = mixc(0x323A36, 0x3C4642, (hash(x / 2, y, 6) % 3) / 3.0);
+            ch = tile(x, y + 1) != DAIS ? 0x2584 : (x + y) % 3 == 0 ? 0xB7 : ' ';
+            fg = tile(x, y + 1) != DAIS ? 0x78807A : 0x5A625E;
+          }
           if (t == DAIS && actn == SANCTUM) {
             // the platform where the Pyreheart lay: polished black, inlaid with gold in a lattice, the light running over it
             bg = mixc(0x16121C, 0x221C2A, (hash(x / 2, y / 2, 6) % 3) / 3.0);
@@ -838,7 +851,7 @@ void Client::draw_tiles() {
           double v = .5 + .5 * std::sin(x * .5 + y * .7 + a) * std::sin(x * .23 - y * .3 - a * .5);
           bg = mixc(0x0C120A, 0x1C2414, v);
           double sh = std::sin(x * .35 + y * .9 - a * 1.2);
-          if (sh > .75) bg = mixc(bg, (x + y) % 2 ? 0x3A2E58 : 0x264A34, (sh - .75) * 3.2);
+          if (sh > .75) bg = mixc(bg, (x + y) % 2 ? 0x2C3040 : 0x24382C, (sh - .75) * 2.4);  // the greasy sheen, faint
           ch = ' '; fg = 0;
           int kk = int((int(tt * 3) + hh) % 26);
           bool across = tile(x - 1, y) == SLUDGE && tile(x + 1, y) == SLUDGE, down = tile(x, y - 1) == SLUDGE && tile(x, y + 1) == SLUDGE;
@@ -1769,9 +1782,33 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
         }
         break;
       }
+      case 'Q': {
+        // grey ash floating on the sludge, carried slowly along by the current, a flake turning over now and then
+        for (int j = 0; j < 2; ++j) {
+          double ph = std::fmod(tt * .05 + nz(sd * 5 + j), 1.0);
+          double x = ex - 1 + ph * 3, y = ey + .25 + nz(sd + j * 3) * .5 + std::sin(tt * .6 + j + sd) * .06;
+          if (int(x) < 0 || int(y) < 0 || int(x) >= W || int(y) >= H || tile_of(map[int(y) * W + int(x)]) != SLUDGE) continue;
+          bool turn = std::fmod(tt * .7 + nz(sd + j) * 5, 4.0) < .3;
+          dot(x, y, turn ? 0xB4B0A6 : 0x8A867E, std::sin(ph * PI) * .9);
+        }
+        break;
+      }
+      case 'W': {
+        // sour vapour curling up off a basin
+        for (int j = 0; j < 3; ++j) {
+          double ph = std::fmod(tt * .12 + nz(sd * 3 + j), 1.0);
+          double x = ex + .5 + (nz(sd + j) - .5) * .8 + std::sin(ph * 6 + j) * .3, y = ey + .6 - ph * 1.6;
+          dot(x, y, mixc(0x5A6E46, 0x1E261A, ph), .55 * (1 - ph));
+        }
+        break;
+      }
       case 'B': {
         // a bubble of foul gas swells in the sludge and bursts, a little yellow-green puff rising from it
         double ph = std::fmod(tt * .23 + nz(sd * 7), 1.0);
+        if (ph >= .3 && ph < .42) {  // and a few drops of sludge thrown up as it bursts
+          double k = (ph - .3) / .12;
+          for (int j = 0; j < 4; ++j) dot(ex + .5 + (j - 1.5) * .22 * (.4 + k), ey + .5 - std::sin(k * PI) * .35, 0x6A7A5A, .8);
+        }
         if (ph < .3) {
           double k = ph / .3, rr = .1 + k * .3;
           for (int j = 0; j < 8; ++j) {
