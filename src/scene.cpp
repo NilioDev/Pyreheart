@@ -847,11 +847,11 @@ void Client::draw_tiles() {
         case VENT: bg = 0x1A0E0A; break;
         case SLUDGE: case FLOATER: {
           // black sludge with a greasy sheen sliding over it, bubbles, floating ash, and now and then driftwood or a pale fish
-          double a = tt * .8;
-          double v = .5 + .5 * std::sin(x * .5 + y * .7 + a) * std::sin(x * .23 - y * .3 - a * .5);
+          // the surface moves in slow, loose patches that drift and change shape, never in lines
+          double v = .6 * vnoise(x * .25 + tt * .05, y * .4 + std::sin(tt * .1) * .5) + .4 * vnoise(x * .6 - tt * .08, y * .9 + 7);
           bg = mixc(0x0C120A, 0x1C2414, v);
-          double sh = std::sin(x * .35 + y * .9 - a * 1.2);
-          if (sh > .75) bg = mixc(bg, (x + y) % 2 ? 0x2C3040 : 0x24382C, (sh - .75) * 2.4);  // the greasy sheen, faint
+          double sh = vnoise(x * .3 - tt * .06 + 20, y * .5 + tt * .03);
+          if (sh > .7) bg = mixc(bg, mixc(0x24382C, 0x2C3040, vnoise(x * .2 + 40, y * .2)), (sh - .7) * 2.2);  // the greasy sheen, faint
           ch = ' '; fg = 0;
           int kk = int((int(tt * 3) + hh) % 26);
           bool across = tile(x - 1, y) == SLUDGE && tile(x + 1, y) == SLUDGE, down = tile(x, y - 1) == SLUDGE && tile(x, y + 1) == SLUDGE;
@@ -881,7 +881,7 @@ void Client::draw_tiles() {
           break;
         }
         case MIRE: {
-          bg = mixc(0x0E1416, 0x16201E, .5 + .5 * std::sin(x * .4 + y * .6 + tt * .8));
+          bg = mixc(0x0E1416, 0x16201E, vnoise(x * .35 + tt * .06, y * .5 - tt * .04));
           if (tile(x, y - 1) == PILLAR) bg = mixc(bg, 0x3A403E, .45);  // a pillar's reflection
           ch = std::fmod(tt * .3 + (hh % 100) / 100.0, 1.0) < .08 ? '~' : ' ';
           fg = 0x3A4A48;
