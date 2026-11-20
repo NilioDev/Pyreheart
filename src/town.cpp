@@ -30,6 +30,18 @@ double vnoise(double x, double y) {
   double a = h(x0, y0) + (h(x0 + 1, y0) - h(x0, y0)) * fx, b = h(x0, y0 + 1) + (h(x0 + 1, y0 + 1) - h(x0, y0 + 1)) * fx;
   return a + (b - a) * fy;
 }
+}  // namespace
+double fx_period(double p);  // scene.cpp
+namespace {
+// a gust of wind every sixteen seconds or so: how far it has blown things so far, and how hard it blows now
+double gust_off(double tt) {
+  double P = std::max(6.0, fx_period(16)), p = std::fmod(tt, P), k = std::clamp(p / 5, 0.0, 1.0);
+  return std::floor(tt / P) * 4 + 4 * k * k * (3 - 2 * k);
+}
+double gust_now(double tt) {
+  double p = std::fmod(tt, std::max(6.0, fx_period(16)));
+  return p < 5 ? std::pow(std::sin(p / 5 * 3.14159265), 2) : 0;
+}
 // mist and the finer particles are always on; PYREHEART_TOWNFX=off or =mist leaves some out, to compare
 int town_fx() {
   static int m = [] {
@@ -39,6 +51,7 @@ int town_fx() {
   return m;
 }
 }  // namespace
+bool zone_fx(const char* code);  // scene.cpp
 
 void Client::draw_town() {
   auto& s = snap_;
@@ -85,6 +98,7 @@ void Client::draw_town() {
   if (!fires.empty()) {
     fcx = sx_ / int(fires.size()); fcy = sy_ / int(fires.size());
     float f = flick(7) * .6f + flick(19) * .4f;
+    if (zone_fx("t3")) { double fp = fx_period(19), age = std::fmod(tt / fp, 1.0) * fp; if (age < 2.2) f *= float(1 + .35 * std::sin(age / 2.2 * 3.14159265)); }
     pool(fcx, fcy, 12.f * f, 1.25f * f, 1.f);
   }
   town_fire_ = {fcx, fcy};
@@ -115,7 +129,8 @@ void Client::draw_town() {
         // where the firelight falls on it, it glows warm
         double fd = std::hypot((x - fcx) / 1.6, double(y - fcy));
         double keep = std::clamp((fd - 7) / 9, 0.0, 1.0);
-        double n = .55 * vnoise(x * .09 - tt * .22, y * .2 + tt * .03) + .3 * vnoise(x * .21 - tt * .4 + 50, y * .4 - tt * .05) +
+        double go = zone_fx("t2") ? gust_off(tt) : 0;
+        double n = .55 * vnoise((x - go) * .09 - tt * .22, y * .2 + tt * .03) + .3 * vnoise((x - go) * .21 - tt * .4 + 50, y * .4 - tt * .05) +
                    .15 * vnoise(x * .5 - tt * .7, y * .9 + 20);
         double m = std::clamp((n - .38) / .35, 0.0, 1.0) * keep;
         if (m > 0) {
@@ -225,7 +240,8 @@ void Client::draw_town_particles(SDL_Renderer* r, double ox, double oy, double c
     for (int k = 0; k < n; ++k) {
       int id = layer * 1000 + k;
       double s2 = sp * (.8 + nz(id * 3) * .5);
-      double x = camx_ + std::fmod(nz(id) * 140 + tt * .5 * sp + std::sin(tt * (.6 + nz(id * 5)) + k) * (1.2 + layer * .3), 140.0) - 10;
+      double gx = zone_fx("t2") ? gust_off(tt) * (layer == 0 ? 2.2 : layer == 1 ? 1.6 : 1.1) : 0;
+      double x = camx_ + std::fmod(nz(id) * 140 + tt * .5 * sp + gx + std::sin(tt * (.6 + nz(id * 5)) + k) * (1.2 + layer * .3), 140.0) - 10;
       double y = camy_ + std::fmod(nz(id * 7) * 80 + tt * s2, 80.0) - 10;
       double fd = std::hypot((x - fcx) / 1.6, y - fcy);
       if (fd < 9) continue;  // melted in the heat
@@ -238,11 +254,39 @@ void Client::draw_town_particles(SDL_Renderer* r, double ox, double oy, double c
     // sparks: thrown up out of the fire, wobbling on the heat, cooling from white to gold to red to nothing
     for (int j = 0; j < 60; ++j) {
       double period = 1.2 + nz(j * 3) * 1.8, ph = std::fmod(tt / period + nz(j * 7), 1.0);
-      double x = fcx + .5 + (nz(j * 11 + int(tt / period)) - .5) * 3 + std::sin(tt * 3 + j) * ph * 1.2 + ph * ph * 2;
+      double x = fcx + .5 + (nz(j * 11 + int(tt / period)) - .5) * 3 + std::sin(tt * 3 + j) * ph * 1.2 + ph * ph * 2 + (zone_fx("t2") ? gust_now(tt) * ph * 4 : 0);
       double y = fcy + .3 - ph * (5 + nz(j * 5) * 7);
       int c = ph < .2 ? 0xFFF4C0 : ph < .5 ? 0xFFC040 : ph < .8 ? 0xFF6A20 : 0xA02810;
       dot(x, y, c, 1 - ph * .8, j % 9 == 0 && ph < .3 ? 2 : 1);
     }
+  }
+  if (zone_fx("t3") && fcx >= 0) {
+    // the fire flares: a log gives way, a sheaf of sparks goes up and the light swells for a moment
+    double fp = fx_period(19), ph = std::fmod(tt / fp, 1.0);
+    if (ph * fp < 2.2) {
+      double age = ph * fp;
+      for (int j = 0; j < 90; ++j) {
+        double st = nz(j * 5) * .4, ag = age - st;
+        if (ag < 0 || ag > 1.8) continue;
+        double q = ag / 1.8, a = (nz(j * 3) - .5) * 2.2;
+        double x = fcx + .5 + a * q * 4 + std::sin(tt * 3 + j) * q * .6, y = fcy + .3 - q * (6 + nz(j * 7) * 8) + q * q * 3;
+        int c = q < .2 ? 0xFFF8D0 : q < .5 ? 0xFFD050 : q < .8 ? 0xFF7020 : 0xA02810;
+        dot(x, y, c, 1 - q * .7, j % 6 == 0 && q < .4 ? 2 : 1);
+      }
+    }
+  }
+  if (zone_fx("t2")) {
+    // the gust: snow torn off the ground and blown along it in streaks
+    double g = gust_now(tt);
+    if (g > .05)
+      for (int j = 0; j < 260; ++j) {
+        double x = camx_ + std::fmod(nz(j * 3) * (vw_ + 10) + tt * (9 + nz(j) * 6), double(vw_ + 10)) - 5, y = camy_ + nz(j * 7 + 2) * vh_;
+        if (!open(x, y) || std::hypot((x - fcx) / 1.6, y - fcy) < 9) continue;
+        double a = g * (.4 + nz(j * 5) * .5);
+        dot(x, y, 0xF0F4FF, a);
+        dot(x - .15, y, 0xF0F4FF, a * .5);
+        dot(x - .3, y, 0xF0F4FF, a * .2);
+      }
   }
   // breath: every two seconds or so each hero breathes out a little cloud that drifts off and thins
   for (auto& h : snap_["heroes"]) {
