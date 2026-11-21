@@ -565,7 +565,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Coal: coal_key(k); return;
     case Over::Rack: rack_key(k); return;
     case Over::Fire: fire_key(k); return;
-    case Over::Grave: over_ = Over::None; return;
+    case Over::Grave: graves_key(k); return;
     case Over::Hero:
       if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
@@ -746,6 +746,8 @@ void Client::click(int x, int y, bool down) {
       else if (b.action.rfind("menu:", 0) == 0) { if (menu_sel_ == arg) menu_do(arg); else menu_sel_ = arg; }
       else if (b.action.rfind("opt:", 0) == 0) { if (opt_sel_ == arg) options_key(SDLK_RETURN); else opt_sel_ = arg; }
       else if (b.action.rfind("rack:", 0) == 0) { if (rack_sel_ == arg) rack_key(SDLK_RETURN); else rack_sel_ = arg; }
+      else if (b.action.rfind("grave:", 0) == 0) grave_sel_ = arg;
+      else if (b.action.rfind("gtab:", 0) == 0) { graves_tab_ = arg; grave_sel_ = 0; }
       else if (b.action.rfind("fire:", 0) == 0) { if (fire_sel_ == arg) fire_key(SDLK_RETURN); else fire_sel_ = arg; }
       else if (b.action.rfind("coal:", 0) == 0) { if (coal_sel_ == arg) coal_key(SDLK_RETURN); else coal_sel_ = arg; }
       else if (b.action.rfind("book:", 0) == 0) { book_ch_ = arg; book_scroll_ = 0; book_why_.clear(); }
@@ -756,7 +758,7 @@ void Client::click(int x, int y, bool down) {
   if (over_ == Over::Book || over_ == Over::Menu || over_ == Over::Hero || over_ == Over::Options) { over_ = Over::None; return; }
   if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
   if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal || over_ == Over::Rack || over_ == Over::Fire) return;
-  if (over_ == Over::Grave) { over_ = Over::None; return; }
+  if (over_ == Over::Grave) return;
   // a tap on the map
   int mx = x - vx_ + camx_, my = y - vy_ + camy_;
   if (x < vx_ || y < vy_ || x >= vx_ + vw_ || y >= vy_ + vh_) return;

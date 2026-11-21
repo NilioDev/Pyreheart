@@ -66,7 +66,8 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   if (g.state == "over" || h.lost)
     out["grave"] = {{"name", h.name}, {"title", h.cls->name}, {"lvl", h.lvl}, {"frost", g.frost}, {"depth", f.depth},
                     {"zone", data::ACTS[f.act].name}, {"killer", h.killer.empty() ? "the dark" : h.killer}, {"kills", h.kills},
-                    {"coop", g.heroes.size() > 1}, {"rekindled", h.rekindled}};
+                    {"coop", g.heroes.size() > 1}, {"rekindled", h.rekindled}, {"el", h.el}, {"el2", h.el2},
+                    {"weapon", h.equip.count("weapon") ? h.equip.at("weapon")->kind : std::string()}};
   out["depth"] = g.depth;
   out["act"] = f.act;
   out["rest"] = f.rest;
@@ -238,7 +239,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["me"] = {{"pid", h.pid}, {"st", stacks(h.stk)}, {"el", h.el}, {"el2", h.el2}, {"smother", h.smother}, {"warn", warn}, {"eres", res}, {"name", h.name}, {"cls", h.cls->key}, {"clsname", h.cls->name}, {"x", h.x}, {"y", h.y},
                {"hp", h.hp}, {"maxhp", st.maxhp}, {"mana", h.mana}, {"maxmana", st.maxmana}, {"lvl", h.lvl}, {"xp", h.xp},
                {"next", g.need(h.lvl)}, {"prev", h.lvl > 1 ? g.need(h.lvl - 1) : 0}, {"gold", h.gold}, {"heal", h.heal},
-               {"manap", h.mana_pots}, {"dead", h.dead}, {"gone", h.gone}, {"shopping", h.shopping}, {"poison", h.poison > 0},
+               {"manap", h.mana_pots}, {"scars", h.scars}, {"dead", h.dead}, {"gone", h.gone}, {"shopping", h.shopping}, {"poison", h.poison > 0},
                {"numb", h.numb > 0}, {"shield", h.shield > 0}, {"held", h.held > 0}, {"latched", h.latched > 0},
                {"bleeding", h.bleed > 0}, {"branded", h.brand > 0}, {"sundered", h.sunder > 0}, {"dazed", h.dazed > 0}, {"dmg", dmg}, {"armour", st.armour}, {"acc", st.acc},
                {"crit", st.crit}, {"res", {st.res_f, st.res_c, st.res_p}}, {"equip", equip}, {"pack", pack}, {"perks", perks},

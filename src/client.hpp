@@ -229,6 +229,9 @@ class Client {
   void close_dive(const json& s);  // a dive won keeps the hero, a dive lost makes its grave
   json grave_for(int x, int y);    // the grave a stone in Charnfen stands for, or null
   void draw_grave();
+  void graves_key(SDL_Keycode k);
+  std::vector<json> grave_list(bool coop) const;
+  int graves_tab_ = 0, grave_sel_ = -1;  // the graves window: alone or together, and the chosen grave
   void claim_sparks(const json& s);
   void draw_pyre();
   void draw_town();  // Charnfen (town.cpp)
