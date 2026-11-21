@@ -101,6 +101,11 @@ struct Hero {
   // (0 the first, 1 the second)
   int path[3] = {-1, -1, -1};
   std::string killer;  // what slew it, for its grave
+  // co-op (plan.md section 1, The ember-run): the embers of fallen friends this hero carries (their pids), the scars
+  // of being rekindled (each takes a tenth of the life), how often, and lost: the ember went out, gone for good
+  std::vector<int> carry;
+  int scars = 0, rekindled = 0;
+  bool lost = false;
   int slot_el[5] = {0, 0, 0, 0, 0};
   Stacks stk;
   std::vector<char> vis = std::vector<char>(W * H, 0);
@@ -196,6 +201,7 @@ struct Floor {
   std::vector<std::pair<P, int>> coals;  // Charnfen: the coals at the edge of the great fire, and their elements
   P rack{-1, -1};                        // Charnfen: the gatekeeper's rack of first weapons
   P fire{-1, -1};                        // a waystation: the fire to rest by (paths, keys, a second coal)
+  std::vector<std::pair<P, int>> embers; // co-op: where a fallen hero's ember lies, and whose
   std::map<int, int> exits;  // in a waystation: the stairs down (cell index) and the zone each leads to
   bool burning(int x, int y) const { for (auto& g : ground) if ((g.kind == G_EMBER || g.kind == G_FIRE) && g.p == P{x, y}) return true; return false; }
   const Ground* ground_at(int x, int y) const { for (auto& g : ground) if (g.p == P{x, y}) return &g; return nullptr; }
@@ -365,6 +371,8 @@ class Game {
   bool credit_weapon_ = false;  // and whether it was dealt with the weapon in hand
   void learn(Mon& m);           // a kill teaches each hero who hurt it, by what did the work
   void fire_action(Hero& h, const std::string& t, const json& a);
+  void embers_tick();  // co-op: ghosts follow, embers are picked up and carried to a waystation's fire
+  void ember_out(Hero& o, const std::string& why);
   void take_weapon(Hero& h, const std::string& kind);
   void offer_perk(Hero& h);
   void shoot_with(Hero& h, int x, int y);

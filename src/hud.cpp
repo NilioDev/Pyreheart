@@ -234,7 +234,9 @@ void Client::draw_side(int x0, int y, int w, int h) {
       std::string n = o["name"].get<std::string>();
       if (ulen(n) > 9) n = n.substr(0, 9);
       text(x + 2, r, n, dead ? DIM : ASH);
-      if (dead) text(x + 12, r, "fallen", DIM);
+      if (o.value("lost", false)) text(x + 12, r, "lost", DIM);
+      else if (dead) text(x + 12, r, "ghost", DIM);
+      else if (o.value("carry", 0) > 0) { put(x + 12, r, '*', 0xFF8C28); text(x + 13, r, "ember", ASH); }
       else if (o.value("gone", false) || ready) text(x + 12, r, "at stairs", DIM);
       else {
         int bw = right - (x + 12) + 1, f = std::clamp(o["hp"].get<int>() * bw / std::max(1, o["max"].get<int>()), 0, bw);

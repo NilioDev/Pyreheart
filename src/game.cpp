@@ -327,6 +327,7 @@ Stats Game::stats(const Hero& h) const {
   auto res = [&](const std::string& k, int more = 0) { return std::min(75, s(k) + 20 * h.perk("ward") + more); };
   Stats st{};
   st.maxhp = h.cls->hp + h.cls->hp_lvl * (pw - 1) + 15 * h.perk("tough") + s("hp") + 5 * h.tal("hearthskin");
+  if (h.scars) st.maxhp = std::max(10, st.maxhp * std::max(3, 10 - h.scars) / 10);  // each rekindling leaves a scar
   st.maxmana = h.cls->mana + h.cls->mana_lvl * (pw - 1) + 15 * h.perk("well") + s("mana");
   st.lo = (w ? w->lo : 1) + s("dmg");
   st.hi = (w ? w->hi : 3) + s("dmg");
@@ -728,6 +729,9 @@ void Game::unique(Mon& m) {
 }
 
 void Game::next_floor() {
+  for (auto& [at, pid] : floor->embers)  // an ember left lying in the dark goes out
+    if (auto it = heroes.find(pid); it != heroes.end()) ember_out(*it->second, "it was left behind in the dark");
+  floor->embers.clear();
   bool from_town = floor->depth == 0;  // down from Charnfen: the first map of the first zone
   bool was_rest = floor->rest && !from_town;
   const ActDef& zone = ACTS[route.back()];
@@ -750,11 +754,7 @@ void Game::next_floor() {
   }
   for (auto& [id, h] : heroes) {
     h->gone = false; h->shopping = false; h->drank = false;
-    if (to_rest && h->dead && !h->away) {
-      h->dead = false; h->hp = stats(*h).maxhp / 2; h->poison = 0;
-      say_all(h->name + " wakes at the waystation, pale but alive.", 0xB4DCB4);
-    }
-    if (!h->away && !h->dead) place(*h);
+    if (!h->away && !h->lost) place(*h);  // the living, and the ghosts who walk with them
   }
   if (to_rest) {
     say_all(lore::WAYSTATION, 0xD2B48C);
@@ -832,9 +832,11 @@ void Game::step(const std::map<int, json>& actions) {
     auto a = actions.find(id);
     Hero& hh = *it->second;
     if (hh.dazed > 0) { --hh.dazed; hh.say("You reel, and lose the turn.", 0xC0A0E0); continue; }
+    if (!hh.carry.empty() && turn % 3 == 0) { num(hh.x, hh.y, "ember", elem::COL[elem::EMBER]); continue; }  // its weight
     act(hh, a == actions.end() ? json{{"t", "wait"}} : a->second);
     if (state != "play") return;
   }
+  embers_tick();
   check_stairs();
   if (!floor->rest || floor->depth == 0) monsters();
   tick();
@@ -966,6 +968,7 @@ void Game::descend(Hero& h) {
     h.say("A guard bars the way with his crossbow. \"Nobody goes down cold. Take a coal from the great fire first.\"", 0xD2B48C);
     return;
   }
+  if (!floor->embers.empty()) { h.say("A fallen friend's ember still lies on this map. Take it up first, or it goes out in the dark.", 0xFFA040); return; }
   h.gone = true;
   if (!active().empty()) {
     h.say("You wait on the stairs for the others.", 0xA0A0A0);
@@ -978,6 +981,15 @@ void Game::check_stairs() {
   auto alive = living();
   if (alive.empty()) return;
   for (auto* h : alive) if (!h->gone) return;
+  if (!floor->embers.empty()) {  // a fallen friend's ember still lies here: the stairs wait until it is taken up
+    auto it = heroes.find(floor->embers.front().second);
+    std::string who = it == heroes.end() ? "a friend" : it->second->name;
+    for (auto* h : alive) {
+      h->gone = false;
+      h->say(who + "'s ember still lies on this map. Take it up first, or it goes out in the dark.", 0xFFA040);
+    }
+    return;
+  }
   if (floor->exits.size() > 1) {
     // two ways down: the party goes together, the way most of them stand on (the first hero's if it is even)
     std::map<int, int> votes;
@@ -2355,7 +2367,16 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
     h.killer = m ? m->name : kind.empty() ? "the dark" : kind == "ember" ? "fire" : kind;
     h.say("You die.", 0xFF4040);
     say_all(h.name + " has fallen.", 0xFF6060);
-    if (!living().empty() && !final_floor()) say_all(h.name + " will wake at the next waystation, if the others reach it.", 0xA0A0A0);
+    // the embers this hero carried go out with it, and those friends are gone for good
+    for (int pid : h.carry) if (auto it = heroes.find(pid); it != heroes.end()) ember_out(*it->second, "the one who carried it fell");
+    h.carry.clear();
+    if (!living().empty()) {  // co-op: the ember drops where the hero fell, and the hero walks on as a ghost
+      floor->embers.push_back({{h.x, h.y}, h.pid});
+      add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", elem::COL[elem::EMBER]}});
+      say_all(h.name + "'s ember lies where they fell. Carry it to a waystation's fire to rekindle them.", 0xFFA040);
+      h.say("You walk on as a ghost. Your friends can carry your ember to a waystation's fire.", 0xA0A0A0);
+      for (auto* o : living()) tip(*o, "ember", "Walk over a fallen friend's ember to carry it. It glows: foes see you from further off, and every third turn its weight holds you back.");
+    }
     check_stairs();
   }
 }
@@ -2503,7 +2524,8 @@ void Game::look() {
     else if (h.ashen > 0) sight = std::min(sight, 4);
     if (dim && !h.dimmed) { h.say("Your light gutters.", 0xC0A060); tip(h, "dim", "A lantern wraith eats the light. Kill it, and your light flares up again."); }
     h.dimmed = dim;
-    TCOD_map_compute_fov(map, h.x, h.y, sight, true, FOV_SYMMETRIC_SHADOWCAST);
+    int glow = h.carry.empty() ? 0 : 3;  // an ember carried glows: foes see its bearer from further off
+    TCOD_map_compute_fov(map, h.x, h.y, sight + glow, true, FOV_SYMMETRIC_SHADOWCAST);
     for (int y = 0; y < H; ++y)
       for (int x = 0; x < W; ++x) {
         h.vis[y * W + x] = whole_view || (TCOD_map_is_in_fov(map, x, y) && cheb(x, y, h.x, h.y) <= sight);
@@ -2511,7 +2533,8 @@ void Game::look() {
       }
     if (!h.present()) continue;
     for (auto& m : floor->mons)
-      if (!m->awake && !m->dormant && !m->hidden && !m->sleep && !whole_view && h.sees(m->x, m->y)) {
+      if (!m->awake && !m->dormant && !m->hidden && !m->sleep && !whole_view &&
+          (h.sees(m->x, m->y) || (glow && TCOD_map_is_in_fov(map, m->x, m->y) && cheb(m->x, m->y, h.x, h.y) <= sight + glow))) {
         m->awake = true;
         if (m->rank == "champion") tip(h, "champion", "Blue foes are champions: stronger, and they carry better things.");
         if (m->rank == "unique") tip(h, "unique", "A gold name is a unique foe. Look at foes with [l].");
