@@ -301,7 +301,7 @@ void Client::apply(const json& s) {
 void Client::send(const json& a) {
   if (!link_ || !snap_.is_object()) return;
   std::string t = a.value("t", "");
-  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close";
+  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel";
   if (!free) {
     if (waiting_) return;
     waiting_ = true;
@@ -492,6 +492,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Options: options_key(k); return;
     case Over::Coal: coal_key(k); return;
     case Over::Rack: rack_key(k); return;
+    case Over::Fire: fire_key(k); return;
     case Over::Hero:
       if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
@@ -549,6 +550,10 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     // a step into the gatekeeper's rack with no weapon yet opens it
     if (!me["weapon"].is_object() && snap_.contains("rack") && snap_["rack"][0].get<int>() == me["x"].get<int>() + dx &&
         snap_["rack"][1].get<int>() == me["y"].get<int>() + dy) { over_ = Over::Rack; return; }
+    // a step into a waystation's fire opens THE FIRE
+    if (snap_.contains("fire") && snap_["fire"][0].get<int>() == me["x"].get<int>() + dx && snap_["fire"][1].get<int>() == me["y"].get<int>() + dy) {
+      over_ = Over::Fire; fire_sel_ = 0; fire_mark_ = -1; return;
+    }
     // a step into a coal at the great fire, with no coal yet, opens the choice of coals
     if (me.value("el", -1) < 0 && snap_.contains("coals"))
       for (auto& c : snap_["coals"])
@@ -662,6 +667,7 @@ void Client::click(int x, int y, bool down) {
       else if (b.action.rfind("menu:", 0) == 0) { if (menu_sel_ == arg) menu_do(arg); else menu_sel_ = arg; }
       else if (b.action.rfind("opt:", 0) == 0) { if (opt_sel_ == arg) options_key(SDLK_RETURN); else opt_sel_ = arg; }
       else if (b.action.rfind("rack:", 0) == 0) { if (rack_sel_ == arg) rack_key(SDLK_RETURN); else rack_sel_ = arg; }
+      else if (b.action.rfind("fire:", 0) == 0) { if (fire_sel_ == arg) fire_key(SDLK_RETURN); else fire_sel_ = arg; }
       else if (b.action.rfind("coal:", 0) == 0) { if (coal_sel_ == arg) coal_key(SDLK_RETURN); else coal_sel_ = arg; }
       else if (b.action.rfind("book:", 0) == 0) { book_ch_ = arg; book_scroll_ = 0; book_why_.clear(); }
       else if (b.action == "close") key(SDLK_ESCAPE, SDL_KMOD_NONE);
@@ -670,7 +676,7 @@ void Client::click(int x, int y, bool down) {
     }
   if (over_ == Over::Book || over_ == Over::Menu || over_ == Over::Hero || over_ == Over::Options) { over_ = Over::None; return; }
   if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
-  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal || over_ == Over::Rack) return;
+  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal || over_ == Over::Rack || over_ == Over::Fire) return;
   // a tap on the map
   int mx = x - vx_ + camx_, my = y - vy_ + camy_;
   if (x < vx_ || y < vy_ || x >= vx_ + vw_ || y >= vy_ + vh_) return;
@@ -686,6 +692,7 @@ void Client::click(int x, int y, bool down) {
     for (auto& c : snap_["coals"])
       if (c[0].get<int>() == mx && c[1].get<int>() == my) { over_ = Over::Coal; coal_sel_ = c[2]; return; }
   if (!me["weapon"].is_object() && snap_.contains("rack") && snap_["rack"][0].get<int>() == mx && snap_["rack"][1].get<int>() == my) { over_ = Over::Rack; return; }
+  if (snap_.contains("fire") && snap_["fire"][0].get<int>() == mx && snap_["fire"][1].get<int>() == my) { over_ = Over::Fire; fire_sel_ = 0; fire_mark_ = -1; return; }
   if (mx == hx && my == hy) {
     if (layout_ == Layout::Watch) { over_ = Over::Ring; ring_ = 0; }
     else act("wait");
@@ -947,6 +954,7 @@ void Client::draw_game() {
       if (w == "rack") over_ = Over::Rack;
       else if (w == "coal") over_ = Over::Coal;
       else if (w == "hero") over_ = Over::Hero;
+      else if (w == "fire") over_ = Over::Fire;
     }
   }
   int cw = con_.get_width(), chh = con_.get_height();
@@ -1025,6 +1033,7 @@ void Client::draw_game() {
     case Over::Options: dim_all(.3); draw_options(); break;
     case Over::Coal: dim_all(.3); draw_coal_window(); break;
     case Over::Rack: dim_all(.3); draw_rack_window(); break;
+    case Over::Fire: dim_all(.3); draw_fire_window(); break;
     case Over::Ring: draw_ring(); break;
     case Over::Epigraph: draw_epigraph(); break;
     default: break;

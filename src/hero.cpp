@@ -56,6 +56,10 @@ int Game::skill_style(const Hero& h, const std::string& key) const {
   return main_style(h);
 }
 
+bool Game::combo(const Hero& h, int style, int e) const {
+  return h.el == e && std::max({h.srank[0], h.srank[1], h.srank[2]}) > 0 && main_style(h) == style;
+}
+
 std::string Game::title(const Hero& h) const {
   int top = std::max({h.srank[0], h.srank[1], h.srank[2]});
   if (h.el >= 0 && top > 0) return TITLES[main_style(h)][h.el];
@@ -121,6 +125,10 @@ void Game::learn(Mon& m) {
         const StyleDef& sd = STYLES[s];
         h.say("Your " + sd.name + " grows: rank " + std::to_string(h.srank[s]) + ".", sd.col);
         if (h.srank[s] % 2 == 0) offer_perk(h);
+        if (h.srank[s] == PATH_RANK && h.path[s] < 0) {
+          h.say(sd.name + " rank " + std::to_string(PATH_RANK) + ": two paths open. Choose one at a waystation's fire.", 0xFFE680);
+          tip(h, "path", "A path is chosen at the fire of a waystation, after a zone's great foe. Walk into the fire.");
+        }
         for (size_t i = 0; i < sd.skills.size(); ++i)
           if (STYLE_RANKS[i] == h.srank[s] && std::find(h.known.begin(), h.known.end(), sd.skills[i]) == h.known.end()) {
             h.known.push_back(sd.skills[i]);
@@ -142,14 +150,45 @@ void Game::learn(Mon& m) {
         h.say("Your hand knows the " + std::string(wd ? wd->name : wi->kind) + " better: mastery " + std::to_string(after) + " of " + std::to_string(MASTERY_MAX) + ".", 0xE0C080);
       }
     }
-    if (h.el >= 0) {
-      int e = h.el;
-      h.exq[e] += xp;
+    // the element: the first coal learns from all the harm but what the keys set to the second coal dealt
+    int second = h.el2 >= 0 ? std::min(w[4], total) : 0;
+    for (int e : {h.el, h.el2}) {
+      if (e < 0) continue;
+      int part = e == h.el ? total - second : second;
+      if (part <= 0) continue;
+      h.exq[e] += std::max(1, xp * part / total);
       while (h.erank[e] < 20 && h.exq[e] >= rank_need(h.erank[e])) {
         ++h.erank[e];
         h.say(std::string("Your ") + elem::NAME[e] + " burns stronger: rank " + std::to_string(h.erank[e]) + ".", elem::COL[e]);
       }
     }
     refit(h);
+  }
+}
+
+// At a waystation's fire: take a path where a style reached rank 5, put a known skill on a key, or set a key to the
+// second coal. All free: the fire waits.
+void Game::fire_action(Hero& h, const std::string& t, const json& a) {
+  if (!floor->rest || floor->depth == 0) { h.say("Only at a waystation's fire.", 0x909090); return; }
+  if (t == "path") {
+    int s = a.value("s", -1), c = a.value("c", -1);
+    if (s < 0 || s > 2 || c < 0 || c > 1 || h.path[s] >= 0 || h.srank[s] < PATH_RANK) return;
+    h.path[s] = c;
+    const PathDef& p = PATHS[s][c];
+    h.perks[p.key] = 1;
+    h.say("You take the path of the " + std::string(p.name) + ": " + p.about + ".", 0xFFE680);
+    add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", STYLES[s].col}});
+  } else if (t == "slot") {
+    // key [k] (2..5) takes the known skill at index i, and the skill that was on it goes where that one was; the key
+    // keeps its coal
+    int k = a.value("k", 0), i = a.value("i", -1), at = k - 2;
+    if (k < 2 || k > 5 || i < 0 || i >= int(h.known.size()) || at >= int(h.known.size()) || i == at) return;
+    std::swap(h.known[at], h.known[i]);
+    refit(h);
+    h.say(skill_def(h.known[at]).name + " is on [" + std::to_string(k) + "] now.", 0xE0C080);
+  } else if (t == "slotel") {
+    int k = a.value("k", 0);
+    if (k < 2 || k > 5 || h.el2 < 0) return;
+    h.slot_el[k - 1] ^= 1;
   }
 }

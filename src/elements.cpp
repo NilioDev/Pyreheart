@@ -52,8 +52,8 @@ void Game::assign_element(Mon& m) {
 
 // ------------------------------------------------------------------ laying stacks
 void Game::lay_on_mon(Hero& h, Mon& m, int n) {
-  if (h.el < 0 || m.hp <= 0) return;
-  int e = h.el;
+  int e = hero_el(h);
+  if (e < 0 || m.hp <= 0) return;
   if (e == BLOOD && m.can("stone")) return;  // stone does not bleed
   int res = mon_res(m, e), laid = 0;
   for (int i = 0; i < n; ++i) if (res <= 0 || rnd.below(100) >= res) ++laid;
@@ -85,6 +85,18 @@ void Game::discharge_mon(Hero& h, Mon& m, int e) {
   m.stk.n[e] = 0;
   m.stk.idle[e] = 0;
   Stats st = stats(h);
+  // the titles' talents that go with a discharge (before the harm: the foe may not outlive it)
+  if (combo(h, 0, EMBER)) h.fury = std::min(10, h.fury + 3);                               // Forgeborn
+  if (e == RIME && combo(h, 0, RIME))                                                      // Rimeguard
+    for (auto& o : floor->mons) if (o.get() != &m && o->hp > 0 && cheb(o->x, o->y, m.x, m.y) <= 1) { o->stk.n[RIME] = std::min(MAX, o->stk.n[RIME] + 1); o->stk.idle[RIME] = 0; o->stk.by[RIME] = h.pid; }
+  if (combo(h, 2, EMBER))                                                                  // Pyrebinder
+    for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
+      if (floor->walk(m.x + dx, m.y + dy)) floor->ground.push_back({{m.x + dx, m.y + dy}, 0, 3, 1 + power(h) / 4, h.pid});
+  if (combo(h, 2, RIME)) {                                                                 // Rimecaller
+    add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", COL[RIME]}});
+    for (auto& o : floor->mons) if (o->hp > 0 && o->rank != "boss" && cheb(o->x, o->y, m.x, m.y) <= 1) o->frozen = std::max(o->frozen, 1);
+  }
+  if (e == ASH && combo(h, 2, ASH)) m.smothered = 3;                                       // Ashseer
   double b = (st.lo + st.hi) / 2.0 * (1 + st.pct / 100.0) * .6 * k * (1 - mon_res(m, e) / 100.0);
   int x = m.x, y = m.y;
   add_fx({{"k", "burst"}, {"x", x}, {"y", y}, {"r", e == EMBER ? 1 : 0}, {"col", COL[e]}});
@@ -129,6 +141,8 @@ void Game::discharge_mon(Hero& h, Mon& m, int e) {
     case BLOOD: {
       int d = std::max(1, rnd_i(b * .6));
       int heal = std::max(1, rnd_i(d * (100 - heal_cut(h.stk, true)) / 100.0));
+      if (cheb(h.x, h.y, x, y) > 1 && !combo(h, 1, BLOOD)) heal = std::max(1, heal / 2);  // at range half, but for a Bloodhunter
+      if (h.hp + heal > st.maxhp && combo(h, 0, BLOOD)) h.shield = std::max(h.shield, 2);     // Bloodsworn: the overflow shields
       h.hp = std::min(st.maxhp, h.hp + heal);
       num(h.x, h.y, "+" + std::to_string(heal), 0x60E060);
       h.say("☼ " + what + ": you drink its blood (" + std::to_string(d) + ", +" + std::to_string(heal) + " life).", COL[e]);

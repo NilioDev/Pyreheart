@@ -318,7 +318,6 @@ Stats Game::stats(const Hero& h) const {
   auto wi = h.equip.find("weapon");
   const Item* w = wi == h.equip.end() ? nullptr : wi->second.get();
   const WeaponDef* wd = w ? weapon_def(w->kind) : nullptr;
-  bool bow = w && w->kind == "bow";
   int pw = power(h);
   int ar = 0;
   for (auto& [slot, it] : h.equip) ar += it->ar;
@@ -333,11 +332,11 @@ Stats Game::stats(const Hero& h) const {
   if (wd) st.pct += 4 * h.srank[style_index(wd->style)];
   if (h.hp < st.maxhp / 2) st.pct += 5 * h.tal("fevered");
   st.acc = h.cls->acc + pw + 8 * h.perk("eye") + s("acc");
-  st.crit = 5 + 4 * h.perk("eye") + s("crit") + 2 * h.tal("coaleyed") + (bow ? 10 * (h.perk("sniper") + h.perk("sharpshooter")) : 0);
+  st.crit = 5 + 4 * h.perk("eye") + s("crit") + 2 * h.tal("coaleyed") + (wd && wd->style == "ranged" ? 10 * h.perk("sharpshooter") : 0);
   st.armour = ar + s("armour") + 3 * h.perk("hide") + 4 * h.perk("guardian") + h.srank[0];  // a melee rank is a lesson in taking blows
   if (h.sunder > 0) st.armour /= 2;  // split by acid or a smith's hammer
   st.res_f = res("res_fire"); st.res_c = res("res_cold", 10 * h.tal("warmhands")); st.res_p = res("res_poison");
-  st.leech = s("leech"); st.spell = s("spell"); st.fire = s("fire_dmg");
+  st.leech = s("leech"); st.spell = s("spell") + 25 * h.perk("invoker"); st.fire = s("fire_dmg");
   st.regen = 1 + h.perk("well") + s("regen"); st.thorns = s("thorns");
   st.reach = wd ? wd->reach : 0;
   st.bow = st.reach > 0 || (w && w->kind == "chisel");
@@ -637,7 +636,7 @@ void Game::build_waystation(Floor& f) {
       "#...........M............#",
       "#..{....................1#",
       "#........................#",
-      "#<.......................#",
+      "#<..........F............#",
       "#........................#",
       "#.......................2#",
       "##########################"};
@@ -648,8 +647,9 @@ void Game::build_waystation(Floor& f) {
     for (int i = 0; i < int(art[j].size()); ++i) {
       int x = ox + i, y = oy + j;
       char ch = art[j][i];
-      f.t[y * W + x] = ch == '#' ? WALL : ch == '{' ? FOUNTAIN : ch == '<' ? UPSTAIRS : (ch == '1' || ch == '2') ? STAIRS : FLOOR;
+      f.t[y * W + x] = ch == '#' ? WALL : ch == 'F' ? CAMPFIRE : ch == '{' ? FOUNTAIN : ch == '<' ? UPSTAIRS : (ch == '1' || ch == '2') ? STAIRS : FLOOR;
       if (ch == '<') f.up = {x, y};
+      if (ch == 'F') f.fire = {x, y};
       if (ch == '1' || ch == '2') {
         int k = ch - '1';
         if (k < int(next.size())) f.exits[y * W + x] = next[k];
@@ -757,6 +757,13 @@ void Game::next_floor() {
     say_all(lore::WAYSTATION, 0xD2B48C);
     for (auto* h : living())
       if (h->tal("forged") && !h->forged) h->say("The Spark in you could reforge your weapon's magic here, once this dive: [r].", 0xFFB040);
+    for (auto* h : living()) {  // the fire: keys, paths and a second coal
+      bool due = false;
+      for (int s = 0; s < 3; ++s) if (h->srank[s] >= PATH_RANK && h->path[s] < 0) due = true;
+      if (due) h->say("A path waits for you at the fire. Walk into it.", 0xFFE680);
+      else if (h->known.size() > 4) h->say("More skills wait than your keys hold. Walk into the fire to choose.", 0xFFE680);
+      else tip(*h, "fire", "Rest by the fire: walk into it to set your keys, choose a path, or take a second coal.");
+    }
     auto& next = ACTS[route.back()].next;
     if (next.size() > 1)
       say_all("Two stairs lead on: to " + ACTS[next[0]].name + " and to " + ACTS[next[1]].name + ". Look at them with [l].",
@@ -806,6 +813,7 @@ bool Game::free_action(Hero& h, const json& a) {
   if (t == "sell") { sell(h, a.value("id", 0)); return true; }
   if (t == "close") { h.shopping = false; return true; }
   if (t == "debug") { debug(h, a.value("w", "")); return true; }
+  if (t == "path" || t == "slot" || t == "slotel") { fire_action(h, t, a); return true; }
   return false;
 }
 
@@ -839,8 +847,8 @@ void Game::act(Hero& h, const json& a) {
   std::string t = a.value("t", "");
   struct Acting {
     Game& g;
-    Acting(Game& game, Hero* h) : g(game) { g.acting_ = h; g.discharging_ = -1; g.credit_ = -1; g.credit_weapon_ = false; }
-    ~Acting() { g.acting_ = nullptr; g.discharging_ = -1; g.credit_ = -1; g.credit_weapon_ = false; }
+    Acting(Game& game, Hero* h) : g(game) { g.acting_ = h; g.discharging_ = -1; g.acting_el_ = -1; g.credit_ = -1; g.credit_weapon_ = false; }
+    ~Acting() { g.acting_ = nullptr; g.discharging_ = -1; g.acting_el_ = -1; g.credit_ = -1; g.credit_weapon_ = false; }
   } acting(*this, &h);
   if (t == "move" && h.stk.n[elem::RIME] > 0 && rnd.below(100) < std::min(30, 10 * h.stk.n[elem::RIME])) {
     h.say("Rime stiffens your legs; the step comes slow.", elem::COL[elem::RIME]);
@@ -1010,15 +1018,17 @@ void Game::bleed(Hero& h, Mon& m, int dmg) {
 bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   Stats st = stats(h);
   bool opening = h.cls->key == "dagger" && !ranged && busy(m, h);
+  bool unseen = !m.awake;
   m.awake = true;
   m.open = 0;
   int chance = std::clamp(st.acc - m.ar * 2 + 12 + (opening ? 30 : 0) - 8 * h.stk.n[elem::ASH], 25, 97);
   if (rnd.below(100) >= chance) { h.say("You miss " + the(m) + ".", 0x909090); num(m.x, m.y, "miss", 0x808080); return false; }
   double d = rnd.range(st.lo, st.hi) * (1 + st.pct / 100.0) * mult;
   if (h.numb > 0) d *= .75;
-  if (h.perk("berserker")) d *= 1 + .03 * h.mana;
+  if (h.perk("berserker")) d *= 1 + .03 * h.fury;
   if (ranged && h.cls->key == "bow") d *= 1 + .2 * h.focus;
   if (m.frozen > 0 && h.perk("frostbinder")) d *= 1.25;
+  if (ranged && combo(h, 1, elem::RIME)) d *= 1 + .08 * m.stk.n[elem::RIME];  // Coldeye
   if (h.perk("duelist")) {
     if (h.combo_id == m.id) h.combo = std::min(6, h.combo + 1); else { h.combo_id = m.id; h.combo = 1; }
     d *= 1 + .12 * (h.combo - 1);
@@ -1048,6 +1058,10 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
     num(m.x, m.y, "stunned", 0xE0D080);
   }
   crit_next = crit;
+  if (ranged && &h == acting_) {  // Smokestalker and Plaguehunter lay a second stack before the blow lays its own
+    if (unseen && combo(h, 1, elem::ASH) && hero_el(h) == elem::ASH) lay_on_mon(h, m, 1);
+    if (combo(h, 1, elem::ROT) && hero_el(h) == elem::ROT && cheb(m.x, m.y, h.x, h.y) >= std::max(1, st.reach - 1)) lay_on_mon(h, m, 1);
+  }
   hurt(m, dmg, &h, opening ? "An opening: you cut " + the(m) + " deep (" + std::to_string(dmg) + ")."
                    : crit ? "You strike " + the(m) + " hard (" + std::to_string(dmg) + ")." : "");
   return true;
@@ -1074,12 +1088,14 @@ void Game::melee(Hero& h, Mon& m) {
 void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
   dmg = trait_hurt(m, dmg);
   if (m.spent > 0) dmg = dmg * 3 / 2;
+  if (m.smothered > 0) dmg = dmg * 5 / 4;
   m.hp -= dmg;
   num(m.x, m.y, std::to_string(dmg), crit_next ? 0xFFD25A : 0xFFFFFF);
   if (by) {  // learn by doing: the harm counts for the style (and the weapon) that dealt it
     auto& w = m.work[by->pid];
     w[credit_ >= 0 ? credit_ : main_style(*by)] += dmg;
     if (credit_weapon_) w[3] += dmg;
+    if (acting_el_ >= 0 && acting_el_ == by->el2) w[4] += dmg;
   }
   if (by && by == acting_ && m.hp > 0) {  // the hero's own hit: it lays the hero's element, or a heavy skill sets it off
     Hero* h = acting_;
@@ -1308,6 +1324,19 @@ void Game::kill(Mon& m, Hero* by) {
   MonP keep;
   for (auto it = floor->mons.begin(); it != floor->mons.end(); ++it)
     if (it->get() == &m) { keep = *it; floor->mons.erase(it); break; }
+  if (int r = m.stk.n[elem::ROT]; r > 0) {  // Blightreaver: the rot goes to the neighbours; Rotspeaker: to the nearest foe
+    auto it = heroes.find(m.stk.by[elem::ROT]);
+    Hero* rh = it == heroes.end() ? nullptr : it->second.get();
+    auto give = [&](Mon& o) { o.stk.n[elem::ROT] = std::min(elem::MAX, o.stk.n[elem::ROT] + r); o.stk.idle[elem::ROT] = 0; o.stk.by[elem::ROT] = rh->pid; };
+    if (rh && combo(*rh, 0, elem::ROT)) {
+      for (auto& o : floor->mons) if (o->hp > 0 && cheb(o->x, o->y, m.x, m.y) <= 1) give(*o);
+    } else if (rh && combo(*rh, 2, elem::ROT)) {
+      Mon* best = nullptr;
+      int bd = 6;
+      for (auto& o : floor->mons) if (o->hp > 0 && cheb(o->x, o->y, m.x, m.y) < bd) { bd = cheb(o->x, o->y, m.x, m.y); best = o.get(); }
+      if (best) { give(*best); add_fx({{"k", "line"}, {"cells", json::array({xy(m.x, m.y), xy(best->x, best->y)})}, {"col", elem::COL[elem::ROT]}, {"dur", .3}}); }
+    }
+  }
   int col = m.rank == "champion" ? 0x7090FF : (m.rank == "unique" || m.rank == "boss") ? 0xE0B050 : 0xC8C8C8;
   say_near(m.x, m.y, cap(the(m)) + " dies.", col);
   if (by) {
@@ -1512,10 +1541,17 @@ void Game::skill(Hero& h, int n, int x, int y) {
   if (key == "charge" && h.perk("frenzy")) cost = 0;
   if (key == "tumble") cost -= 2 * h.perk("quick");
   if (key == "kindle" && h.perk("deeprunes")) cost = 0;
-  if (pool < cost) { h.say(std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk.name + ".", fury ? 0xE08040 : 0x7090FF); return; }
+  bool in_blood = !fury && pool < cost && combo(h, 2, elem::BLOOD) && h.hp > 2 * cost + 1;  // Bloodbinder
+  if (pool < cost && !in_blood) { h.say(std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk.name + ".", fury ? 0xE08040 : 0x7090FF); return; }
   if (sk.target && !target(h, x, y)) { h.say("No target.", 0x909090); return; }
   if (h.smother > 0) { h.say("Soot chokes you: your skills will not come this turn.", elem::COL[elem::ASH]); return; }
-  if (elem::skill_sign(key) == 0x263C) discharging_ = h.el;
+  if (in_blood) {
+    h.hp -= 2 * cost;
+    num(h.x, h.y, std::to_string(2 * cost), elem::COL[elem::BLOOD]);
+    cost = 0;
+  }
+  if (n >= 2 && h.el2 >= 0 && h.slot_el[n - 1] == 1) acting_el_ = h.el2;  // a key set to the second coal at the fire
+  if (elem::skill_sign(key) == 0x263C) discharging_ = hero_el(h);
   Stats st = stats(h);
   double sp = 1 + st.spell / 100.0;
   if ((key == "volley" || key == "tumble") && st.reach < 5) { h.say(sk.name + " needs a weapon that shoots.", 0x909090); return; }
@@ -1964,7 +2000,19 @@ void Game::shoot_with(Hero& h, int x, int y) {
   if (hit.empty()) return;
   MonP t = hit[0];
   double mult = k == "staff" ? .9 * sp : k == "wand" ? .7 * sp : k == "thrown" && h.moved == turn - 1 ? 1.25 : 1.0;
+  if (h.perk("skirmisher") && h.moved == turn - 1) mult *= 1.2;
+  bool burning = t->stk.n[elem::EMBER] > 0;
   strike(h, *t, mult, true);
+  if (burning && combo(h, 1, elem::EMBER)) {  // Kindler: the shot goes on through a burning foe
+    std::vector<P> c2; std::vector<MonP> h2;
+    path(h, x, y, st.reach, true, c2, h2);
+    for (size_t i = 1; i < h2.size(); ++i) {
+      if (h2[i]->hp <= 0) continue;
+      bool on = h2[i]->stk.n[elem::EMBER] > 0;
+      strike(h, *h2[i], mult, true);
+      if (!on) break;
+    }
+  }
   if (k == "wand" && t->hp > 0 && rnd.below(100) < 25 + 5 * mastery(h, "wand")) {
     add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", col}, {"ch", "*"}, {"src", xy(h.x, h.y)}, {"delay", .08}});
     strike(h, *t, mult, true);
@@ -2124,6 +2172,7 @@ Hero* Game::nearest_hero(const Mon& m, bool seen_only) {
 }
 
 void Game::mon_turn(Mon& m) {
+  if (m.smothered > 0) --m.smothered;
   if (m.stun > 0) { --m.stun; return; }
   if (m.frozen > 0) { --m.frozen; return; }
   if (!m.awake) return;
@@ -2225,7 +2274,20 @@ void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   Stats st = stats(h);
   int chance = std::clamp(m.acc + lvl * 2 - st.armour - (h.cls->key == "dagger" && !ranged ? 15 : 0) - 8 * m.stk.n[elem::ASH], 20, 95);
   if (!ranged) add_fx({{"k", "swing"}, {"src", xy(m.x, m.y)}, {"cells", json::array({xy(h.x, h.y)})}});
-  if (rnd.below(100) >= chance) { if (h.perk("riposte")) m.open = 2; num(h.x, h.y, "dodge", 0x808080); return; }
+  if (rnd.below(100) >= chance) {
+    if (h.perk("riposte")) m.open = 2;
+    num(h.x, h.y, "dodge", 0x808080);
+    if (!ranged && m.stk.n[elem::ASH] > 0 && cheb(m.x, m.y, h.x, h.y) == 1 && combo(h, 0, elem::ASH)) {  // Cinderguard
+      h.say(cap(the(m)) + " swings blind through the ash, and you strike back.", elem::COL[elem::ASH]);
+      Hero* was = acting_;
+      acting_ = &h;
+      credit_ = 0; credit_weapon_ = true;
+      strike(h, m, .6);
+      credit_ = -1; credit_weapon_ = false;
+      acting_ = was;
+    }
+    return;
+  }
   // the sword's parry: a blow turned aside, and a riposte
   if (!ranged && h.cls->key == "sword" && cheb(m.x, m.y, h.x, h.y) == 1 && rnd.below(100) < 12 + 3 * mastery(h, "sword")) {
     num(h.x, h.y, "parry", 0xE0E0F0);
@@ -2259,7 +2321,7 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   if (h.standfast > 0) dmg = std::max(1, dmg / 2);
   if (landing_ && h.tal("mantle")) dmg = std::max(1, dmg * (100 - 10 * h.tal("mantle")) / 100);
   if (h.fury > 0) dmg = std::max(1, rnd_i(dmg * (1 - .02 * h.fury)));  // fury dulls the pain
-  if (m && (h.srank[0] > 0 || main_style(h) == 0)) h.fury = std::min(10, h.fury + 1);
+  if (m && (h.srank[0] > 0 || main_style(h) == 0)) h.fury = std::min(10, h.fury + 1 + h.perk("guardian"));
   h.hp -= dmg;
   num(h.x, h.y, std::to_string(dmg), kind == "poison" ? 0x70D050 : kind == "ember" ? elem::COL[elem::EMBER] : kind == "blood" ? elem::COL[elem::BLOOD] : 0xFF5050);
   add_fx({{"k", "blood"}, {"x", h.x}, {"y", h.y}, {"src", xy(m ? m->x : h.x, m ? m->y : h.y - 1)}});

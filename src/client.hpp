@@ -26,7 +26,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
-  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal, Rack };
+  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal, Rack, Fire };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -144,6 +144,10 @@ class Client {
   int rack_sel_ = 0;
   void draw_rack_window();
   void rack_key(SDL_Keycode k);
+  int fire_sel_ = 0, fire_mark_ = -1, fire_coal_ = 0;  // the waystation fire: the row chosen, the key marked to swap, a second coal
+  int fire_rows();
+  void draw_fire_window();
+  void fire_key(SDL_Keycode k);
   void coal_key(SDL_Keycode k);
   void low_life_edge();
   void burn_suns();

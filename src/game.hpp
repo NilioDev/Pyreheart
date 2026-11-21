@@ -95,6 +95,10 @@ struct Hero {
   // the elements: the coals taken (the first from Charnfen's great fire, -1 none yet), the stacks carried, the turns
   // the skills stay smothered by Ash, and the foes' discharges already warned of
   int el = -1, el2 = -1, smother = 0;
+  // at a waystation's fire: the path taken in each style at rank 5 (-1 none yet), and which coal each key [1]-[5] lays
+  // (0 the first, 1 the second)
+  int path[3] = {-1, -1, -1};
+  int slot_el[5] = {0, 0, 0, 0, 0};
   Stacks stk;
   std::vector<char> vis = std::vector<char>(W * H, 0);
   std::vector<char> seen = std::vector<char>(W * H, 0);  // all it has seen of this floor, for a dive taken up again
@@ -131,6 +135,7 @@ struct Mon {
   std::string rank = "normal";
   std::vector<std::string> mods;
   int energy = 0, stun = 0, frozen = 0, cool = 3;
+  int smothered = 0;  // an Ashseer's discharge: it takes a quarter more from everything
   bool awake = false, summoned = false;
   Blow blow;                       // turns > 0 while it winds up
   int bleed = 0, bleed_dmg = 0;    // turns left, harm each turn
@@ -141,7 +146,7 @@ struct Mon {
   int dormant = 0, hidden = 0, brace = 0, listen = 0, flee = 0, tcool = 0, sleep = 0;  // sleep: until a noise
   bool split = false, swum = false;
   Stacks stk;              // the elements on it
-  std::map<int, std::array<int, 4>> work;  // harm done to it by each hero: melee, ranged, magic, and with the weapon
+  std::map<int, std::array<int, 5>> work;  // harm done to it by each hero: melee, ranged, magic, with the weapon, with the second coal
   int el = 0;              // the element its blows lay
   bool discharger = false; // a slow, heavy foe: its telegraphed blow sets off the stacks of its element
   bool can(const std::string& t) const { return def->has(t); }
@@ -187,6 +192,7 @@ struct Floor {
   std::vector<Sleeper> sleepers;
   std::vector<std::pair<P, int>> coals;  // Charnfen: the coals at the edge of the great fire, and their elements
   P rack{-1, -1};                        // Charnfen: the gatekeeper's rack of first weapons
+  P fire{-1, -1};                        // a waystation: the fire to rest by (paths, keys, a second coal)
   std::map<int, int> exits;  // in a waystation: the stairs down (cell index) and the zone each leads to
   bool burning(int x, int y) const { for (auto& g : ground) if ((g.kind == G_EMBER || g.kind == G_FIRE) && g.p == P{x, y}) return true; return false; }
   const Ground* ground_at(int x, int y) const { for (auto& g : ground) if (g.p == P{x, y}) return &g; return nullptr; }
@@ -318,6 +324,7 @@ class Game {
   bool crit_next = false;  // the next harm to a foe was a critical blow: its number is gold
   // elements.cpp: stacks laid, set off and fading
   Hero* acting_ = nullptr;  // the hero whose action this is: its hits lay its element
+  int acting_el_ = -1;      // the element the acting hero's blow lays: a key set to the second coal (-1: the first)
   int discharging_ = -1;    // and this element is set off instead, by a heavy skill
   int scale_el() const { return 1 + lvl / 4; }
  public:
@@ -336,6 +343,8 @@ class Game {
  public:
   // hero.cpp: the classless hero (plan.md section 1)
   int power(const Hero& h) const;
+  bool combo(const Hero& h, int style, int e) const;  // the hero's title is this style and element: its talent holds
+  int hero_el(const Hero& h) const { return acting_el_ >= 0 ? acting_el_ : h.el; }
   double catch_up(const Hero& h) const;  // how much faster a hero behind the pace learns (up to 2x), or slower ahead         // how far the hero has grown: what a level was to the old classes
   int main_style(const Hero& h) const;    // the style with the highest rank (the weapon's on a tie)
   int mastery(const Hero& h, const std::string& kind) const;
@@ -349,6 +358,7 @@ class Game {
   int credit_ = -1;  // the style (0..2) the harm being dealt now is learned in; -1: the hero's main style
   bool credit_weapon_ = false;  // and whether it was dealt with the weapon in hand
   void learn(Mon& m);           // a kill teaches each hero who hurt it, by what did the work
+  void fire_action(Hero& h, const std::string& t, const json& a);
   void take_weapon(Hero& h, const std::string& kind);
   void offer_perk(Hero& h);
   void shoot_with(Hero& h, int x, int y);

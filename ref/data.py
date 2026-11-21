@@ -490,11 +490,30 @@ STYLES = {
 STYLE_ORDER = ('melee', 'ranged', 'magic')
 STYLE_RANKS = (1, 3, 6, 10, 15, 20)   # a style's skills come at these ranks
 MASTERY_MAX = 5
+# at rank 5 each style offers two paths, chosen at a waystation's fire: (key, name, what it does)
+PATH_RANK = 5
+PATHS = {
+    'melee': (('berserker', 'Berserker', 'each point of fury: +3% damage'),
+              ('guardian', 'Guardian', '+4 armour; blows you take fill twice the fury')),
+    'ranged': (('sharpshooter', 'Sharpshooter', '+10% critical with every shot'),
+               ('skirmisher', 'Skirmisher', 'a shot right after a step hits 20% harder')),
+    'magic': (('invoker', 'Invoker', '+25% spell power'),
+              ('shepherd', 'Shepherd', 'Mend heals half again as much; a lantern\'s light reaches 3')),
+}
 # style + element: the hero's name in the world (plan.md section 1, Combo titles), in elements order
 TITLES = {
     'melee': ('Forgeborn', 'Rimeguard', 'Cinderguard', 'Blightreaver', 'Bloodsworn'),
     'ranged': ('Kindler', 'Coldeye', 'Smokestalker', 'Plaguehunter', 'Bloodhunter'),
     'magic': ('Pyrebinder', 'Rimecaller', 'Ashseer', 'Rotspeaker', 'Bloodbinder'),
+}
+# each title's own talent, in the same order
+TALENTS = {
+    'melee': ('each discharge gives back 3 fury', 'a shattered foe slows all beside it', 'an ashen foe that misses you takes a counterblow',
+              'a foe that dies rotting passes its rot to its neighbours', 'healing past full life becomes a short shield'),
+    'ranged': ('your shots pass through burning foes', 'slowed foes take more from your shots', 'a shot at a foe that has not seen you lays double Ash',
+               'at full range Rot builds twice as fast', 'your Blood discharges heal you in full even at range'),
+    'magic': ('your discharges leave burning ground', 'your discharges leave a patch of ice that freezes', 'smothered foes take more from everything',
+              'rot jumps to a new foe when its host dies', 'out of mana, your spells cost life'),
 }
 SKILLS = {
     'cleave': dict(name='Cleave', mana=2, target=False, about='strike every foe next to you'),

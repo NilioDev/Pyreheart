@@ -76,6 +76,14 @@ static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
   if (h.el < 0) return {{"t", "coal"}, {"e", std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
+  if (g.floor->rest && g.depth > 0) {  // at a waystation's fire: a path where one is due, and a second coal for keys [2]-[3]
+    for (int s = 0; s < 3; ++s) if (h.srank[s] >= data::PATH_RANK && h.path[s] < 0) g.free_action(h, {{"t", "path"}, {"s", s}, {"c", (h.pid + s) % 2}});
+    if (h.el2 < 0 && !std::getenv("BOTONECOAL")) {
+      g.free_action(h, {{"t", "slotel"}, {"k", 2}});
+      return {{"t", "coal"}, {"e", (h.el + 2) % elem::N}};
+    }
+    if (h.el2 >= 0 && !h.slot_el[1]) g.free_action(h, {{"t", "slotel"}, {"k", 2}});
+  }
   if (!h.perk_choices.empty()) g.free_action(h, {{"t", "perk"}, {"k", h.perk_choices.front()[g.rnd.below(int(h.perk_choices.front().size()))]}});
   Stats st = g.stats(h);
   if (h.hp < st.maxhp * .4 && h.heal > 0) return {{"t", "quaff"}, {"k", "heal"}};
