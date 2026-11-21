@@ -144,6 +144,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["ents"] = ents;
   if (f.rack.x >= 0) out["rack"] = {f.rack.x, f.rack.y};
   if (f.fire.x >= 0) out["fire"] = {f.fire.x, f.fire.y};
+  if (f.depth == 0 && !f.coals.empty()) out["pyre"] = {f.coals[2].first.x, f.coals[2].first.y - 3};  // the great fire's heart
   if (!f.coals.empty()) {
     json coals = json::array();
     for (auto& [c, e] : f.coals) coals.push_back({c.x, c.y, e});

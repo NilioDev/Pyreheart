@@ -180,6 +180,10 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
   h->heal += 2 * h->tal("credit");
   { auto coat = loot::make("leather"); h->equip[coat->slot] = coat; }
   bool kept = record.is_object() && record.value("v", 0) == 1;
+  if (kept && heroes.empty() && record.contains("group") && record["group"].is_object()) {  // the first hero brings its group
+    group = record["group"].value("id", std::string());
+    members = record["group"].value("members", std::vector<std::string>());
+  }
   if (kept) restore(*h, record);  // the hero who came back up: all it grew and carries
   // a dive that starts below (tests, screenshots) skips the gatekeeper's rack: the weapon comes from the hello, an old
   // class name standing for the weapon it fought with
@@ -817,6 +821,19 @@ bool Game::free_action(Hero& h, const json& a) {
   if (t == "close") { h.shopping = false; return true; }
   if (t == "debug") { debug(h, a.value("w", "")); return true; }
   if (t == "path" || t == "slot" || t == "slotel") { fire_action(h, t, a); return true; }
+  if (t == "talents") {  // the Pyre by Charnfen's great fire: the gifts change before the hero goes down
+    if (floor->depth != 0 || !a.contains("v") || !a["v"].is_object()) return true;
+    std::map<std::string, int> want;
+    for (auto& [k, v] : a["v"].items()) if (v.is_number_integer()) want[k] = v.get<int>();
+    int credit = h.tal("credit");
+    h.talents = pyre::clean(want);
+    h.heal = std::max(0, h.heal + 2 * (h.tal("credit") - credit));
+    refit(h);
+    Stats st = stats(h);
+    h.hp = st.maxhp; h.mana = st.maxmana;
+    h.say("The Pyre's warmth settles in you.", 0xFFB040);
+    return true;
+  }
   return false;
 }
 
@@ -967,6 +984,15 @@ void Game::descend(Hero& h) {
   if (floor->depth == 0 && h.el < 0) {
     h.say("A guard bars the way with his crossbow. \"Nobody goes down cold. Take a coal from the great fire first.\"", 0xD2B48C);
     return;
+  }
+  if (floor->depth == 0 && !members.empty()) {  // a group goes down whole, or not at all
+    std::string missing;
+    for (auto& n : members) {
+      bool here = false;
+      for (auto& [id, o] : heroes) if (o->name == n && !o->away) here = true;
+      if (!here) missing += (missing.empty() ? "" : ", ") + n;
+    }
+    if (!missing.empty()) { h.say("A guard shakes his head. \"Your group goes down together. Still missing: " + missing + ".\"", 0xD2B48C); return; }
   }
   if (!floor->embers.empty()) { h.say("A fallen friend's ember still lies on this map. Take it up first, or it goes out in the dark.", 0xFFA040); return; }
   h.gone = true;
