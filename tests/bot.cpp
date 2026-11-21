@@ -72,10 +72,12 @@ static json dodge(Game& g, Hero& h) {
 }
 
 static int bot_elem = 0;  // BOTELEM=n, else one after another
+static int bot_force_elem = -1;  // the matrix (BOTMATRIX) sets each element in turn
+static int dive_depth = 0;       // how deep the last dive came
 static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from the rack
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
-  if (h.el < 0) return {{"t", "coal"}, {"e", std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
+  if (h.el < 0) return {{"t", "coal"}, {"e", bot_force_elem >= 0 ? bot_force_elem : std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
   if (g.floor->rest && g.depth > 0) {  // at a waystation's fire: a path where one is due, and a second coal for keys [2]-[3]
     for (int s = 0; s < 3; ++s) if (h.srank[s] >= data::PATH_RANK && h.path[s] < 0) g.free_action(h, {{"t", "path"}, {"s", s}, {"c", (h.pid + s) % 2}});
     if (h.el2 < 0 && !std::getenv("BOTONECOAL")) {
@@ -280,6 +282,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
               g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
               gear.c_str());
   if (std::getenv("BOTPACE")) std::printf("   pace (level at each depth): %s\n", pace.c_str());
+  dive_depth = g.depth;
   return g.state == "won" ? g.record(*g.heroes.begin()->second) : json();
 }
 
@@ -317,6 +320,29 @@ int main() {
   }
   const char* only = std::getenv("BOTWEAPON") ? std::getenv("BOTWEAPON") : std::getenv("BOTCLASS");
   int seeds = std::getenv("BOTSEEDS") ? std::atoi(std::getenv("BOTSEEDS")) : 2;
+  // BOTMATRIX=1: every weapon (or BOTWEAPON) with every element, BOTSEEDS dives each; a table of wins and depth at the end
+  if (std::getenv("BOTMATRIX")) {
+    std::vector<std::string> rows;
+    for (auto& w : WEAPONS)
+      if (!only || w.key == only) {
+        std::string row = w.key;
+        row.resize(10, ' ');
+        for (int e = 0; e < elem::N; ++e) {
+          bot_force_elem = e;
+          int wins = 0, depth = 0;
+          for (uint64_t s = 1; s <= uint64_t(seeds); ++s) { if (!run({w.key}, 100 * uint64_t(e) + s).is_null()) ++wins; depth += dive_depth; }
+          char b[32];
+          std::snprintf(b, sizeof b, "  %d/%d d%4.1f", wins, seeds, double(depth) / seeds);
+          row += b;
+        }
+        rows.push_back(row);
+      }
+    std::printf("\nMATRIX (wins/dives, mean depth reached) ");
+    for (int e = 0; e < elem::N; ++e) std::printf("| %s ", elem::NAME[e]);
+    std::printf("\n");
+    for (auto& r : rows) std::printf("MATRIX %s\n", r.c_str());
+    return 0;
+  }
   for (auto& w : WEAPONS)
     if (!only || w.key == only)
       for (uint64_t s = 1; s <= uint64_t(seeds); ++s) run({w.key}, s);
