@@ -213,6 +213,10 @@ void Client::draw_hero() {
   bar(L + 13, r++, W2 - 13, next > prev ? double(xp - prev) / (next - prev) : 0, 0xC09040);
   int frost = snap_.value("frost", 0);
   ++r;
+  if (int sc = me.value("scars", 0)) {
+    text(L, r++, "Scarred " + std::to_string(sc) + (sc == 1 ? " time" : " times") + ": " + std::to_string(std::min(70, 10 * sc)) + "% less life", 0xC08070, PAPER);
+    ++r;
+  }
   text(L, r++, (frost ? "Frost " + std::to_string(frost) : std::string("Normal")) + ", depth " + std::to_string(snap_.value("depth", 0)) + ", " +
                    std::to_string(me.value("kills", 0)) + " slain", DIM, PAPER);
   ++r;
@@ -753,34 +757,113 @@ json Client::grave_for(int x, int y) {
   return g;
 }
 
+// The graves of Charnfen (mock 23): two lists, alone and together, ranked by the deepest point reached; the chosen
+// grave's stone below. Walking into a stone opens it at that hero.
+std::vector<json> Client::grave_list(bool coop) const {
+  std::vector<json> l;
+  for (auto& g : graves_) if (g.value("coop", false) == coop) l.push_back(g);
+  std::stable_sort(l.begin(), l.end(), [](const json& a, const json& b) {
+    return a.value("frost", 0) != b.value("frost", 0) ? a.value("frost", 0) > b.value("frost", 0) : a.value("depth", 0) > b.value("depth", 0);
+  });
+  return l;
+}
+
+void Client::graves_key(SDL_Keycode k) {
+  int n = int(grave_list(graves_tab_ == 1).size());
+  if (k == SDLK_ESCAPE) { over_ = Over::None; return; }
+  if (k == SDLK_TAB || k == SDLK_LEFT || k == SDLK_RIGHT) { graves_tab_ ^= 1; grave_sel_ = 0; return; }
+  if (n && (k == SDLK_UP || k == SDLK_KP_8)) grave_sel_ = (std::max(0, grave_sel_) + n - 1) % n;
+  if (n && (k == SDLK_DOWN || k == SDLK_KP_2)) grave_sel_ = (std::max(0, grave_sel_) + 1) % n;
+}
+
 void Client::draw_grave() {
-  json g = json::object();
-  // grave_at_ is the stone's order; find the stone again by walking the list the same way
-  int fl = snap_.value("floor", -1);
-  if (maps_.count(fl)) {
-    const std::string& map = maps_[fl];
-    for (int i = 0; i < W * H && i < int(map.size()); ++i)
-      if (tile_of(map[i]) == data::GRAVE) { json c = grave_for(i % W, i / W); if (c.value("i", -2) == grave_at_) { g = c; break; } }
+  // grave_at_ (set when a stone is walked into) picks the list and the hero, once
+  if (grave_at_ >= 0) {
+    int fl = snap_.value("floor", -1);
+    grave_sel_ = -1;
+    if (maps_.count(fl)) {
+      const std::string& map = maps_[fl];
+      for (int i = 0; i < W * H && i < int(map.size()); ++i)
+        if (tile_of(map[i]) == data::GRAVE) {
+          json c = grave_for(i % W, i / W);
+          if (c.value("i", -2) != grave_at_) continue;
+          graves_tab_ = c.value("list", std::string("solo")) == "co-op" ? 1 : 0;
+          if (c.contains("name")) grave_sel_ = c.value("place", 1) - 1;
+          break;
+        }
+    }
+    grave_at_ = -1;
   }
+  auto list = grave_list(graves_tab_ == 1);
   int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 50), h = std::min(chh, 21);
+  int w = std::min(cw, 86), h = std::min(chh, 46);
   int x = (cw - w) / 2, y = (chh - h) / 2;
-  window(x, y, w, h, "A grave", Mat::Stone);
-  int r = y + 2;
-  auto centre = [&](const std::string& t, int col) { text(x + (w - ulen(t)) / 2, r, t, col, win_bg_); r += 2; };
-  if (!g.contains("name")) {
-    r += 4;
-    centre("An old stone. The name is worn away.", 0x8A8478);
-    centre("Snow lies on it.", 0x6A6458);
-  } else {
-    centre("HERE LIES", 0x8A8478);
-    centre(g.value("name", std::string("?")), 0xE8E0D0);
-    centre(g.value("title", std::string("")) + ", level " + std::to_string(g.value("lvl", 1)), 0xB0A890);
-    int frost = g.value("frost", 0);
-    centre(std::string(frost ? "Frost " + std::to_string(frost) : std::string("Normal")) + ", " + g.value("zone", std::string("")) + ", depth " + std::to_string(g.value("depth", 0)), 0x90C8FF);
-    centre("slain by " + g.value("killer", std::string("the dark")), 0xC08070);
-    centre(std::to_string(g.value("kills", 0)) + " foes went before", 0x8A8478);
-    centre(std::string(g.value("list", std::string("solo")) == "solo" ? "Solo" : "Co-op") + ": number " + std::to_string(g.value("place", 1)), GOLD);
+  window(x, y, w, h, "THE GRAVES OF CHARNFEN", Mat::Stone);
+  int sy = y + h - 20, sw = 46, sx = x + (w - sw) / 2;  // the stone
+  int bg = win_bg_;
+  // tabs
+  const char* tabs[] = {" Alone ", " Together "};
+  for (int t = 0, tx = x + 3; t < 2; ++t) {
+    bool on = t == graves_tab_;
+    if (on) for (int k = 0; k < ulen(tabs[t]); ++k) put(tx + k, y + 3, ' ', INK, GOLD);
+    text(tx, y + 2, tabs[t], on ? 0x201810 : 0x8A8478, on ? GOLD : bg);
+    buttons_.push_back({tx, y + 2, ulen(tabs[t]), 1, "", std::string("gtab:") + char('0' + t)});
+    tx += ulen(tabs[t]) + 2;
   }
-  rich(x + w - 12, y + h - 2, "[Esc] back", INK, win_bg_);
+  int cN = x + 3, cName = x + 7, cTitle = x + 22, cDeep = x + 38, cFell = x + 60;
+  int r = y + 4;
+  text(cN, r, "#", GOLD, bg); text(cName, r, "Name", GOLD, bg); text(cTitle, r, "Title", GOLD, bg);
+  text(cDeep, r, "Deepest", GOLD, bg); text(cFell, r, "Fell", GOLD, bg);
+  r += 2;
+  int rows = std::max(2, (sy - 3 - r) / 2), first = std::clamp(grave_sel_ - rows / 2, 0, std::max(0, int(list.size()) - rows));
+  auto el_col = [](const json& g) { int e = g.value("el", -1); return e >= 0 && e < elem::N ? elem::COL[e] : 0xB0A890; };
+  auto deep = [](const json& g) {
+    int f = g.value("frost", 0);
+    std::string z = g.value("zone", std::string(""));
+    if (z.rfind("The ", 0) == 0) z = z.substr(4);
+    return (f ? "Frost " + std::to_string(f) : std::string("Normal")) + " - " + z;
+  };
+  if (list.empty()) text(cName, r, graves_tab_ ? "No hero who went down with friends lies here yet." : "No hero lies here yet.", 0x8A8478, bg);
+  for (int i = first; i < int(list.size()) && i < first + rows; ++i, r += 2) {
+    auto& g = list[i];
+    bool on = i == grave_sel_;
+    int rb = on ? 0x3A3630 : bg;
+    if (on) for (int k = x + 1; k < x + w - 1; ++k) { put(k, r, ' ', INK, rb); put(k, r + 1, ' ', INK, rb); }
+    if (on) put(x + 2, r, 0x25BA, GOLD, rb);
+    text(cN, r, std::to_string(i + 1), 0xC8C0B0, rb);
+    text(cName, r, g.value("name", std::string("?")).substr(0, 14), 0xE8E0D0, rb);
+    text(cTitle, r, g.value("title", std::string("-")).substr(0, 15), el_col(g), rb);
+    text(cDeep, r, deep(g).substr(0, 21), 0x90C8FF, rb);
+    text(cFell, r, g.value("killer", std::string("the dark")).substr(0, size_t(std::max(4, x + w - 2 - cFell))), 0x8A8478, rb);
+    buttons_.push_back({x + 1, r, w - 2, 2, "", "grave:" + std::to_string(i)});
+  }
+  // the stone of the chosen hero
+  for (int k = x + 1; k < x + w - 1; ++k) put(k, sy - 2, 0x2500, 0x5A5650, bg);
+  for (int j = sy; j < sy + 16; ++j)
+    for (int k = sx; k < sx + sw; ++k) put(k, j, ' ', INK, 0x4A4640);
+  for (int k = sx - 2; k < sx + sw + 2; ++k) put(k, sy + 16, 0x2580, 0x3A3026, bg);
+  int sr = sy + 1;
+  auto line = [&](const std::string& t, int col) { text(sx + (sw - ulen(t)) / 2, sr, t, col, 0x4A4640); sr += 2; };
+  if (grave_sel_ < 0 || grave_sel_ >= int(list.size())) {
+    sr += 4;
+    line("An old stone. The name is worn away.", 0x9A9488);
+    line("Snow lies on it.", 0x7A7468);
+  } else {
+    auto& g = list[grave_sel_];
+    line("┼", 0xC8C0B0);
+    std::string name = g.value("name", std::string("?"));
+    for (auto& c : name) c = char(std::toupper(static_cast<unsigned char>(c)));
+    line(name, 0xF0E8D8);
+    line(g.value("title", std::string("")) + " - level " + std::to_string(g.value("lvl", 1)), el_col(g));
+    std::string kit = g.value("weapon", std::string(""));
+    int e1 = g.value("el", -1), e2 = g.value("el2", -1);
+    if (e1 >= 0 && e1 < elem::N) kit += std::string(kit.empty() ? "" : " - ") + elem::NAME[e1] + (e2 >= 0 && e2 < elem::N ? std::string(" and ") + elem::NAME[e2] : "");
+    if (!kit.empty()) line(kit, 0xC8C0B0);
+    int f = g.value("frost", 0);
+    line("reached " + (f ? "Frost " + std::to_string(f) : std::string("Normal")) + ", " + g.value("zone", std::string("")), 0xC8C0B0);
+    line("felled by " + g.value("killer", std::string("the dark")), 0xC8C0B0);
+    int rk = g.value("rekindled", 0);
+    line(std::to_string(g.value("kills", 0)) + " foes went before" + (rk ? ", rekindled " + std::to_string(rk) + (rk == 1 ? " time" : " times") : std::string()), 0xA8A090);
+  }
+  rich(x + 3, y + h - 2, "[↑↓] grave   [Tab] alone / together   [Esc] leave", INK, bg);
 }
