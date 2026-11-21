@@ -30,6 +30,7 @@ const char* const TOOLS[][2] = {
     {"gold", "Get 500 gold"},
     {"next", "Go on to the next map"},
     {"boss", "Jump to this zone's boss map"},
+    {"music", "Music: classic / lab"},
     {"copy", "Copy all bug reports to the clipboard"},
     {"folder", "Open the folder with the reports and screenshots"},
     {"clear", "Start a new bug list (the old one goes to bugs-sent.txt)"},
@@ -49,6 +50,7 @@ std::vector<std::string> Client::test_items() const {
       "Perks: choosing a perk on level up",
       "Waystation: rest, route choice to the next zone",
       "Music: each zone its own, boss music, music off",
+      "Music lab: the new music ideas (switch in Options or here)",
       "Save and continue a dive later",
       "Death and the end screen",
       "The Pyre: Sparks, gifts, Frost levels",
@@ -181,7 +183,12 @@ void Client::save_bug() {
 void Client::debug_tool(int i) {
   std::string w = TOOLS[i][0];
   std::string dir = pref_dir();
-  if (w == "copy") {
+  if (w == "music") {
+    music_lab_ = !music_lab_;
+    music_.use_lab(music_lab_);
+    save_settings();
+    dbg_msg_ = std::string("The music is now ") + (music_lab_ ? "the lab." : "classic.");
+  } else if (w == "copy") {
     std::ifstream f(dir + "bugs.txt");
     std::stringstream b;
     b << f.rdbuf();

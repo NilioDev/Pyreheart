@@ -295,15 +295,16 @@ void Client::apply_volume() { music_.volume(music_on_ ? music_vol_ / 10.0f : 0);
 
 void Client::draw_options() {
   int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 46), h = 16;
+  int w = std::min(cw, 46), h = 19;
   int x = (cw - w) / 2, y = (chh - h) / 2;
   window(x, y, w, h, "Options");
   struct Row { const char* name; std::string val; int level; const char* note; };
   Row rows[] = {{"Music volume", "", music_on_ ? music_vol_ : 0, music_on_ ? "" : "music is off on the title screen"},
                 {"Sound volume", "", sound_vol_, "no sounds yet; they come with the lab"},
-                {"Floating numbers", numbers_on_ ? "on" : "off", -1, "the harm dealt, rising over the map"}};
+                {"Floating numbers", numbers_on_ ? "on" : "off", -1, "the harm dealt, rising over the map"},
+                {"Music", music_lab_ ? "lab" : "classic", -1, music_lab_ ? "the music lab: new ideas to test" : "the music as it always was"}};
   int r = y + 2;
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     bool on = i == opt_sel_;
     int bg = on ? SEL : PAPER;
     for (int k = x + 1; k < x + w - 1; ++k) { put(k, r, ' ', INK, bg); put(k, r + 1, ' ', INK, bg); }
@@ -325,15 +326,16 @@ void Client::draw_options() {
 void Client::options_key(SDL_Keycode k) {
   int d = k == SDLK_LEFT || k == SDLK_KP_4 ? -1 : k == SDLK_RIGHT || k == SDLK_KP_6 || k == SDLK_RETURN || k == SDLK_KP_ENTER ? 1 : 0;
   if (k == SDLK_ESCAPE) { over_ = snap_.is_object() && screen_ == Screen::Game ? Over::Menu : Over::None; return; }
-  if (k == SDLK_UP || k == SDLK_KP_8) { opt_sel_ = (opt_sel_ + 2) % 3; return; }
-  if (k == SDLK_DOWN || k == SDLK_KP_2) { opt_sel_ = (opt_sel_ + 1) % 3; return; }
+  if (k == SDLK_UP || k == SDLK_KP_8) { opt_sel_ = (opt_sel_ + 3) % 4; return; }
+  if (k == SDLK_DOWN || k == SDLK_KP_2) { opt_sel_ = (opt_sel_ + 1) % 4; return; }
   if (!d) return;
   if (opt_sel_ == 0) {
     if (!music_on_ && d > 0) { music_on_ = true; music_vol_ = std::max(1, music_vol_); }
     else music_vol_ = std::clamp(music_vol_ + d, 0, 10);
     apply_volume();
   } else if (opt_sel_ == 1) sound_vol_ = std::clamp(sound_vol_ + d, 0, 10);
-  else numbers_on_ = !numbers_on_;
+  else if (opt_sel_ == 2) numbers_on_ = !numbers_on_;
+  else { music_lab_ = !music_lab_; music_.use_lab(music_lab_); }
   save_settings();
 }
 

@@ -49,6 +49,7 @@ Client::Client(tcod::Context& ctx) : ctx_(ctx), con_(WIDE_W, WIDE_H) {
   pick_layout();
   // the watch has less to spare: half the samples
   apply_volume();
+  music_.use_lab(music_lab_);
   music_.open(layout_ == Layout::Watch ? 22050 : 44100);
 }
 
@@ -90,6 +91,7 @@ void Client::load_settings() {
     if (line.rfind("addr=", 0) == 0) addr_ = line.substr(5);
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
     if (line.rfind("numbers=", 0) == 0) numbers_on_ = line[8] != '0';
+    if (line.rfind("music_lab=", 0) == 0) music_lab_ = line[10] != '0';
     if (line.rfind("music_volume=", 0) == 0) music_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
     if (line.rfind("sound_volume=", 0) == 0) sound_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
     auto list = [&](size_t from, auto fn) {
@@ -124,7 +126,7 @@ void Client::remember_window() {
 
 void Client::save_settings() {
   std::ofstream f(pref_file());
-  f << "name=" << name_ << "\naddr=" << addr_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\nmusic_volume=" << music_vol_ << "\nsound_volume=" << sound_vol_ << "\n";
+  f << "name=" << name_ << "\naddr=" << addr_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\nmusic_lab=" << (music_lab_ ? 1 : 0) << "\nmusic_volume=" << music_vol_ << "\nsound_volume=" << sound_vol_ << "\n";
   if (layout_ == Layout::Wide) {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
@@ -496,6 +498,19 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (screen_ == Screen::Listen) {
     if (k == SDLK_F) { listen_fight_ = !listen_fight_; return; }
     if (k == SDLK_N) { music_.renew(); return; }
+    if (k == SDLK_M) { music_lab_ = !music_lab_; music_.use_lab(music_lab_); save_settings(); return; }
+    if (music_lab_) {  // the lab's hooks, by hand
+      auto& sc = listen_scene_;
+      auto* lab = music_.lab_player();
+      if (k == SDLK_T) { sc.threat = sc.threat < .25f ? .5f : sc.threat < .75f ? 1.f : 0.f; return; }
+      if (k == SDLK_B) { sc.build = (sc.build + 1) % 3; return; }
+      if (k == SDLK_H) { sc.life = sc.life < .5f ? 1.f : .15f; return; }
+      if (k == SDLK_C) { sc.cold = sc.cold < .5f ? 1.f : 0.f; return; }
+      if (k == SDLK_G) { sc.ghost = !sc.ghost; return; }
+      if (k == SDLK_E) { sc.carrier = !sc.carrier; return; }
+      if (k == SDLK_D) { sc.dead = !sc.dead; return; }
+      if (lab && k >= SDLK_1 && k <= SDLK_4) { lab->jingle(music_lab::Jingle(k - SDLK_1)); return; }
+    }
     if (layout_ != Layout::Watch && (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_KP_4 || k == SDLK_KP_6)) {
       menu_ = (menu_ + LISTEN_ROWS) % (2 * LISTEN_ROWS);  // to the other column
       if (menu_ >= LISTEN_N) menu_ -= LISTEN_ROWS;
@@ -843,16 +858,67 @@ bool Client::in_circle(int x, int y) const {
 }
 
 // ------------------------------------------------------------------ the frame
+// the music lab follows the game more closely: how many foes are awake and near, the map of the zone, life, the
+// cold, death and the co-op ghost and ember; and it plays jingles at a great foe slain, a spark, a rare find, the end
+void Client::follow_lab() {
+  auto* lab = music_.lab_player();
+  if (!lab) return;
+  music_lab::Scene sc;
+  if (screen_ == Screen::Game && snap_.is_object() && snap_.contains("me")) {
+    const json& me = snap_["me"];
+    int mx = me["x"], my = me["y"];
+    float th = 0;
+    for (auto& e : snap_["ents"]) {
+      if (!e.value("awake", false) || e.value("rank", "") == "npc") continue;
+      int d = std::max(std::abs(e["x"].get<int>() - mx), std::abs(e["y"].get<int>() - my));
+      if (d > 12) continue;
+      std::string rk = e.value("rank", "");
+      th += (rk == "boss" ? 4.f : rk == "champion" || rk == "unique" ? 2.f : 1.f) * (d <= 4 ? 1.f : .6f);
+    }
+    sc.threat = std::min(1.f, th / 7);
+    int zf = snap_.value("zfloor", 0), zn = snap_.value("zfloors", 3);
+    sc.build = zf >= zn - 1 ? 2 : zf == 0 ? 0 : 1;
+    sc.life = float(me["hp"].get<int>()) / float(std::max(1, me["maxhp"].get<int>()));
+    sc.cold = std::clamp(.12f * snap_.value("frost", 0) + .5f * snap_.value("depth", 0) / 18.f, 0.f, 1.f);
+    std::string st = snap_.value("state", "play");
+    bool dead = me.value("dead", false) || me["hp"].get<int>() <= 0;
+    for (auto& h : snap_["heroes"])
+      if (h["pid"] == me["pid"]) { dead = dead || h.value("dead", false); sc.carrier = h.value("carry", 0) > 0; }
+    sc.dead = st == "over" || (dead && snap_["heroes"].size() <= 1);
+    sc.ghost = dead && !sc.dead;
+    if (sc.dead || sc.ghost) sc.life = 1;
+    // jingles
+    int slain = snap_.contains("slain") ? int(snap_["slain"].size()) : 0;
+    if (jl_slain_ >= 0 && slain > jl_slain_) lab->jingle(music_lab::J_BOSS);
+    jl_slain_ = slain;
+    if (jl_sparks_ >= 0 && sparks_ > jl_sparks_) lab->jingle(music_lab::J_SPARK);
+    jl_sparks_ = sparks_;
+    if (st == "won" && jl_state_ != "won") lab->jingle(music_lab::J_VICTORY);
+    jl_state_ = st;
+    for (auto& it : snap_["items"]) {
+      int col = it.value("col", 0);
+      if (col != data::rarity_col("rare") && col != data::rarity_col("unique")) continue;
+      std::string key = std::to_string(snap_.value("floor", 0)) + ":" + std::to_string(it["x"].get<int>()) + "," + std::to_string(it["y"].get<int>());
+      if (jl_items_.insert(key).second) lab->jingle(music_lab::J_LOOT);
+    }
+  } else { jl_slain_ = -1; jl_sparks_ = -1; jl_state_.clear(); }
+  if (screen_ == Screen::Listen) sc = listen_scene_;
+  lab->scene(sc);
+}
+
 // the music follows where you are: the title, an act, a waystation; a great foe awake makes it heavier
 void Client::update_music() {
   if (screen_ == Screen::Listen) {
     music_.mood(LISTEN[std::clamp(menu_, 0, LISTEN_N - 1)].mood, listen_fight_ && listen_foe(menu_));
     music_.volume(.7f);  // to listen, the music plays even when it is off for the game
+    follow_lab();
     return;
   }
   apply_volume();
+  follow_lab();
   if (screen_ != Screen::Game || !snap_.is_object()) { music_.mood(music::TITLE); return; }
   if (snap_.value("rest", false)) { music_.mood(music::REST); return; }
+  if (snap_.value("town", false) && music_.lab()) { music_.mood(music::TITLE, false, music_lab::CHARNFEN); return; }  // the lab's Charnfen theme
   // each zone its own mood, in the order of ACTS
   namespace m = music;
   static const m::Mood zone[] = {m::CRYPT, m::CAVES, m::FORGE, m::DEEP, m::CISTERN, m::CITY, m::VAULTS, m::BARRACKS, m::PRISON, m::SANCTUM};
@@ -1002,7 +1068,15 @@ void Client::draw_title() {
     centre(y, "Now: " + music_.describe(), 0xB4A078);
     if (listen_foe(menu_))
       centre(y + 2, std::string("[f] a great foe awake: ") + (listen_fight_ ? "yes" : "no"), listen_fight_ ? 0xFF8060 : GREY);
-    centre(y + 4, "[Enter] a new piece    [Esc] back", 0x808080);
+    centre(y + 4, std::string("[m] music: ") + (music_lab_ ? "lab" : "classic") + "    [Enter] a new piece    [Esc] back", 0x808080);
+    if (music_lab_ && layout_ != Layout::Watch) {
+      auto& sc = listen_scene_;
+      char b[160];
+      std::snprintf(b, sizeof b, "[t] threat %.1f  [b] map %d  [h] near death %s  [c] cold %s", sc.threat, sc.build + 1, sc.life < .5f ? "on" : "off", sc.cold > .5f ? "on" : "off");
+      centre(y + 6, b, 0x9CB4D2);
+      std::snprintf(b, sizeof b, "[g] ghost %s  [e] ember %s  [d] dying %s  [1-4] jingle: boss, spark, find, victory", sc.ghost ? "on" : "off", sc.carrier ? "on" : "off", sc.dead ? "on" : "off");
+      centre(y + 8, b, 0x9CB4D2);
+    }
   }
   if (!message_.empty()) centre(con_.get_height() - 3, message_, 0xFF8080);
 }

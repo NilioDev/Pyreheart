@@ -10,7 +10,7 @@
 #include <memory>
 #include <set>
 
-#include "music.hpp"
+#include "musicbox.hpp"
 #include "net.hpp"
 
 enum class Layout { Wide, Tall, Watch };
@@ -37,8 +37,13 @@ class Client {
   bool hosting_ = false, open_ = false, music_on_ = true, fullscreen_ = false;
   int win_w_ = 0, win_h_ = 0;
   bool listen_fight_ = false;
-  music::Player music_;
+  MusicBox music_;  // classic, or the lab
   void update_music();
+  void follow_lab();  // the music lab's hooks into the game
+  int jl_slain_ = -1, jl_sparks_ = -1;
+  std::string jl_state_;
+  std::set<std::string> jl_items_;
+  music_lab::Scene listen_scene_;  // the listening player can try the lab's hooks by hand
   std::string name_ = "Hero", addr_, message_;
   std::vector<std::string> found_;
 
@@ -52,6 +57,7 @@ class Client {
   struct Fx { json kw; double start; };
   std::vector<Fx> fx_;
   bool numbers_on_ = true;  // floating combat numbers
+  bool music_lab_ = false;  // the music lab instead of classic (plan.md section 4), to test
   bool waiting_ = false, pending_join_ = false;
   int sent_turn_ = -1;
   std::vector<int> ready_;

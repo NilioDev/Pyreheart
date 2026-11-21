@@ -32,7 +32,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
-        run: ctest --test-dir build -C Release -R "k5|net" --output-on-failure
+        run: ctest --test-dir build -C Release -R "k5|net|music" --output-on-failure
       - name: Gather
         shell: bash
         run: |

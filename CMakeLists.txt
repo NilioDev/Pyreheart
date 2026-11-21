@@ -47,7 +47,7 @@ target_include_directories(pyrecore PUBLIC src)
 target_link_libraries(pyrecore PUBLIC libtcod::libtcod nlohmann_json::nlohmann_json)
 
 # the game itself
-set(GAME_SOURCES src/main.cpp src/client.cpp src/scene.cpp src/town.cpp src/logo.cpp src/music.cpp src/fx.cpp src/net.cpp src/debug.cpp src/hud.cpp src/windows.cpp)
+set(GAME_SOURCES src/main.cpp src/client.cpp src/scene.cpp src/town.cpp src/logo.cpp src/music.cpp src/music_lab.cpp src/fx.cpp src/net.cpp src/debug.cpp src/hud.cpp src/windows.cpp)
 if(ANDROID)
     add_library(pyreheart SHARED ${GAME_SOURCES})
     set_target_properties(pyreheart PROPERTIES OUTPUT_NAME main)
@@ -77,6 +77,19 @@ if(WIN32)
     target_link_libraries(net_test PRIVATE ws2_32 iphlpapi)
 endif()
 add_test(NAME net COMMAND net_test)
+
+# the music's floats the same on every machine: no fused multiply-adds (clang on ARM makes them by itself)
+if(NOT MSVC)
+    set_source_files_properties(src/music.cpp src/music_lab.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+endif()
+# the safety net under the classic music: fails if src/music.cpp plays anything different
+add_executable(music_classic_test tests/music_classic_test.cpp src/music.cpp)
+target_link_libraries(music_classic_test PRIVATE pyrecore)
+add_test(NAME music_classic COMMAND music_classic_test)
+
+add_executable(music_lab_test tests/music_lab_test.cpp src/music_lab.cpp)
+target_link_libraries(music_lab_test PRIVATE pyrecore)
+add_test(NAME music_lab COMMAND music_lab_test)
 
 # renders the music's moods to WAV files, to hear them without playing
 add_executable(music_preview tools/music_preview.cpp src/music.cpp)
