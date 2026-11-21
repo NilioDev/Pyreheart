@@ -200,8 +200,10 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
       }
   }
   for (size_t i = 0; i < classes.size(); ++i) g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents);
-  int steps = 0;
+  int steps = 0, last_depth = -1;
+  std::string pace;  // the first hero's level as each new depth is reached (BOTPACE=1 prints it)
   while (g.state == "play" && steps < 20000) {
+    if (g.depth != last_depth) { last_depth = g.depth; pace += std::to_string(g.heroes.begin()->second->lvl) + (g.floor->rest ? "r " : " "); }
     std::map<int, json> acts;
     for (auto& [id, h] : g.heroes) if (h->present()) acts[id] = choose(g, *h);
     if (std::getenv("BOTACT")) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%5d %d,%d hp%d mp%d %s\n", g.turn + 1, h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
@@ -226,6 +228,7 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
   std::printf("%-22s seed %2llu: %-4s depth %2d%s turn %5d lvl %s kills %3d gold %4d | %s | %s\n", names.c_str(), (unsigned long long)seed,
               g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
               gear.c_str());
+  if (std::getenv("BOTPACE")) std::printf("   pace (level at each depth): %s\n", pace.c_str());
 }
 
 int main() {

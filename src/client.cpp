@@ -40,32 +40,6 @@ int mixc(int a, int b, double f) {
 }
 int sgn(int v) { return (v > 0) - (v < 0); }
 
-// key name like [q], drawn as a gold keycap in the help and tips
-const std::vector<std::pair<std::string, std::string>> HELP = {
-    {"", "Pyreheart. Go down eighteen floors under Charnfen, past the crypt, the caves and the forge, and tear the Pyreheart out of the Ashen King."},
-    {"", ""},
-    {"[arrows] [numpad]", "walk; walk into a foe to strike it. Diagonals: numpad, or [Home] [PgUp] [End] [PgDn]."},
-    {"[.] [numpad 5]", "wait a moment."},
-    {"[1] [2] [3] [4]", "your skills: two at the start, the third at level 3, the fourth at level 6. A skill that needs a target lets you aim: [Tab] to the next foe, [Enter] to let go."},
-    {"[f]", "shoot with a bow."},
-    {"[q] [w]", "drink a healing or a mana potion."},
-    {"[i]", "your pack: [Enter] wear or use, [d] put down (anyone may take it), [t] give to the hero next to you."},
-    {"[p]", "choose a perk when you have gone up a level."},
-    {"[>]", "go down the stairs. With friends, the floor changes when all of you stand on the stairs."},
-    {"[l]", "look at what you see."},
-    {"[Esc]", "close a window; the game menu."},
-    {"[F11]", "full screen and back; the window remembers its size for the next time."},
-    {"[F12] [`]", "debug and testing: the test list, report a bug (with the seed and a screenshot), quick tools."},
-    {"", ""},
-    {"", "Blue foes are champions, gold ones are uniques: stronger, and they carry better things."},
-    {"", "Every fourth floor a great foe waits by the way down. After it comes a waystation with a fountain and a trader."},
-    {"", "The dead wake again at the next waystation, if their friends get there."},
-    {"", "Things you find are yours alone; what you put down, anyone may take."},
-    {"", "In your pack and at the trader, a green \u25b2 is better than what you wear, a red \u25bc worse, and ~ a trade."},
-    {"", ""},
-    {"", "Great foes show their heavy blows before they land, as a count on the ground. Red: step off it. Purple: a spell; stun the foe or hurt it hard to break it. Gold: the only safe ground, so stand in it."},
-    {"", "After its greatest blow a foe is spent for a moment and takes more harm. It fights harder at two thirds and at one third of its life."},
-};
 }  // namespace
 
 Client::Client(tcod::Context& ctx) : ctx_(ctx), con_(WIDE_W, WIDE_H) {
@@ -73,7 +47,7 @@ Client::Client(tcod::Context& ctx) : ctx_(ctx), con_(WIDE_W, WIDE_H) {
   load_settings();
   pick_layout();
   // the watch has less to spare: half the samples
-  music_.volume(music_on_ ? .7f : 0);
+  apply_volume();
   music_.open(layout_ == Layout::Watch ? 22050 : 44100);
 }
 
@@ -116,6 +90,8 @@ void Client::load_settings() {
     if (line.rfind("class=", 0) == 0) cls_ = std::clamp(std::atoi(line.c_str() + 6), 0, int(data::CLASSES.size()) - 1);
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
     if (line.rfind("numbers=", 0) == 0) numbers_on_ = line[8] != '0';
+    if (line.rfind("music_volume=", 0) == 0) music_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
+    if (line.rfind("sound_volume=", 0) == 0) sound_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
     if (line.rfind("sparks=", 0) == 0) sparks_ = std::max(0, std::atoi(line.c_str() + 7));
     if (line.rfind("frost_max=", 0) == 0) frost_max_ = std::clamp(std::atoi(line.c_str() + 10), 0, pyre::FROST_MAX);
     if (line.rfind("frost=", 0) == 0) frost_ = std::max(0, std::atoi(line.c_str() + 6));
@@ -154,7 +130,7 @@ void Client::remember_window() {
 
 void Client::save_settings() {
   std::ofstream f(pref_file());
-  f << "name=" << name_ << "\naddr=" << addr_ << "\nclass=" << cls_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\n";
+  f << "name=" << name_ << "\naddr=" << addr_ << "\nclass=" << cls_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\nmusic_volume=" << music_vol_ << "\nsound_volume=" << sound_vol_ << "\n";
   if (layout_ == Layout::Wide) {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
@@ -287,7 +263,7 @@ void Client::apply(const json& s) {
     const std::string& sn = s["seen"].get_ref<const std::string&>();
     for (int i = 0; i < W * H && i < int(sn.size()); ++i) if (sn[i] == '1') seen[i] = 1;
   }
-  for (auto& l : s["log"]) log_.push_back({l[0], l[1]});
+  for (auto& l : s["log"]) { log_.push_back({l[0], l[1]}); if (l[1] == 0x9CC89C) note_tip(l[0]); }
   while (log_.size() > 300) log_.pop_front();
   double t = now();
   for (auto& f : s["fx"]) fx_.push_back({f, t});
@@ -374,7 +350,8 @@ void Client::act(const std::string& what) {
   else if (what == "down") send({{"t", "down"}});
   else if (what == "pack") { over_ = Over::Pack; sel_ = 0; }
   else if (what == "perk") { if (!me["choice"].is_null()) { over_ = Over::Perk; sel_ = 0; } else log_.push_back({"No perk to choose now.", GREY}); }
-  else if (what == "help") over_ = Over::Help;
+  else if (what == "help") open_book();
+  else if (what == "hero") over_ = Over::Hero;
   else if (what == "look") begin_aim("look");
   else if (what == "shoot") { if (me.value("bow", false)) begin_aim("shoot"); else log_.push_back({"You have no bow.", GREY}); }
   else if (what.rfind("skill", 0) == 0) {
@@ -439,6 +416,7 @@ void Client::event(SDL_Event& ev) {
 void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (k == SDLK_AC_BACK) k = SDLK_ESCAPE;  // the back button or swipe on a phone or watch
   if (screen_ == Screen::Intro) { screen_ = Screen::Title; menu_ = 0; return; }
+  if (over_ == Over::Book) { book_key(k); return; }
   bool shift = mod & SDL_KMOD_SHIFT;
   if (screen_ == Screen::Name || screen_ == Screen::Join) {
     std::string& s = screen_ == Screen::Name ? name_ : addr_;
@@ -502,15 +480,11 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       if (!epis_.empty()) epis_.pop_front();
       if (epis_.empty()) over_ = Over::None; else epi_start_ = now();
       return;
-    case Over::Help:
-      over_ = Over::None;
-      return;
-    case Over::Menu:
-      if (k == SDLK_ESCAPE) over_ = Over::None;
-      else if (k == SDLK_M) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
-      else if (k == SDLK_N) { numbers_on_ = !numbers_on_; save_settings(); }
-      else if (k == SDLK_D) open_debug();
-      else if (k == SDLK_Q || enter) { link_.reset(); host_.reset(); screen_ = Screen::Title; over_ = Over::None; menu_ = 0; snap_ = json(); }
+    case Over::Book: book_key(k); return;
+    case Over::Menu: menu_key(k); return;
+    case Over::Options: options_key(k); return;
+    case Over::Hero:
+      if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
     case Over::Target: {
       if (k == SDLK_ESCAPE) { over_ = Over::None; return; }
@@ -558,7 +532,9 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       return;
     case Over::None: break;
   }
-  if (k == SDLK_ESCAPE) { over_ = Over::Menu; return; }
+  if (k == SDLK_ESCAPE) { over_ = Over::Menu; menu_sel_ = 0; return; }
+  if (k == SDLK_C) { over_ = Over::Hero; return; }
+  if (k == SDLK_O) { over_ = Over::Options; opt_sel_ = 0; return; }
   if (me.value("dead", false) || me.value("gone", false)) return;
   if (dx || dy) { send({{"t", "move"}, {"dx", dx}, {"dy", dy}}); return; }
   if ((k == SDLK_PERIOD && shift) || k == SDLK_GREATER) { act("down"); return; }
@@ -620,11 +596,11 @@ void Client::click(int x, int y, bool down) {
       if (it == "Go on with the dive") start(true, false, true);
       else if (it == "Dive alone" || it == "Host a game for friends") { hosting_ = it != "Dive alone"; screen_ = Screen::Name; SDL_StartTextInput(ctx_.get_sdl_window()); }
       else if (it == "Join a game") { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
-      else if (it == "How to play") over_ = Over::Help, screen_ = Screen::Title;
+      else if (it == "How to play") { screen_ = Screen::Title; open_book(); }
       else if (it == "Listen to the music") { screen_ = Screen::Listen; menu_ = 0; }
       else if (it.rfind("The Pyre", 0) == 0) { screen_ = Screen::Pyre; pyre_sel_ = 0; }
       else if (it.rfind("Frost:", 0) == 0) { frost_ = (std::min(frost_, frost_max_) + 1) % (frost_max_ + 1); save_settings(); }
-      else if (it.rfind("Music:", 0) == 0) { music_on_ = !music_on_; music_.volume(music_on_ ? .7f : 0); save_settings(); }
+      else if (it.rfind("Music:", 0) == 0) { music_on_ = !music_on_; apply_volume(); save_settings(); }
       else running = false;
     } else if (screen_ == Screen::Listen) {
       // a tap on a place plays it; a tap on the one playing writes a new piece; below the list, back
@@ -667,13 +643,17 @@ void Client::click(int x, int y, bool down) {
   if (snap_.value("state", "play") != "play") { link_.reset(); host_.reset(); screen_ = Screen::Title; menu_ = 0; snap_ = json(); return; }
   for (auto& b : buttons_)
     if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
-      if (b.action.rfind("sel:", 0) == 0) { sel_ = std::atoi(b.action.c_str() + 4); key(SDLK_RETURN, SDL_KMOD_NONE); }
-      else if (b.action.rfind("key:", 0) == 0) key(SDL_Keycode(std::atoi(b.action.c_str() + 4)), SDL_KMOD_NONE);
+      int arg = b.action.find(':') != std::string::npos ? std::atoi(b.action.c_str() + b.action.find(':') + 1) : 0;
+      if (b.action.rfind("sel:", 0) == 0) { sel_ = arg; key(SDLK_RETURN, SDL_KMOD_NONE); }
+      else if (b.action.rfind("key:", 0) == 0) key(SDL_Keycode(arg), SDL_KMOD_NONE);
+      else if (b.action.rfind("menu:", 0) == 0) { if (menu_sel_ == arg) menu_do(arg); else menu_sel_ = arg; }
+      else if (b.action.rfind("opt:", 0) == 0) { if (opt_sel_ == arg) options_key(SDLK_RETURN); else opt_sel_ = arg; }
+      else if (b.action.rfind("book:", 0) == 0) { book_ch_ = arg; book_scroll_ = 0; book_why_.clear(); }
       else if (b.action == "close") key(SDLK_ESCAPE, SDL_KMOD_NONE);
       else { over_ = Over::None; act(b.action); }
       return;
     }
-  if (over_ == Over::Help || over_ == Over::Menu) { over_ = Over::None; return; }
+  if (over_ == Over::Book || over_ == Over::Menu || over_ == Over::Hero || over_ == Over::Options) { over_ = Over::None; return; }
   if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
   if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk) return;
   // a tap on the map
@@ -759,14 +739,7 @@ int Client::wrap(int x, int y, int w, const std::string& s, int fg, int max_line
   }
   return line + 1;
 }
-void Client::box(int x, int y, int w, int h, const std::string& title) {
-  for (int j = y; j < y + h; ++j) for (int i = x; i < x + w; ++i) put(i, j, ' ', WHITE, PANEL);
-  for (int i = x; i < x + w; ++i) { put(i, y, 0x2500, DIM, PANEL); put(i, y + h - 1, 0x2500, DIM, PANEL); }
-  for (int j = y; j < y + h; ++j) { put(x, j, 0x2502, DIM, PANEL); put(x + w - 1, j, 0x2502, DIM, PANEL); }
-  put(x, y, 0x250C, DIM, PANEL); put(x + w - 1, y, 0x2510, DIM, PANEL);
-  put(x, y + h - 1, 0x2514, DIM, PANEL); put(x + w - 1, y + h - 1, 0x2518, DIM, PANEL);
-  if (!title.empty()) text(x + 2, y, " " + title + " ", GOLD, PANEL);
-}
+void Client::box(int x, int y, int w, int h, const std::string& title) { window(x, y, w, h, title); }
 void Client::bar(int x, int y, int w, int val, int max, int col, const std::string& label) {
   int fill = max > 0 ? std::clamp(val * w / max, 0, w) : 0;
   for (int i = 0; i < w; ++i) put(x + i, y, ' ', WHITE, i < fill ? scale(col, .55) : scale(col, .15));
@@ -785,7 +758,7 @@ void Client::update_music() {
     music_.volume(.7f);  // to listen, the music plays even when it is off for the game
     return;
   }
-  music_.volume(music_on_ ? .7f : 0);
+  apply_volume();
   if (screen_ != Screen::Game || !snap_.is_object()) { music_.mood(music::TITLE); return; }
   if (snap_.value("rest", false)) { music_.mood(music::REST); return; }
   // each zone its own mood, in the order of ACTS
@@ -813,7 +786,7 @@ void Client::frame() {
   if (screen_ == Screen::Game) draw_game();
   else if (screen_ == Screen::Pyre) draw_pyre();
   else draw_title();
-  if (over_ == Over::Help) draw_help();
+  if (over_ == Over::Book) { dim_all(.3); draw_book(); }
   TCOD_ViewportOptions vp{};
   vp.tcod_version = TCOD_COMPILEDVERSION;
   vp.keep_aspect = true;
@@ -1021,10 +994,12 @@ void Client::draw_game() {
   if (over_ == Over::None && !me["choice"].is_null() && layout_ != Layout::Watch) text(vx_ + 1, vy_ + vh_ - 1, "[p] a new perk", KEY);
   if (waiting_ && snap_["heroes"].size() > 1) text(vx_ + 1, vy_ + (snap_.contains("boss") ? 2 : 0), "waiting for the others...", GREY);
   switch (over_) {
-    case Over::Pack: draw_pack(); break;
-    case Over::Shop: draw_shop(); break;
-    case Over::Perk: draw_perk(); break;
-    case Over::Menu: draw_menu(); break;
+    case Over::Pack: dim_all(.3); draw_pack(); break;
+    case Over::Shop: dim_all(.3); draw_shop(); break;
+    case Over::Perk: dim_all(.3); draw_perk(); break;
+    case Over::Menu: dim_all(.3); draw_menu(); break;
+    case Over::Hero: dim_all(.3); draw_hero(); break;
+    case Over::Options: dim_all(.3); draw_options(); break;
     case Over::Ring: draw_ring(); break;
     case Over::Epigraph: draw_epigraph(); break;
     default: break;
@@ -1324,7 +1299,7 @@ void Client::draw_pack() {
   int cw = con_.get_width(), chh = con_.get_height();
   int w = std::min(cw, 74), h = std::min(chh, 34);
   int x = (cw - w) / 2, y = (chh - h) / 2;
-  box(x, y, w, h, "Your things");
+  window(x, y, w, h, "Inventory", Mat::Leather);
   int r = y + 1;
   for (size_t i = 0; i < data::SLOTS.size(); ++i) {
     auto& it = me["equip"][i];
@@ -1346,7 +1321,7 @@ void Client::draw_pack() {
     auto [m, mc] = mark(it);
     text(x + 2, r, on ? ">" : " ", WHITE);
     text(x + 3, r, m, mc);
-    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 6), col, on ? 0x303040 : PANEL);
+    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 6), col, on ? 0x3A2818 : win_bg_);
     buttons_.push_back({x + 2, r, w / 2 - 2, 1, "", "sel:" + std::to_string(i)});
     ++r;
   }
@@ -1365,7 +1340,7 @@ void Client::draw_pack() {
     dy += draw_changes(dx, dy, w / 2 - 3, it);
     if (!it.value("use", true)) text(dx, ++dy, "Not for a " + me["clsname"].get<std::string>() + ".", 0xC06060);
   }
-  if (layout_ == Layout::Wide) wrap(x + 2, y + h - 2, w - 4, "[Enter] wear  [d] put down  [t] give  [Esc] close", GREY);
+  if (layout_ == Layout::Wide) rich(x + 3, y + h - 2, "[Enter] wear  [d] put down  [t] give  [Esc] close", GREY, win_bg_);
   else {
     int bw = w / 3;
     std::vector<std::pair<std::string, int>> b = {{"Wear", SDLK_RETURN}, {"Drop", SDLK_D}, {"Give", SDLK_T}};
@@ -1385,9 +1360,9 @@ void Client::draw_shop() {
   int cw = con_.get_width(), chh = con_.get_height();
   int w = std::min(cw, 74), h = std::min(chh, 34);
   int x = (cw - w) / 2, y = (chh - h) / 2;
-  box(x, y, w, h, "The trader");
+  window(x, y, w, h, "The trader's stall", Mat::Wood);
   int r = y + 1;
-  text(x + 2, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
+  text(x + 2, r++, "Your gold: " + std::to_string(me["gold"].get<int>()), 0xFFD700);
   text(x + 2, r, "[h]", KEY); text(x + 6, r++, "healing potion, " + std::to_string(shop["potion"].get<int>()) + " gold (you have " + std::to_string(me["heal"].get<int>()) + ")", 0xFF7070);
   text(x + 2, r, "[m]", KEY); text(x + 6, r++, "mana potion, " + std::to_string(shop["potion"].get<int>()) + " gold (you have " + std::to_string(me["manap"].get<int>()) + ")", 0x7090FF);
   buttons_.push_back({x + 2, r - 2, w - 4, 1, "", "key:" + std::to_string(SDLK_H)});
@@ -1405,7 +1380,7 @@ void Client::draw_shop() {
     auto [m, mc] = mark(it);
     text(x + 2, r, on ? ">" : " ", WHITE);
     text(x + 3, r, m, mc);
-    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 12) + "  " + std::to_string(it["price"].get<int>()) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
+    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 12) + "  " + std::to_string(it["price"].get<int>()) + "g", data::rarity_col(it["rarity"]), on ? 0x3A2818 : win_bg_);
     buttons_.push_back({x + 2, r, w / 2, 1, "", "sel:" + std::to_string(i)});
     if (on) shown = it;
     ++r; ++i;
@@ -1420,7 +1395,7 @@ void Client::draw_shop() {
     auto [m, mc] = mark(it);
     text(x + 2, r, on ? ">" : " ", WHITE);
     text(x + 3, r, m, mc);
-    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 12) + "  " + std::to_string(price) + "g", data::rarity_col(it["rarity"]), on ? 0x303040 : PANEL);
+    text(x + 5, r, clip(it["short"].get<std::string>(), w / 2 - 12) + "  " + std::to_string(price) + "g", data::rarity_col(it["rarity"]), on ? 0x3A2818 : win_bg_);
     buttons_.push_back({x + 2, r, w / 2, 1, "", "sel:" + std::to_string(i)});
     if (on) shown = it;
     ++r; ++i;
@@ -1432,7 +1407,8 @@ void Client::draw_shop() {
     ++dy;
     draw_changes(x + w / 2 + 1, dy, w / 2 - 3, shown);
   }
-  wrap(x + 2, y + h - 2, w - 4, layout_ == Layout::Wide ? "[Enter] buy or sell  [Esc] leave" : "tap twice to buy or sell", GREY);
+  if (layout_ == Layout::Wide) rich(x + 2, y + h - 2, "[Enter] buy or sell  [Esc] leave", GREY, win_bg_);
+  else wrap(x + 2, y + h - 2, w - 4, "tap twice to buy or sell", GREY);
   if (layout_ != Layout::Wide) { buttons_.push_back({x + w - 3, y, 3, 1, "", "close"}); text(x + w - 3, y, "[x]", KEY); }
 }
 
@@ -1447,40 +1423,9 @@ void Client::draw_perk() {
     int r = y + 2 + int(i) * 4;
     bool on = int(i) == sel_;
     text(x + 2, r, "[" + std::to_string(i + 1) + "]", KEY);
-    text(x + 6, r, ch[i][1].get<std::string>(), on ? WHITE : GREY, on ? 0x303040 : PANEL);
+    text(x + 6, r, ch[i][1].get<std::string>(), on ? WHITE : GREY, on ? 0x3A2818 : win_bg_);
     wrap(x + 6, r + 1, w - 8, ch[i][2].get<std::string>(), 0xB4A078);
     buttons_.push_back({x + 1, r, w - 2, 3, "", "key:" + std::to_string(SDLK_1 + int(i))});
-  }
-}
-
-void Client::draw_menu() {
-  int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 40), h = 13;
-  int x = (cw - w) / 2, y = (chh - h) / 2;
-  box(x, y, w, h, "Pyreheart");
-  text(x + 2, y + 2, "[Esc] back to the dive", WHITE);
-  text(x + 2, y + 4, std::string("[m] music: ") + (music_on_ ? "on" : "off"), WHITE);
-  text(x + 2, y + 6, std::string("[n] floating numbers: ") + (numbers_on_ ? "on" : "off"), WHITE);
-  text(x + 2, y + 8, "[d] debug and testing", WHITE);
-  text(x + 2, y + 10, "[q] leave the dive", WHITE);
-  buttons_.push_back({x, y + 2, w, 1, "", "close"});
-  buttons_.push_back({x, y + 4, w, 1, "", "key:" + std::to_string(SDLK_M)});
-  buttons_.push_back({x, y + 6, w, 1, "", "key:" + std::to_string(SDLK_N)});
-  buttons_.push_back({x, y + 8, w, 1, "", "key:" + std::to_string(SDLK_D)});
-  buttons_.push_back({x, y + 10, w, 1, "", "key:" + std::to_string(SDLK_Q)});
-}
-
-void Client::draw_help() {
-  int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 80), h = std::min(chh, 40);
-  int x = (cw - w) / 2, y = (chh - h) / 2;
-  box(x, y, w, h, "How to play");
-  int r = y + 2;
-  for (auto& [k, t] : HELP) {
-    if (r >= y + h - 1) break;
-    if (k.empty()) { r += t.empty() ? 1 : wrap(x + 2, r, w - 4, t, 0xC8C8C8); continue; }
-    wrap(x + 2, r, 22, k, KEY);
-    r += std::max(1, wrap(x + 24, r, w - 26, t, 0xC8C8C8));
   }
 }
 
