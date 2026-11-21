@@ -2231,7 +2231,7 @@ void Client::present(const TCOD_ViewportOptions& vp) {
   if (c->c_accumulate_(c, con_.get(), &vp) < 0) { ctx_.present(con_, vp); return; }
   auto* rd = static_cast<TCOD_RendererSDL2*>(c->contextdata_);
   auto& tr = rd->cursor_transform;
-  if (tr.scale_x > 0) draw_particles(r, tr.offset_x, tr.offset_y, 1.0 / tr.scale_x);
+  if (tr.scale_x > 0) { draw_particles(r, tr.offset_x, tr.offset_y, 1.0 / tr.scale_x); draw_ui_particles(r, tr.offset_x, tr.offset_y, 1.0 / tr.scale_x); }
   if (!shot_.empty()) {
     if (SDL_Surface* s = SDL_RenderReadPixels(r, nullptr)) {
       if (SDL_Surface* c32 = SDL_ConvertSurface(s, SDL_PIXELFORMAT_RGBA32)) {

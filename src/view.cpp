@@ -103,6 +103,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
               {"about", describe(*m)}, {"spent", m->spent > 0}, {"bleed", m->bleed > 0}, {"pinned", m->pinned > 0},
               {"busy", g.busy(*m, h)}};
     if (m->listen) e["listen"] = true;
+    if (m->blow.turns > 0) e["wind"] = true;
     if (m->brace > 0) e["braced"] = true;
     if (m->awake && m->can("chill")) e["chill"] = true;
     if (m->dormant) e["dormant"] = true;

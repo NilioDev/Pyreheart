@@ -961,9 +961,13 @@ void Client::draw_game() {
     draw_map();
   } else if (layout_ == Layout::Wide) {
     vx_ = 0; vy_ = 0; vw_ = VIEW_W; vh_ = VIEW_H;
+    suns_.clear();
     draw_map();
+    low_life_edge();
+    draw_frame_wide(VIEW_W, VIEW_H);
     draw_side(VIEW_W, 0, cw - VIEW_W, chh);
-    draw_log(0, VIEW_H, VIEW_W, chh - VIEW_H);
+    draw_log(0, VIEW_H + 1, VIEW_W, chh - VIEW_H - 2);
+    burn_suns();
   } else if (layout_ == Layout::Tall) {
     vx_ = 0; vy_ = 2; vw_ = cw; vh_ = chh - 2 - 5 - 6;
     draw_status_tall(0);
@@ -1261,82 +1265,6 @@ void Client::draw_map() {
   }
 }
 
-void Client::draw_side(int x, int y, int w, int h) {
-  auto& me = snap_["me"];
-  int r = y;
-  text(x + 1, r++, me["name"].get<std::string>(), me["col"].get<int>());
-  text(x + 1, r++, "level " + std::to_string(me["lvl"].get<int>()) + " " + me["clsname"].get<std::string>(), GREY);
-  ++r;
-  bar(x + 1, r++, w - 2, me["hp"], me["maxhp"], RED, "Life " + std::to_string(me["hp"].get<int>()) + "/" + std::to_string(me["maxhp"].get<int>()));
-  {
-    bool fu = me.value("pool", "mana") == "fury";
-    bar(x + 1, r++, w - 2, me["mana"], me["maxmana"], fu ? 0xC05020 : BLUE, std::string(fu ? "Fury " : "Mana ") + std::to_string(me["mana"].get<int>()) + "/" + std::to_string(me["maxmana"].get<int>()));
-  }
-  int prev = me["prev"], next = me["next"], xp = me["xp"];
-  bar(x + 1, r++, w - 2, xp - prev, next - prev, 0xB09040, "XP");
-  std::string st;
-  if (me.value("poison", false)) st += "poisoned ";
-  if (me.value("numb", false)) st += "numb ";
-  if (me.value("shield", false)) st += "shielded ";
-  if (me.value("held", false)) st += "held ";
-  if (me.value("latched", false)) st += "latched ";
-  if (me.value("bleeding", false)) st += "bleeding ";
-  if (me.value("branded", false)) st += "branded ";
-  if (me.value("sundered", false)) st += "split armour ";
-  if (me.value("dazed", false)) st += "dazed ";
-  if (!st.empty()) text(x + 1, r, st, 0x96E65A);
-  ++r;
-  std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
-  text(x + 1, r++, where, GOLD);
-  text(x + 1, r++, snap_.value("town", false) ? "the last village" : data::ACTS[snap_["act"].get<int>()].name, GREY);
-  text(x + 1, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
-  ++r;
-  text(x + 1, r, "[q]", KEY); text(x + 5, r++, "heal x" + std::to_string(me["heal"].get<int>()), 0xFF7070);
-  bool fury = me.value("pool", "mana") == "fury";
-  text(x + 1, r, "[w]", KEY); text(x + 5, r++, std::string(fury ? "fury" : "mana") + " x" + std::to_string(me["manap"].get<int>()), fury ? 0xFF9050 : 0x7090FF);
-  for (int i = 0; i < int(me["skills"].size()); ++i) {
-    auto& sk = me["skills"][i];
-    int lv = sk[4];
-    if (me["lvl"].get<int>() < lv) { text(x + 1, r, "[" + std::to_string(i + 1) + "]", DIM); text(x + 5, r++, "at level " + std::to_string(lv), DIM); continue; }
-    bool ok = me["mana"].get<int>() >= sk[1].get<int>();
-    text(x + 1, r, "[" + std::to_string(i + 1) + "]", KEY);
-    text(x + 5, r++, sk[0].get<std::string>() + " " + std::to_string(sk[1].get<int>()), ok ? WHITE : DIM);
-  }
-  if (me.value("focus", 0) > 0) text(x + 1, r++, "focus " + std::string(me["focus"].get<int>(), '*'), 0xB4E68C);
-  if (me.value("standfast", 0) > 0) text(x + 1, r++, "standing fast " + std::to_string(me["standfast"].get<int>()), 0xE6C878);
-  text(x + 1, r++, "damage " + me["dmg"].get<std::string>(), GREY);
-  text(x + 1, r++, "armour " + std::to_string(me["armour"].get<int>()), GREY);
-  ++r;
-  if (snap_["heroes"].size() > 1) {
-    text(x + 1, r++, "PARTY", GOLD);
-    for (auto& o : snap_["heroes"]) {
-      if (o["pid"] == me["pid"]) continue;
-      std::string n = o["name"].get<std::string>();
-      if (o.value("dead", false)) n += " (fallen)";
-      else if (o.value("gone", false)) n += " (at stairs)";
-      bool ready = std::find(ready_.begin(), ready_.end(), o["pid"].get<int>()) != ready_.end();
-      text(x + 1, r, ready ? "+" : " ", 0x80E080);
-      text(x + 2, r++, n, o["col"].get<int>());
-      if (!o.value("dead", false)) bar(x + 2, r++, w - 3, o["hp"], o["max"], RED, "");
-    }
-    ++r;
-  }
-  text(x + 1, r++, "IN SIGHT", GOLD);
-  for (auto& e : foes()) {
-    if (r >= h - 1) break;
-    std::string n = e["name"].get<std::string>();
-    if (int(n.size()) > w - 4) n = n.substr(0, w - 4);
-    put(x + 1, r, e["ch"].get<int>(), e["col"].get<int>());
-    text(x + 3, r++, n, e["rank"] == "normal" ? GREY : e["col"].get<int>());
-    // what an opening-seeker or anyone else wants to know at a glance
-    std::string tag = e.value("spent", false) ? "spent" : e.value("stun", false) ? "stunned" : e.value("frozen", false) ? "frozen"
-                    : e.value("pinned", false) ? "held" : e.value("bleed", false) ? "bleeding" : "";
-    if (snap_["me"]["cls"] == "cutthroat" && e.value("busy", false)) tag = tag.empty() ? "open" : tag + ", open";
-    bar(x + 3, r, w - 4, e["hp"], e["max"], 0x903030, tag);
-    ++r;
-  }
-}
-
 void Client::draw_status_tall(int y) {
   auto& me = snap_["me"];
   int cw = con_.get_width();
@@ -1344,31 +1272,6 @@ void Client::draw_status_tall(int y) {
   bar(cw / 2, y, cw - cw / 2, me["mana"], me["maxmana"], me.value("pool", "mana") == "fury" ? 0xC05020 : BLUE, std::to_string(me["mana"].get<int>()) + "/" + std::to_string(me["maxmana"].get<int>()));
   std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
   text(0, y + 1, where + "  lvl " + std::to_string(me["lvl"].get<int>()) + "  " + std::to_string(me["gold"].get<int>()) + "g", GOLD);
-}
-
-void Client::draw_log(int x, int y, int w, int h) {
-  // newest at the bottom, wrapped
-  std::vector<std::pair<std::string, int>> lines;
-  for (auto it = log_.rbegin(); it != log_.rend() && int(lines.size()) < h; ++it) {
-    std::vector<std::string> parts;
-    std::string cur, word;
-    std::string s = it->first + " ";
-    for (char c : s) {
-      if (c == ' ') {
-        if (int(cur.size() + word.size()) + (cur.empty() ? 0 : 1) > w - 1 && !cur.empty()) { parts.push_back(cur); cur.clear(); }
-        cur += (cur.empty() ? "" : " ") + word;
-        word.clear();
-      } else word += c;
-    }
-    if (!cur.empty()) parts.push_back(cur);
-    for (auto p = parts.rbegin(); p != parts.rend(); ++p) lines.push_back({*p, it->second});
-  }
-  int n = std::min(h, int(lines.size()));
-  for (int i = 0; i < n; ++i) {
-    auto& [s, c] = lines[i];
-    int age = i;
-    text(x + 1, y + h - 1 - i, s, age < 3 ? c : scale(c, .6));
-  }
 }
 
 void Client::draw_buttons() {
@@ -1431,7 +1334,8 @@ void Client::draw_pack() {
   }
   ++r;
   auto& pack = me["pack"];
-  text(x + 2, r++, "Pack (" + std::to_string(pack.size()) + "/" + std::to_string(data::PACK_MAX) + ")", GOLD);
+  text(x + 2, r, "Pack (" + std::to_string(pack.size()) + "/" + std::to_string(data::PACK_MAX) + ")", GOLD);
+  text(x + 18, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
   int list_top = r;
   sel_ = pack.empty() ? 0 : std::clamp(sel_, 0, int(pack.size()) - 1);
   for (size_t i = 0; i < pack.size() && r < y + h - 2; ++i) {
