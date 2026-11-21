@@ -16,10 +16,11 @@ class MusicBox {
     lab_ = on;
     if (rate_) start();
   }
-  void mood(music::Mood m, bool fight = false) {
-    mood_ = m; fight_ = fight;
+  // lab_mood: a mood only the lab has (Charnfen's theme), or -1 for the lab to follow the classic one
+  void mood(music::Mood m, bool fight = false, int lab_mood = -1) {
+    mood_ = m; fight_ = fight; lab_mood_ = lab_mood;
     if (c_) c_->mood(m, fight);
-    if (l_) l_->mood(music_lab::Mood(int(m)), fight);
+    if (l_) l_->mood(music_lab::Mood(lab_mood >= 0 ? lab_mood : int(m)), fight);
   }
   void volume(float v) { vol_ = v; if (c_) c_->volume(v); if (l_) l_->volume(v); }
   void renew() { if (c_) c_->renew(); if (l_) l_->renew(); }
@@ -32,10 +33,10 @@ class MusicBox {
     if (lab_) { l_ = std::make_unique<music_lab::Player>(); l_->open(rate_); }
     else { c_ = std::make_unique<music::Player>(); c_->open(rate_); }
     volume(vol_);
-    mood(mood_, fight_);
+    mood(mood_, fight_, lab_mood_);
   }
   bool lab_ = false, fight_ = false;
-  int rate_ = 0;
+  int rate_ = 0, lab_mood_ = -1;
   float vol_ = .7f;
   music::Mood mood_ = music::TITLE;
   std::unique_ptr<music::Player> c_;

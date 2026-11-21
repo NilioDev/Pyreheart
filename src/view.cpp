@@ -111,6 +111,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
               {"about", describe(*m)}, {"spent", m->spent > 0}, {"bleed", m->bleed > 0}, {"pinned", m->pinned > 0},
               {"busy", g.busy(*m, h)}};
     if (m->listen) e["listen"] = true;
+    if (m->awake && !m->dormant) e["awake"] = true;
     if (m->blow.turns > 0) e["wind"] = true;
     if (m->stk.total() > 0) e["st"] = stacks(m->stk);
     e["el"] = m->el;

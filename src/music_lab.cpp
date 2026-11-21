@@ -1,4 +1,7 @@
-// The music: a small synthesizer and a composer that never plays the same piece twice.
+// The music LAB: a copy of the classic music (src/music.cpp) to try new ideas in, sharing no code with it
+// (plan.md section 4). What is new here: the Pyreheart and Ashen King motifs, threat that grows, the build-up over
+// a zone's maps, Charnfen's own theme, jingles in the key, colder music deeper down, near death, dying, the
+// waystation's fire, the ghost and the ember bearer, and planned silences.
 // Everything is made here, sample by sample: no recordings.
 #include "music_lab.hpp"
 
@@ -10,6 +13,8 @@
 #include <cmath>
 #include <numbers>
 #include <random>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 namespace music_lab {
@@ -253,7 +258,16 @@ const MoodDef MOODS_DEF[MOODS] = {
     // the sanctum: a choir in black stone around an empty altar, temple bells, no drum but the bells
     {{0, 2, 3, 5, 7, 8, 10}, 44, {50, 48, 52, 47}, .48f, .75f, .3f, .55f, 0, .5f, 1.f, 1500, false, 10,
      {{0, 5, 3, 4}, {0, 3, 5, 6}, {0, 6, 5, 0}, {0, 5, 1, 0}}},
+    // Charnfen (lab): cold and lonely, wind over the roofs, the small village bell; home
+    {{0, 2, 3, 5, 7, 8, 10}, 50, {50, 52, 48, 47}, .3f, .5f, .6f, .75f, 0, 0, .85f, 900, false, 11,
+     {{0, 5, 3, 6}, {0, 3, 5, 0}, {0, 6, 3, 4}}},
 };
+
+// the Pyreheart motif: five notes that come back in every zone (degrees of the scale, and where they fall in two
+// bars of eighths); the Ashen King's answers it with the half step and the fall
+struct Motif { int at[5], deg[5], len[5]; };
+const Motif PYRE = {{0, 4, 6, 8, 12}, {0, 4, 3, 2, 4}, {4, 2, 2, 4, 4}};
+const Motif KING = {{0, 3, 6, 10, 12}, {0, 1, 0, -2, -3}, {3, 3, 4, 2, 4}};
 
 // arpeggio patterns over one bar of eight steps: 0..2 the chord's notes, 3 the root an octave up, -1 rest
 const std::vector<std::array<int, 8>> ARPS = {
@@ -277,22 +291,42 @@ class Composer {
   std::atomic<int> renew_{0};          // raised to ask for a new piece in the same mood
   std::atomic<int> playing_root_{0}, playing_bpm_{0}, playing_mood_{TITLE};
   int renewed_ = 0;
+  // the lab: what the game says is going on
+  std::atomic<float> want_threat_{0}, want_life_{1}, want_cold_{0};
+  std::atomic<int> want_build_{1};
+  std::atomic<bool> want_dead_{false}, want_ghost_{false}, want_carrier_{false};
+  std::atomic<int> jingles_{0};  // a bit for each jingle asked for
 
   void render(float* out, int frames) {
     for (int i = 0; i < frames; ++i) {
-      // changing mood: fade out, begin anew, fade in
+      // changing mood: fade out, begin anew, fade in. A great foe waking does not change the piece: it only
+      // raises the threat (lab)
       int w = want_.load(std::memory_order_relaxed);
-      bool wf = want_fight_.load(std::memory_order_relaxed);
+      fight_ = want_fight_.load(std::memory_order_relaxed);
       int rn = renew_.load(std::memory_order_relaxed);
-      if (w != mood_ || wf != fight_ || rn != renewed_) { fading_ = true; renewed_ = rn; }
+      if (w != mood_ || rn != renewed_) { fading_ = true; renewed_ = rn; }
       if (fading_) {
         fade_ = std::max(0.f, fade_ - 1 / (1.5f * rate_));
-        if (fade_ == 0) { begin(Mood(w), wf); fading_ = false; }
+        if (fade_ == 0) { begin(Mood(w), fight_); fading_ = false; }
       } else fade_ = std::min(1.f, fade_ + 1 / (3.f * rate_));
+      follow();
 
-      if (--step_left_ <= 0) { step(); step_left_ = step_len_; }
+      // dying: the tape slows and sinks to nothing; the piece is only made as fast as it is heard
       float l, r;
-      voice(l, r);
+      if (tape_ < 1) {
+        tape_pos_ += tape_;
+        while (tape_pos_ >= 1) { tape_pos_ -= 1; prev_l_ = cur_l_; prev_r_ = cur_r_; make(cur_l_, cur_r_); }
+        l = prev_l_ + (cur_l_ - prev_l_) * tape_pos_;
+        r = prev_r_ + (cur_r_ - prev_r_) * tape_pos_;
+        l *= tape_; r *= tape_;
+      } else { make(l, r); prev_l_ = cur_l_ = l; prev_r_ = cur_r_ = r; }
+      // after it: only the bell of Charnfen, far away
+      float bell = 0;
+      if (dead_ && tape_ <= 0) {
+        if (--toll_left_ <= 0) { toll_left_ = int(4.5f * rate_); toll_.start(mtof(float(root_ - 12 + 24)), 1.41f, 2.2f, .35f, .2f); }
+        bell = toll_.tick(rate_);
+      }
+      l += bell; r += bell;
       float v = volume_.load(std::memory_order_relaxed) * fade_;
       out[2 * i] = std::tanh(l * v);
       out[2 * i + 1] = std::tanh(r * v);
@@ -300,8 +334,54 @@ class Composer {
   }
 
  private:
+  // one sample of the piece: the eighth note's events, then every voice
+  void make(float& l, float& r) {
+    if (--step_left_ <= 0) { step(); step_left_ = step_len_; }
+    voice(l, r);
+  }
+  // follows the game smoothly, sample by sample, so nothing switches hard
+  void follow() {
+    float k = 1 / rate_;
+    float th = want_threat_.load(std::memory_order_relaxed);
+    if (fight_) th = std::max(th, .85f);
+    threat_ += (th - threat_) * k / (th > threat_ ? 1.5f : 6.f);  // it comes in quickly, and ebbs away slowly
+    float life = want_life_.load(std::memory_order_relaxed);
+    float danger = std::clamp((.35f - life) / .3f, 0.f, 1.f);
+    danger_ += (danger - danger_) * k / (danger > danger_ ? .8f : 2.5f);
+    cold_ += (want_cold_.load(std::memory_order_relaxed) - cold_) * k / 8;
+    ghost_amt_ += ((want_ghost_.load(std::memory_order_relaxed) ? 1.f : 0.f) - ghost_amt_) * k / 2;
+    carrier_ = want_carrier_.load(std::memory_order_relaxed);
+    bool dead = want_dead_.load(std::memory_order_relaxed);
+    if (dead && !dead_) { dead_ = true; toll_left_ = int(1.5f * rate_); }
+    if (!dead && dead_) { dead_ = false; tape_ = 1; begin(Mood(mood_), fight_); }
+    if (dead_ && tape_ > 0) tape_ = std::max(0.f, tape_ - k / 3.5f * (.4f + tape_));  // slower and slower, lower and lower
+    // the planned silence: fade out over two bars, back in after it
+    if (silence_left_ > 0) {
+      --silence_left_;
+      if (threat_ > .3f) {  // something happened in the silence: the threat breaks in with one hard blow
+        silence_left_ = 0;
+        drums_[next_drum_].start(62, 30, 2.f, .9f, 1.5f);
+        next_drum_ = (next_drum_ + 1) % int(drums_.size());
+      }
+    }
+    float bar = step_len_ * 8.f;
+    sil_amt_ += ((silence_left_ > 0 ? 0.f : 1.f) - sil_amt_) / (silence_left_ > 0 ? 2 * bar : bar);
+    if (sil_since_ < 1e9f) sil_since_ += k;
+  }
+
   float rate_;
   Rand r_;
+  // the lab's state
+  float threat_ = 0, danger_ = 0, cold_ = 0, ghost_amt_ = 0, sil_amt_ = 1, sil_since_ = 0;
+  bool carrier_ = false, dead_ = false, king_ = false;
+  int build_ = 1, base_len_ = 1, silence_left_ = 0, toll_left_ = 0;
+  float tape_ = 1, tape_pos_ = 0, prev_l_ = 0, prev_r_ = 0, cur_l_ = 0, cur_r_ = 0;
+  Bell toll_, far_;
+  Filter ghost_l_, ghost_r_;
+  float crackle_ = 0, crack_lp_ = 0, rumble_ = 0, wind_ = 0, wind_lp_ = 0, wind_lp2_ = 0;
+  // a jingle: its notes, each on an eighth from now
+  struct JNote { int at; int kind; int deg; int oct; float amp; };  // kind 0 harp, 1 bell, 2 flute
+  std::vector<JNote> jq_;
   const MoodDef* m_ = &MOODS_DEF[TITLE];
   int mood_ = TITLE;
   bool fight_ = false, fading_ = false;
@@ -326,7 +406,7 @@ class Composer {
   std::array<Bell, 8> zbells_;  // the later zones' own bells, chains and coins
   int next_zbell_ = 0, rattle_ = 0, wheel_ = 0;
   std::array<Drum, 4> drums_;
-  int next_drum_ = 0;
+  int next_drum_ = 0, far_left_ = 0;
   Room room_;
 
   int note(int deg, int octave) const {
@@ -341,15 +421,17 @@ class Composer {
     fight_ = fight;
     m_ = &MOODS_DEF[m];
     root_ = m_->roots[r_.below(4)];
-    float bpm = m_->bpm * (fight ? 1.15f : 1.f) * (.95f + .1f * r_.uni());
-    step_len_ = int(rate_ * 60 / bpm / 2);  // eighth notes
+    float bpm = m_->bpm * (1 - .08f * want_cold_.load(std::memory_order_relaxed)) * (.95f + .1f * r_.uni());  // colder, slower
+    step_len_ = base_len_ = int(rate_ * 60 / bpm / 2);  // eighth notes; the threat quickens them (lab)
+    ghost_l_.set(520, .7f, rate_); ghost_r_.set(520, .7f, rate_);
+    build_ = want_build_.load(std::memory_order_relaxed);
     step_ = 0; bar_ = 0; step_left_ = 0;
     playing_root_ = root_; playing_bpm_ = int(bpm + .5f); playing_mood_ = m;
     room_.feedback = .8f + .08f * m_->room;
     new_progression();
     new_arpeggio();
     new_melody();
-    use_pad_ = true; use_harp_ = m_->harp > 0; use_flute_ = r_.chance(.6f); use_drums_ = m_->drum_kind != 0 || fight;
+    use_pad_ = true; use_harp_ = m_->harp > 0; use_flute_ = r_.chance(.6f); use_drums_ = true;
     for (auto& p : pad_) p.env.on = false;
     flute_.stop();
   }
@@ -361,6 +443,19 @@ class Composer {
   // a phrase over two bars, and its answer: the answer keeps the call's rhythm and comes home to the key note
   void new_melody() {
     call_.clear(); answer_.clear();
+    // now and then the Pyreheart motif instead (often on the title, always at a victory); a great foe brings the
+    // Ashen King's. The key and the chords stay as they are, and the flute bends a note of it now and then
+    float want = mood_ == TITLE || mood_ == CHARNFEN ? .55f : .3f;
+    king_ = fight_ && r_.chance(.6f);
+    if (king_ || r_.chance(want)) {
+      const Motif& mo = king_ ? KING : PYRE;
+      for (int i = 0; i < 5; ++i) call_.push_back({mo.at[i], mo.deg[i], mo.len[i]});
+      if (r_.chance(.5f)) { auto& n = call_[1 + r_.below(3)]; n.deg += r_.chance(.5f) ? 1 : -1; }
+      answer_ = call_;
+      answer_.back().deg = 0;
+      return;
+    }
+    king_ = false;
     static const int lens[] = {2, 2, 3, 4, 4, 6};
     int at = r_.below(2) * 2, deg = r_.chance(.5f) ? 4 : 2;
     while (at < 14) {
@@ -381,6 +476,22 @@ class Composer {
   // every eighth note: what plays now
   void step() {
     int s = step_ % 8;
+    if (s == 0) {  // at the bar line (lab): the build-up, the threat's tempo, a planned silence
+      build_ = want_build_.load(std::memory_order_relaxed);
+      step_len_ = int(base_len_ / (1 + .14f * threat_));
+      if (bar_ % 8 == 7 && silence_left_ == 0 && sil_since_ > 120 && threat_ < .08f && danger_ < .1f && !dead_ &&
+          mood_ != TITLE && r_.chance(.4f)) {
+        silence_left_ = int(15 * rate_);
+        sil_since_ = 0;
+        far_left_ = int(5 * rate_);
+      }
+    }
+    if (int j = jingles_.exchange(0)) queue_jingles(j);
+    for (size_t i = 0; i < jq_.size();) {
+      if (jq_[i].at-- > 0) { ++i; continue; }
+      play_jnote(jq_[i]);
+      jq_.erase(jq_.begin() + long(i));
+    }
     if (s == 0 && step_ > 0) {
       ++bar_;
       // every eight bars something changes, so it never stands still
@@ -389,6 +500,7 @@ class Composer {
         if (r_.chance(.4f)) new_melody();
         if (r_.chance(.3f)) new_arpeggio();
         if (r_.chance(.35f)) use_flute_ = !use_flute_;
+        if (build_ == 0 && use_flute_ && r_.chance(.4f)) use_flute_ = false;  // the first map: calmer
         if (m_->harp > 0 && r_.chance(.2f)) use_harp_ = !use_harp_;
         if (r_.chance(.15f)) use_pad_ = !use_pad_;
         if (!use_pad_ && !use_harp_) use_pad_ = true;
@@ -407,11 +519,14 @@ class Composer {
           for (auto& p : pad_) if (!p.env.on && (!best || p.env.level < best->env.level)) best = &p;
           return best;
         };
+        float cut = m_->pad_cutoff * (1 + .6f * threat_) * (1 - .4f * cold_);  // brighter as foes close in, duller in the cold
         for (int d : ch)
           if (auto* p = quietest()) {
-            p->f.set(m_->pad_cutoff * (fight_ ? 1.5f : 1.f), .8f, rate_);
+            p->f.set(cut, .8f, rate_);
             p->start(mtof(float(note(d, 1))), 1.6f, 2.8f);
           }
+        if (build_ >= 2)  // the boss map: the choir goes down an octave too
+          if (auto* p = quietest()) { p->f.set(cut * .7f, .8f, rate_); p->start(mtof(float(note(deg, 0))), 1.6f, 2.8f); }
         // the deep: a half-step rubs against the chord
         if (m_->tritone && r_.chance(.4f))
           if (auto* p = quietest()) { p->f.set(m_->pad_cutoff, .8f, rate_); p->start(mtof(float(note(deg + 1, 1))), 3, 3); }
@@ -435,7 +550,7 @@ class Composer {
       const std::vector<Note>* part = ph < 2 ? &call_ : (ph >= 4 && ph < 6) ? &answer_ : nullptr;
       if (part)
         for (auto& n : *part)
-          if (n.at == pos) { flute_.play(mtof(float(note(n.deg, 2)))); flute_left_ = n.len; }
+          if (n.at == pos) { flute_.play(mtof(float(note(n.deg, king_ ? 1 : 2)))); flute_left_ = n.len; }
     }
 
     // bells: a low tolling in the crypt, water dripping in the caves
@@ -452,12 +567,28 @@ class Composer {
       }
     }
 
+    // icy glints, deeper down and higher on the Frost ladder
+    if (cold_ > .05f && r_.chance(.035f * cold_)) {
+      bells_[next_bell_].start(mtof(float(note(r_.below(7), 5))), 3.5f, .7f, 1.4f, .035f);
+      next_bell_ = (next_bell_ + 1) % int(bells_.size());
+    }
     // the drums
     if (use_drums_) {
+      float bg = build_ == 0 ? .65f : build_ == 2 ? 1.2f : 1.f;
       auto hit = [&](float f0, float f1, float decay, float noise, float g) {
-        drums_[next_drum_].start(f0, f1, decay, noise, g * std::max(m_->drums, fight_ ? .7f : 0.f));
+        drums_[next_drum_].start(f0, f1, decay, noise, g * std::max(m_->drums, .7f * threat_) * bg * (1 + .5f * threat_));
         next_drum_ = (next_drum_ + 1) % int(drums_.size());
       };
+      auto beat = [&](float f0, float f1, float decay, float noise, float g) {  // a heartbeat, whatever the mood's drums
+        drums_[next_drum_].start(f0, f1, decay, noise, g);
+        next_drum_ = (next_drum_ + 1) % int(drums_.size());
+      };
+      // the threat brings drums in, step by step, and they ebb away again
+      if (threat_ > .3f && s == 4) hit(120, 55, 4.5f, .5f, .35f + .4f * threat_);
+      if (threat_ > .6f && (s == 2 || s == 6)) hit(150, 70, 7, .6f, .25f * threat_);
+      // near death a heart underneath, an echo of the Deep; the ember bearer's beats fast and tense
+      if (danger_ > .05f) { if (s == 0) beat(70, 38, 5, .3f, .9f * danger_); if (s == 1) beat(65, 36, 6, .3f, .6f * danger_); }
+      if (carrier_ && (s == 0 || s == 1 || s == 4 || s == 5)) beat(s % 4 ? 66 : 72, 36, 6, .3f, s % 4 ? .35f : .5f);
       int kind = m_->drum_kind;
       if (fight_ && kind == 0) kind = 1;
       switch (kind) {
@@ -533,8 +664,47 @@ class Composer {
         if (s == 4 && r_.chance(.5f)) zbell(mtof(float(note(r_.chance(.5f) ? 4 : 2, 3))), 2.76f, 1.2f, 1.2f, .06f);
         if (fight_ && (s == 0 || s == 4)) hit(80, 40, 2.5f, .5f, .9f);
         break;
+      case 11:  // Charnfen (lab): the small village bell, three strokes now and then
+        if (bar_ % 8 == 2 && (s == 0 || s == 3 || s == 6)) zbell(mtof(float(note(0, 3))), 2.76f, 1.4f, 1.1f, .07f);
+        break;
       default: break;
     }
+  }
+
+  // ------------------------------------------------------------------ jingles (lab)
+  void queue_jingles(int bits) {
+    int at = 0;
+    auto add = [&](int kind, int deg, int oct, float amp, int gap) { jq_.push_back({at, kind, deg, oct, amp}); at += gap; };
+    int up = r_.chance(.5f) ? 1 : 2;  // a little different each time
+    if (bits & (1 << J_BOSS)) {  // a great foe slain: the motif climbs on the harp, a bell under it
+      for (int d : {0, 2, 4, 7}) add(0, d, 2, .7f, up);
+      add(1, 0, 1, .22f, 0);
+      at += 4;
+    }
+    if (bits & (1 << J_SPARK)) {  // a spark: three high glints
+      for (int d : {4, 7, r_.chance(.5f) ? 9 : 11}) add(1, d, 4, .07f, 1);
+      at += 2;
+    }
+    if (bits & (1 << J_LOOT)) {  // a rare find: two glints
+      add(1, 0, 4, .06f, up);
+      add(1, r_.chance(.5f) ? 4 : 2, 4, .06f, 0);
+    }
+    if (bits & (1 << J_VICTORY)) {  // the motif, grandly, on the flute, with the bells
+      at = 0;
+      for (int i = 0; i < 5; ++i) {
+        jq_.push_back({PYRE.at[i], 2, PYRE.deg[i], 2, 1});
+        jq_.push_back({PYRE.at[i], 0, PYRE.deg[i], 1, .6f});
+      }
+      jq_.push_back({0, 1, 0, 1, .25f});
+      jq_.push_back({12, 1, 4, 2, .2f});
+      use_flute_ = false;  // the flute is the motif's now
+    }
+  }
+  void play_jnote(const JNote& n) {
+    float f = mtof(float(note(n.deg, n.oct)));
+    if (n.kind == 0) { harp_[next_harp_].start(f, rate_, r_, .55f * n.amp, .5f, .9988f); next_harp_ = (next_harp_ + 1) % int(harp_.size()); }
+    else if (n.kind == 1) { bells_[next_bell_].start(f, n.oct >= 4 ? 3.01f : 1.41f, n.oct >= 4 ? 1.2f : 2.5f, n.oct >= 4 ? 1.8f : .5f, n.amp); next_bell_ = (next_bell_ + 1) % int(bells_.size()); }
+    else { flute_.play(f); flute_left_ = 3; }
   }
 
   void voice(float& outl, float& outr) {
@@ -547,25 +717,58 @@ class Composer {
     float drone = (drone_a_.tick(droot, rate) + .7f * drone_b_.tick(droot * 1.003f, rate) + .5f * drone_c_.tick(second, rate));
     drone = drone_f_.tick(drone) * (.8f + .2f * std::sin(TAU * .11f * lfo_)) * .22f * m_->drone;
 
+    // the lab's layers: near death the music thins out; in a planned silence all but the drone rests
+    float thin = 1 - .7f * danger_, sil = sil_amt_;
     float pad = 0;
     for (auto& p : pad_) pad += p.tick(rate, 0);
-    pad *= m_->pad;
+    pad *= m_->pad * thin * sil;
     float harp = 0;
     for (auto& h : harp_) harp += h.tick();
-    float fl = flute_.tick(rate, r_) * m_->flute;
+    harp *= (1 - .6f * danger_) * sil;
+    float fl = flute_.tick(rate, r_) * m_->flute * (1 - .8f * danger_) * sil;
     float bell = 0;
     for (auto& b : bells_) bell += b.tick(rate);
-    for (auto& b : zbells_) bell += b.tick(rate);
+    float zb = 0;
+    for (auto& b : zbells_) zb += b.tick(rate);
+    bell += zb * sil;
     float drum = 0;
     for (auto& d : drums_) drum += d.tick(rate, r_);
     drum *= .5f;
+    // a far sound in the silence
+    if (far_left_ > 0 && --far_left_ == 0) far_.start(mtof(float(root_ - 12)), .5f, 2.f, .35f, .12f);
+    bell += far_.tick(rate);
 
-    float dry = drone + pad + harp + fl + bell + drum;
+    // the waystation's fire crackles under the harp
+    float fire = 0;
+    if (mood_ == REST) {
+      if (r_.uni() < 9 / rate) crackle_ = .5f + .5f * r_.uni();
+      crackle_ *= .992f;
+      crack_lp_ += .5f * (r_.bi() - crack_lp_);
+      rumble_ += .004f * (r_.bi() - rumble_);
+      fire = crack_lp_ * crackle_ * .09f + rumble_ * .35f;
+    }
+    // wind over Charnfen's roofs: noise through a slow, wandering filter
+    if (mood_ == CHARNFEN || (mood_ == TITLE && cold_ > .5f)) {
+      wind_ += 1 / rate;
+      float gust = .5f + .5f * std::sin(TAU * .07f * wind_) * std::sin(TAU * .023f * wind_ + 1);
+      float a = .004f + .02f * gust;
+      wind_lp_ += a * (r_.bi() - wind_lp_);
+      wind_lp2_ += a * (wind_lp_ - wind_lp2_);
+      fire += wind_lp2_ * (1.2f + 1.5f * gust);
+    }
+
+    float dry = drone + pad + harp + fl + bell + drum + fire;
     float wl, wr;
     room_.tick(pad + harp * 1.2f + fl * 1.3f + bell * 1.5f + drum * .6f + drone * .3f, wl, wr);
-    float wet = m_->room;
+    float wet = m_->room * (1 + .6f * ghost_amt_);
     outl = dry * .8f + wl * wet + harp * .1f;
     outr = dry * .8f + wr * wet - harp * .1f;
+    // a ghost hears it all from far away, through stone
+    if (ghost_amt_ > .001f) {
+      float ml = ghost_l_.tick(outl), mr = ghost_r_.tick(outr), g = ghost_amt_;
+      outl = (outl * (1 - g) + ml * g) * (1 - .4f * g);
+      outr = (outr * (1 - g) + mr * g) * (1 - .4f * g);
+    }
   }
 };
 
@@ -614,9 +817,24 @@ std::string Player::describe() const {
   if (!c_) return "";
   static const char* names[] = {"C", "C sharp", "D", "E flat", "E", "F", "F sharp", "G", "A flat", "A", "B flat", "B"};
   static const char* modes[MOODS] = {"minor", "minor", "phrygian", "harmonic minor", "phrygian dominant", "dorian",
-                                     "minor", "dorian", "hungarian minor", "minor", "locrian", "minor"};
+                                     "minor", "dorian", "hungarian minor", "minor", "locrian", "minor", "minor"};
   int root = c_->playing_root_, mood = std::clamp(int(c_->playing_mood_), 0, MOODS - 1);
   return std::string(names[root % 12]) + " " + modes[mood] + ", " + std::to_string(int(c_->playing_bpm_)) + " beats a minute";
+}
+
+void Player::scene(const Scene& s) {
+  if (!c_) return;
+  c_->want_threat_ = std::clamp(s.threat, 0.f, 1.f);
+  c_->want_build_ = std::clamp(s.build, 0, 2);
+  c_->want_life_ = std::clamp(s.life, 0.f, 1.f);
+  c_->want_cold_ = std::clamp(s.cold, 0.f, 1.f);
+  c_->want_dead_ = s.dead;
+  c_->want_ghost_ = s.ghost;
+  c_->want_carrier_ = s.carrier;
+}
+
+void Player::jingle(Jingle j) {
+  if (c_) c_->jingles_ |= 1 << j;
 }
 
 void Player::volume(float v) {
@@ -624,11 +842,30 @@ void Player::volume(float v) {
   if (c_) c_->volume_ = volume_;
 }
 
-void render(Mood m, bool fight, int rate, int seconds, uint64_t seed, float* out) {
+void render(Mood m, bool fight, int rate, int seconds, uint64_t seed, float* out, const Scene& s) {
   Composer c(float(rate), seed);
   c.want_ = m;
   c.want_fight_ = fight;
-  c.render(out, rate * seconds);
+  c.want_threat_ = s.threat; c.want_build_ = s.build; c.want_life_ = s.life; c.want_cold_ = s.cold;
+  c.want_ghost_ = s.ghost; c.want_carrier_ = s.carrier;
+  c.render(out, rate * seconds / 2);
+  c.want_dead_ = s.dead;  // dying is heard from halfway
+  c.render(out + size_t(rate * seconds / 2) * 2, rate * seconds - rate * seconds / 2);
+}
+
+void render_script(Mood m, bool fight, int rate, int seconds, uint64_t seed, float* out, const std::function<Scene(float, int&)>& at) {
+  Composer c(float(rate), seed);
+  c.want_ = m;
+  c.want_fight_ = fight;
+  int chunk = rate / 10, total = rate * seconds;
+  for (int done = 0; done < total; done += chunk) {
+    int j = 0;
+    Scene s = at(float(done) / rate, j);
+    c.want_threat_ = s.threat; c.want_build_ = s.build; c.want_life_ = s.life; c.want_cold_ = s.cold;
+    c.want_ghost_ = s.ghost; c.want_carrier_ = s.carrier; c.want_dead_ = s.dead;
+    if (j) c.jingles_ |= j;
+    c.render(out + size_t(done) * 2, std::min(chunk, total - done));
+  }
 }
 
 }  // namespace music_lab

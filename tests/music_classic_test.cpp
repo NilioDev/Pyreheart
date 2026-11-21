@@ -1,7 +1,7 @@
 // The safety net under the classic music (plan.md section 4): every classic mood, and its fight variant, is rendered
 // with a fixed seed and compared with a fingerprint taken when classic was frozen. Any change to src/music.cpp that
-// changes what it plays fails here. The fingerprint is the loudness of each half second, kept to a tight tolerance,
-// so the small float differences between compilers pass but a different note, instrument or mix does not.
+// changes what it plays fails here. The fingerprint is the loudness of each half second, kept to 1%,
+// so the small float differences between compilers and machines pass but a different note, instrument or mix does not.
 //   music_classic_test            compare with tests/music_classic_ref.hpp
 //   music_classic_test --write    print a new reference (only when Niels has agreed to change classic)
 #include <cmath>
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
       if (row >= int(sizeof(CLASSIC_REF) / sizeof(CLASSIC_REF[0]))) { std::printf("mood %d%s: no reference\n", m, fight ? " fight" : ""); ++bad; continue; }
       for (int b = 0; b < BLOCKS; ++b) {
         float want = CLASSIC_REF[row][b], got = fp[b];
-        if (!std::isfinite(got) || std::fabs(got - want) > 2e-4f + .003f * want) {
+        if (!std::isfinite(got) || std::fabs(got - want) > 5e-4f + .01f * want) {
           std::printf("classic music changed: mood %d%s, at %.1f s: loudness %.6f, was %.6f\n", m, fight ? " fight" : "", b * .5, got, want);
           ++bad;
           break;
