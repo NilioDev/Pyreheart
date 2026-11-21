@@ -283,7 +283,7 @@ void Client::draw_hero() {
     ++r;
     head(R, r++, "Skills known");
     std::string all;
-    for (auto& k : me["known"]) all += (all.empty() ? "" : ", ") + k.get<std::string>();
+    for (auto& k : me["known"]) all += (all.empty() ? "" : ", ") + k["name"].get<std::string>();
     r += rich_wrap(R, r, W2, all, DIM, PAPER);
   }
   rich(x + w - 13, y + h - 2, "[Esc] back", INK, PAPER);
@@ -570,5 +570,151 @@ void Client::rack_key(SDL_Keycode k) {
   } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
     send({{"t", "rack"}, {"w", data::WEAPONS[rack_sel_].key}});
     over_ = Over::None;
+  }
+}
+
+// ------------------------------------------------------------------ a waystation's fire
+
+// The rows to pick from: the keys [2]-[5], then the known skills not on a key, then a second coal while there is none.
+int Client::fire_rows() {
+  auto& me = snap_["me"];
+  int known = int(me.value("known", json::array()).size());
+  bool coal = me.value("el", -1) >= 0 && me.value("el2", -1) < 0;
+  return 4 + std::max(0, known - 4) + (coal ? 1 : 0);
+}
+
+// THE FIRE (plan.md section 5, mock 22): left the keys, right the skills known but not on a key; [Enter] marks a key and
+// then swaps it with the skill picked; [◄►] sets a key to the second coal; a path waits at the foot of the window.
+void Client::draw_fire_window() {
+  auto& me = snap_["me"];
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 80), h = std::min(chh, 34);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  window(x, y, w, h, "The fire");
+  int W2 = (w - 8) / 2, L = x + 3, R = x + 5 + W2;
+  for (int j = y + 2; j < y + 17; ++j) put(x + 3 + W2 + 1, j, 0x2502, 0x5A4028, PAPER);
+  auto head = [&](int cx, int r, const std::string& t) { text(cx, r, "══ " + t + " ══", BRONZE, PAPER); text(cx + 3, r, t, GOLD, PAPER); };
+  const json known = me.value("known", json::array());
+  int el = me.value("el", -1), el2 = me.value("el2", -1);
+  json slotel = me.value("slotel", json::array({0, 0, 0, 0, 0}));
+  int rows = fire_rows();
+  fire_sel_ = std::clamp(fire_sel_, 0, rows - 1);
+  auto row_bg = [&](int i) { return i == fire_sel_ ? SEL : PAPER; };
+  auto skill_line = [&](int cx, int r, int wdt, const json& k, int i, const std::string& key) {
+    int bg = row_bg(i);
+    for (int c = cx - 1; c < cx + wdt; ++c) put(c, r, ' ', INK, bg);
+    int sx = cx;
+    if (!key.empty()) { keycap(sx, r, key); sx += ulen(key) + 3; }
+    int sign = k.value("sign", 0xB7);
+    put(sx, r, sign, sign == 0xB7 ? ASH : GOLD, bg);
+    bool marked = i == fire_mark_;
+    text(sx + 2, r, k["name"].get<std::string>(), marked ? EMBER : i == fire_sel_ ? GOLD : INK, bg);
+    buttons_.push_back({cx - 1, r, wdt + 1, 1, "", "fire:" + std::to_string(i)});
+  };
+  // left: the keys
+  int r = y + 2;
+  head(L, r, "On your keys");
+  r += 2;
+  const json skills = me.value("skills", json::array());
+  if (!skills.empty()) {
+    keycap(L, r, "1");
+    text(L + 4, r, skills[0][0].get<std::string>(), ASH, PAPER);
+    if (me["weapon"].is_object()) { std::string wn = me["weapon"]["name"]; text(L + W2 - ulen(wn), r, wn, DIM, PAPER); }
+  }
+  r += 2;
+  for (int i = 0; i < 4; ++i, r += 2) {
+    if (i >= int(known.size())) { keycap(L, r, std::to_string(i + 2)); text(L + 4, r, "empty", DIM, PAPER); continue; }
+    skill_line(L, r, W2, known[i], i, std::to_string(i + 2));
+    if (el2 >= 0) {  // which coal this key lays
+      int e = slotel[i + 1].get<int>() ? el2 : el;
+      std::string n = std::string("◄") + elem::NAME[e] + "►";
+      text(L + W2 - ulen(n), r, n, elem::COL[e], row_bg(i));
+    }
+  }
+  if (el2 >= 0) rich(L, r++, "[◄►] which coal a key lays", DIM, PAPER);
+  // right: known, not on keys
+  r = y + 2;
+  head(R, r, "Known, not on keys");
+  r += 2;
+  if (known.size() <= 4) text(R, r, "nothing waits here yet", DIM, PAPER);
+  for (size_t j = 4; j < known.size(); ++j, r += 2) {
+    skill_line(R, r, W2, known[j], int(j), "");
+    int st = known[j].value("style", 0), rk = known[j].value("rank", 0);
+    std::string from = std::string(data::STYLES[st].name) + " " + std::to_string(rk);
+    text(R + W2 - ulen(from), r, from, data::STYLES[st].col, row_bg(int(j)));
+  }
+  // the second coal, while there is none
+  int coal_row = rows - 1;
+  r = y + 15;
+  if (el >= 0 && el2 < 0) {
+    if (fire_coal_ == el || fire_coal_ < 0 || fire_coal_ >= elem::N) fire_coal_ = (el + 1) % elem::N;
+    int bg = row_bg(coal_row);
+    for (int c = R - 1; c < R + W2; ++c) put(c, r, ' ', INK, bg);
+    text(R, r, "A second coal:", INK, bg);
+    std::string n = std::string("◄") + elem::NAME[fire_coal_] + "►";
+    text(R + W2 - ulen(n), r, n, elem::COL[fire_coal_], bg);
+    buttons_.push_back({R - 1, r, W2 + 1, 1, "", "fire:" + std::to_string(coal_row)});
+  }
+  // what the marked row would do, in a grey line
+  int sep = y + 18;
+  for (int i = x + 2; i < x + w - 2; ++i) put(i, sep - 1, 0x2500, 0x5A4028, PAPER);
+  std::string note;
+  if (el >= 0 && el2 < 0 && fire_sel_ == coal_row) note = std::string("[Enter] take the ") + elem::NAME[fire_coal_] + " coal: keys set to it lay " + elem::NAME[fire_coal_] + ". It cannot be undone.";
+  else if (fire_mark_ >= 0) note = "Now pick the skill to put on [" + std::to_string(fire_mark_ + 2) + "] and press [Enter].";
+  else if (fire_sel_ < int(known.size())) note = known[fire_sel_]["name"].get<std::string>() + ": " + known[fire_sel_]["about"].get<std::string>() + ".";
+  rich_wrap(L, sep, w - 6, note, DIM, PAPER);
+  // a path waiting
+  r = sep + 3;
+  json path = me.value("path", json::array({-1, -1, -1}));
+  json styles = me.value("styles", json::array());
+  int due = -1;
+  for (int s = 0; s < 3 && s < int(styles.size()); ++s)
+    if (styles[s][1].get<int>() >= data::PATH_RANK && path[s].get<int>() < 0) { due = s; break; }
+  if (due >= 0) {
+    rich(L, r++, data::STYLES[due].name + std::string(" rank ") + std::to_string(data::PATH_RANK) + ": choose a path", data::STYLES[due].col, PAPER);
+    ++r;
+    for (int c = 0; c < 2; ++c) {
+      const auto& p = data::PATHS[due][c];
+      keycap(L, r, c ? "b" : "a");
+      text(L + 4, r, p.name, GOLD, PAPER);
+      r += rich_wrap(L + 17, r, w - 22, p.about, INK, PAPER);
+      buttons_.push_back({L, r - 1, 3, 1, "", "key:" + std::to_string(c ? int(SDLK_B) : int(SDLK_A))});
+      ++r;
+    }
+  } else {
+    std::string taken;
+    for (int s = 0; s < 3; ++s) if (path[s].get<int>() >= 0) taken += (taken.empty() ? "" : ", ") + std::string(data::PATHS[s][path[s].get<int>()].name);
+    text(L, r, taken.empty() ? "A path opens when a style reaches rank " + std::to_string(data::PATH_RANK) + "." : "Your paths: " + taken + ".", DIM, PAPER);
+  }
+  rich(L, y + h - 2, "[↑↓] pick  [Enter] swap  [◄►] coal  [a][b] path  [Esc] leave", INK, PAPER);
+}
+
+void Client::fire_key(SDL_Keycode k) {
+  auto& me = snap_["me"];
+  int rows = fire_rows(), known = int(me.value("known", json::array()).size());
+  int el = me.value("el", -1), el2 = me.value("el2", -1);
+  bool coal = el >= 0 && el2 < 0;
+  int coal_row = rows - 1;
+  if (k == SDLK_ESCAPE) { if (fire_mark_ >= 0) fire_mark_ = -1; else over_ = Over::None; return; }
+  if (k == SDLK_UP || k == SDLK_KP_8) fire_sel_ = (fire_sel_ + rows - 1) % rows;
+  else if (k == SDLK_DOWN || k == SDLK_KP_2) fire_sel_ = (fire_sel_ + 1) % rows;
+  else if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_KP_4 || k == SDLK_KP_6) {
+    if (coal && fire_sel_ == coal_row) {
+      int d = k == SDLK_LEFT || k == SDLK_KP_4 ? elem::N - 1 : 1;
+      do fire_coal_ = (fire_coal_ + d) % elem::N; while (fire_coal_ == el);
+    } else if (fire_sel_ < 4 && fire_sel_ < known && el2 >= 0) send({{"t", "slotel"}, {"k", fire_sel_ + 2}});
+  } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    if (coal && fire_sel_ == coal_row) { send({{"t", "coal"}, {"e", fire_coal_}}); return; }
+    if (fire_sel_ >= known) return;
+    if (fire_mark_ < 0) {
+      if (fire_sel_ < 4) fire_mark_ = fire_sel_;
+    } else {
+      if (fire_sel_ != fire_mark_) send({{"t", "slot"}, {"k", fire_mark_ + 2}, {"i", fire_sel_}});
+      fire_mark_ = -1;
+    }
+  } else if (k == SDLK_A || k == SDLK_B) {
+    json path = me.value("path", json::array({-1, -1, -1})), styles = me.value("styles", json::array());
+    for (int s = 0; s < 3 && s < int(styles.size()); ++s)
+      if (styles[s][1].get<int>() >= data::PATH_RANK && path[s].get<int>() < 0) { send({{"t", "path"}, {"s", s}, {"c", k == SDLK_B ? 1 : 0}}); break; }
   }
 }

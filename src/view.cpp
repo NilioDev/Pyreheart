@@ -135,6 +135,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                     {"name", "the trader"}, {"rank", "npc"}, {"hp", 1}, {"max", 1}, {"about", "a trader from Charnfen"}});
   out["ents"] = ents;
   if (f.rack.x >= 0) out["rack"] = {f.rack.x, f.rack.y};
+  if (f.fire.x >= 0) out["fire"] = {f.fire.x, f.fire.y};
   if (!f.coals.empty()) {
     json coals = json::array();
     for (auto& [c, e] : f.coals) coals.push_back({c.x, c.y, e});
@@ -209,7 +210,12 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   json eranks = json::array();
   for (int e = 0; e < elem::N; ++e) eranks.push_back({h.erank[e], h.exq[e], h.erank[e] > 0 ? Game::rank_need(h.erank[e] - 1) : 0, Game::rank_need(h.erank[e])});
   json known = json::array();
-  for (auto& k : h.known) known.push_back(skill_def(k).name);
+  for (auto& k : h.known) {  // the style each came from and the rank it came at, for the fire
+    int st = g.skill_style(h, k), rk = 0;
+    auto& sk = data::STYLES[st].skills;
+    for (size_t j = 0; j < sk.size(); ++j) if (sk[j] == k) rk = data::STYLE_RANKS[j];
+    known.push_back({{"name", skill_def(k).name}, {"style", st}, {"rank", rk}, {"sign", elem::skill_sign(k)}, {"about", skill_def(k).about}, {"fury", Game::fury_skill(k)}});
+  }
   std::string dmg = std::to_string(st.lo) + "-" + std::to_string(st.hi) + (st.pct > 0 ? " +" + std::to_string(st.pct) + "%" : "");
   // the elements a foe winding up near you will set off on you
   json warn = json::array();
@@ -227,7 +233,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                {"bleeding", h.bleed > 0}, {"branded", h.brand > 0}, {"sundered", h.sunder > 0}, {"dazed", h.dazed > 0}, {"dmg", dmg}, {"armour", st.armour}, {"acc", st.acc},
                {"crit", st.crit}, {"res", {st.res_f, st.res_c, st.res_p}}, {"equip", equip}, {"pack", pack}, {"perks", perks},
                {"choice", choice}, {"skills", skills}, {"pool", h.cls->res}, {"fury", h.fury}, {"maxfury", 10}, {"usesfury", uses_fury},
-               {"usesmana", uses_mana || g.main_style(h) != 0}, {"styles", styles}, {"weapon", weapon}, {"eranks", eranks}, {"known", known},
+               {"usesmana", uses_mana || g.main_style(h) != 0}, {"styles", styles}, {"weapon", weapon}, {"eranks", eranks}, {"known", known}, {"slotel", h.slot_el}, {"path", h.path},
                {"power", g.power(h)}, {"reload", h.reload}, {"focus", h.focus}, {"standfast", h.standfast}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
   if (h.shopping) {
     json shop = json::array();

@@ -78,6 +78,7 @@ inline const std::vector<Chapter>& chapters() {
       {"rest", "Waystations",
        {{'p', "After a zone's great foe comes a waystation: a fountain that closes your wounds, a trader, and two stairs to choose from."},
         {'p', "Look at the stairs with [l] to see where each leads. The chart in the corner shows the way you came in gold."},
+        {'p', "Walk into the fire to rest by it. There you choose which skills sit on keys [2] to [5], take a path once a style reaches rank 5, and take a second coal: each key can then lay either of your two elements."},
         {'p', "Friends who fell wake again at the next waystation, if the others get there."}}},
       {"coop", "Co-op",
        {{'p', "Up to four heroes can dive together over the network: host a dive from the title screen, and the others join it."},

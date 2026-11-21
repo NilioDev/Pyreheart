@@ -490,6 +490,16 @@ STYLES = {
 STYLE_ORDER = ('melee', 'ranged', 'magic')
 STYLE_RANKS = (1, 3, 6, 10, 15, 20)   # a style's skills come at these ranks
 MASTERY_MAX = 5
+# at rank 5 each style offers two paths, chosen at a waystation's fire: (key, name, what it does)
+PATH_RANK = 5
+PATHS = {
+    'melee': (('berserker', 'Berserker', 'each point of fury: +3% damage'),
+              ('guardian', 'Guardian', '+4 armour; blows you take fill twice the fury')),
+    'ranged': (('sharpshooter', 'Sharpshooter', '+10% critical with every shot'),
+               ('skirmisher', 'Skirmisher', 'a shot right after a step hits 20% harder')),
+    'magic': (('invoker', 'Invoker', '+25% spell power'),
+              ('shepherd', 'Shepherd', 'Mend heals half again as much; a lantern\'s light reaches 3')),
+}
 # style + element: the hero's name in the world (plan.md section 1, Combo titles), in elements order
 TITLES = {
     'melee': ('Forgeborn', 'Rimeguard', 'Cinderguard', 'Blightreaver', 'Bloodsworn'),

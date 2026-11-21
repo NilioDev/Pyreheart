@@ -52,8 +52,8 @@ void Game::assign_element(Mon& m) {
 
 // ------------------------------------------------------------------ laying stacks
 void Game::lay_on_mon(Hero& h, Mon& m, int n) {
-  if (h.el < 0 || m.hp <= 0) return;
-  int e = h.el;
+  int e = hero_el(h);
+  if (e < 0 || m.hp <= 0) return;
   if (e == BLOOD && m.can("stone")) return;  // stone does not bleed
   int res = mon_res(m, e), laid = 0;
   for (int i = 0; i < n; ++i) if (res <= 0 || rnd.below(100) >= res) ++laid;

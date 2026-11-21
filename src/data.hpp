@@ -343,6 +343,8 @@ inline const std::vector<StyleDef> STYLES = {
 };
 inline const int STYLE_RANKS[] = {1, 3, 6, 10, 15, 20};
 constexpr int MASTERY_MAX = 5;
+constexpr int PATH_RANK = 5;
+inline const PathDef PATHS[3][2] = {{{"berserker", "Berserker", "each point of fury: +3% damage"}, {"guardian", "Guardian", "+4 armour; blows you take fill twice the fury"}}, {{"sharpshooter", "Sharpshooter", "+10% critical with every shot"}, {"skirmisher", "Skirmisher", "a shot right after a step hits 20% harder"}}, {{"invoker", "Invoker", "+25% spell power"}, {"shepherd", "Shepherd", "Mend heals half again as much; a lantern's light reaches 3"}}};
 inline const char* const TITLES[3][5] = {{"Forgeborn", "Rimeguard", "Cinderguard", "Blightreaver", "Bloodsworn"}, {"Kindler", "Coldeye", "Smokestalker", "Plaguehunter", "Bloodhunter"}, {"Pyrebinder", "Rimecaller", "Ashseer", "Rotspeaker", "Bloodbinder"}};
 inline const std::vector<SkillDef> SKILLS = {
     {"cleave", "Cleave", 2, false, "strike every foe next to you"},
