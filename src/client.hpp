@@ -26,7 +26,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
-  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal, Rack, Fire };
+  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal, Rack, Fire, Grave };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -207,9 +207,22 @@ class Client {
   std::map<std::string, std::vector<int>> bags_;
   // the Pyre: Sparks earned (all of them, spent or not), the gifts bought with them, the Frost levels opened and chosen,
   // and the zone bosses already paid out for, as "zone@frost"
-  int sparks_ = 0, frost_max_ = 0, frost_ = 0, pyre_sel_ = 0;
-  std::map<std::string, int> talents_;
+  // all of it belongs to the hero (plan.md section 1): kept in hero.json with what the hero grew, gone with the hero
+  int sparks_ = 0, frost_ = 0, pyre_sel_ = 0;
+  std::map<std::string, int> talents_, talents_open_;  // the tree, and as it stood when the Pyre was opened
   std::set<std::string> claimed_;
+  // the hero kept between dives: its name, the record of all it grew (null until it first beats the King), the Frost
+  // level it goes down to next; respec: the tree may be taken back, once, after a King; the graves of the fallen
+  json hero_;
+  bool respec_ = false, dive_closed_ = false;
+  json graves_ = json::array();
+  int grave_at_ = -1;  // the grave in Charnfen being read
+  void load_hero();
+  void hello();  // to the host: who comes, and the hero it brings
+  void save_hero();
+  void close_dive(const json& s);  // a dive won keeps the hero, a dive lost makes its grave
+  json grave_for(int x, int y);    // the grave a stone in Charnfen stands for, or null
+  void draw_grave();
   void claim_sparks(const json& s);
   void draw_pyre();
   void draw_town();  // Charnfen (town.cpp)

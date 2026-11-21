@@ -61,6 +61,12 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   json out;
   out["turn"] = g.turn;
   out["state"] = g.state;
+  // the end of a dive: a hero who beat the King is kept for the next Frost level; one who fell gets a grave (a friend who fell in a dive won is woken by the victory)
+  if (g.state == "won") out["record"] = g.record(h);
+  if (g.state == "over")
+    out["grave"] = {{"name", h.name}, {"title", h.cls->name}, {"lvl", h.lvl}, {"frost", g.frost}, {"depth", f.depth},
+                    {"zone", data::ACTS[f.act].name}, {"killer", h.killer.empty() ? "the dark" : h.killer}, {"kills", h.kills},
+                    {"coop", g.heroes.size() > 1}};
   out["depth"] = g.depth;
   out["act"] = f.act;
   out["rest"] = f.rest;

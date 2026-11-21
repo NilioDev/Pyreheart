@@ -192,3 +192,41 @@ void Game::fire_action(Hero& h, const std::string& t, const json& a) {
     h.slot_el[k - 1] ^= 1;
   }
 }
+
+// ------------------------------------------------------------------ the hero kept between dives
+
+json Game::record(const Hero& h) const {
+  json equip = json::object(), pack = json::array();
+  for (auto& [slot, it] : h.equip) equip[slot] = loot::save(*it);
+  for (auto& it : h.pack) pack.push_back(loot::save(*it));
+  return {{"v", 1}, {"name", h.name}, {"lvl", h.lvl}, {"xp", h.xp}, {"gold", h.gold}, {"kills", h.kills},
+          {"srank", h.srank}, {"sxp", h.sxp}, {"erank", h.erank}, {"exq", h.exq}, {"wxp", h.wxp}, {"known", h.known},
+          {"path", h.path}, {"slotel", h.slot_el}, {"el", h.el}, {"el2", h.el2}, {"perks", h.perks}, {"choices", h.perk_choices},
+          {"equip", equip}, {"pack", pack}, {"heal", h.heal}, {"manap", h.mana_pots},
+          {"tips", std::vector<std::string>(h.tips.begin(), h.tips.end())}};
+}
+
+void Game::restore(Hero& h, const json& j) {
+  if (!j.is_object() || j.value("v", 0) != 1) return;
+  auto arr = [&](const char* k, int* out, int n) {
+    if (!j.contains(k) || !j[k].is_array()) return;
+    for (int i = 0; i < n && i < int(j[k].size()); ++i) out[i] = j[k][i].get<int>();
+  };
+  h.lvl = std::max(1, j.value("lvl", 1)); h.xp = j.value("xp", 0); h.gold = j.value("gold", 0); h.kills = j.value("kills", 0);
+  arr("srank", h.srank, 3); arr("sxp", h.sxp, 3); arr("erank", h.erank, 5); arr("exq", h.exq, 5);
+  arr("path", h.path, 3); arr("slotel", h.slot_el, 5);
+  h.el = std::clamp(j.value("el", -1), -1, elem::N - 1); h.el2 = std::clamp(j.value("el2", -1), -1, elem::N - 1);
+  if (j.contains("wxp") && j["wxp"].is_object()) for (auto& [k, v] : j["wxp"].items()) h.wxp[k] = v.get<int>();
+  if (j.contains("perks") && j["perks"].is_object()) for (auto& [k, v] : j["perks"].items()) h.perks[k] = v.get<int>();
+  h.known.clear();
+  for (auto& k : j.value("known", json::array())) h.known.push_back(k.get<std::string>());
+  for (auto& c : j.value("choices", json::array())) h.perk_choices.push_back(c.get<std::vector<std::string>>());
+  h.equip.clear();
+  h.pack.clear();
+  if (j.contains("equip") && j["equip"].is_object())
+    for (auto& [slot, it] : j["equip"].items()) if (auto i = loot::load(it)) h.equip[slot] = i;
+  for (auto& it : j.value("pack", json::array())) if (auto i = loot::load(it); i && int(h.pack.size()) < PACK_MAX) h.pack.push_back(i);
+  h.heal = j.value("heal", h.heal); h.mana_pots = j.value("manap", h.mana_pots);
+  for (auto& t : j.value("tips", json::array())) h.tips.insert(t.get<std::string>());
+  refit(h);
+}

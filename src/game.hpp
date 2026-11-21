@@ -59,6 +59,8 @@ using ItemP = std::shared_ptr<Item>;
 namespace loot {
 ItemP make(const std::string& base, const std::string& rarity = "normal", int tier = 0);
 ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
+json save(const Item& it);   // all of an item, for the hero kept between dives
+ItemP load(const json& j);   // and back (a new id); nullptr if it does not read
 }
 
 struct LogLine { std::string text; int col; };
@@ -98,6 +100,7 @@ struct Hero {
   // at a waystation's fire: the path taken in each style at rank 5 (-1 none yet), and which coal each key [1]-[5] lays
   // (0 the first, 1 the second)
   int path[3] = {-1, -1, -1};
+  std::string killer;  // what slew it, for its grave
   int slot_el[5] = {0, 0, 0, 0, 0};
   Stacks stk;
   std::vector<char> vis = std::vector<char>(W * H, 0);
@@ -246,7 +249,10 @@ class Game {
   std::string state = "play";
   std::vector<json> fx;
 
-  Hero& join(int pid, const std::string& name, const std::string& cls, const json& talents = json());
+  Hero& join(int pid, const std::string& name, const std::string& cls, const json& talents = json(), const json& record = json());
+  // the hero kept between dives (plan.md section 1, Hero lifecycle): all it grew and carries, and back
+  json record(const Hero& h) const;
+  void restore(Hero& h, const json& j);
   void leave(int pid);
   bool free_action(Hero& h, const json& a);
   void step(const std::map<int, json>& actions);
