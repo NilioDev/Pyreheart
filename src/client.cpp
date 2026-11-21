@@ -483,6 +483,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Book: book_key(k); return;
     case Over::Menu: menu_key(k); return;
     case Over::Options: options_key(k); return;
+    case Over::Coal: coal_key(k); return;
     case Over::Hero:
       if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
@@ -536,7 +537,14 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (k == SDLK_C) { over_ = Over::Hero; return; }
   if (k == SDLK_O) { over_ = Over::Options; opt_sel_ = 0; return; }
   if (me.value("dead", false) || me.value("gone", false)) return;
-  if (dx || dy) { send({{"t", "move"}, {"dx", dx}, {"dy", dy}}); return; }
+  if (dx || dy) {
+    // a step into a coal at the great fire, with no coal yet, opens the choice of coals
+    if (me.value("el", -1) < 0 && snap_.contains("coals"))
+      for (auto& c : snap_["coals"])
+        if (c[0].get<int>() == me["x"].get<int>() + dx && c[1].get<int>() == me["y"].get<int>() + dy) { over_ = Over::Coal; coal_sel_ = c[2]; return; }
+    send({{"t", "move"}, {"dx", dx}, {"dy", dy}});
+    return;
+  }
   if ((k == SDLK_PERIOD && shift) || k == SDLK_GREATER) { act("down"); return; }
   if ((k == SDLK_SLASH && shift) || k == SDLK_QUESTION || k == SDLK_F1) { act("help"); return; }
   switch (k) {
@@ -648,6 +656,7 @@ void Client::click(int x, int y, bool down) {
       else if (b.action.rfind("key:", 0) == 0) key(SDL_Keycode(arg), SDL_KMOD_NONE);
       else if (b.action.rfind("menu:", 0) == 0) { if (menu_sel_ == arg) menu_do(arg); else menu_sel_ = arg; }
       else if (b.action.rfind("opt:", 0) == 0) { if (opt_sel_ == arg) options_key(SDLK_RETURN); else opt_sel_ = arg; }
+      else if (b.action.rfind("coal:", 0) == 0) { if (coal_sel_ == arg) coal_key(SDLK_RETURN); else coal_sel_ = arg; }
       else if (b.action.rfind("book:", 0) == 0) { book_ch_ = arg; book_scroll_ = 0; book_why_.clear(); }
       else if (b.action == "close") key(SDLK_ESCAPE, SDL_KMOD_NONE);
       else { over_ = Over::None; act(b.action); }
@@ -655,7 +664,7 @@ void Client::click(int x, int y, bool down) {
     }
   if (over_ == Over::Book || over_ == Over::Menu || over_ == Over::Hero || over_ == Over::Options) { over_ = Over::None; return; }
   if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
-  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk) return;
+  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal) return;
   // a tap on the map
   int mx = x - vx_ + camx_, my = y - vy_ + camy_;
   if (x < vx_ || y < vy_ || x >= vx_ + vw_ || y >= vy_ + vh_) return;
@@ -667,6 +676,9 @@ void Client::click(int x, int y, bool down) {
     return;
   }
   if (over_ == Over::Ring) { over_ = Over::None; return; }
+  if (me.value("el", -1) < 0 && snap_.contains("coals"))
+    for (auto& c : snap_["coals"])
+      if (c[0].get<int>() == mx && c[1].get<int>() == my) { over_ = Over::Coal; coal_sel_ = c[2]; return; }
   if (mx == hx && my == hy) {
     if (layout_ == Layout::Watch) { over_ = Over::Ring; ring_ = 0; }
     else act("wait");
@@ -936,6 +948,7 @@ void Client::draw_game() {
     vx_ = 0; vy_ = 0; vw_ = VIEW_W; vh_ = VIEW_H;
     suns_.clear();
     draw_map();
+    draw_coals();
     low_life_edge();
     draw_frame_wide(VIEW_W, VIEW_H);
     draw_side(VIEW_W, 0, cw - VIEW_W, chh);
@@ -945,6 +958,7 @@ void Client::draw_game() {
     vx_ = 0; vy_ = 2; vw_ = cw; vh_ = chh - 2 - 5 - 6;
     draw_status_tall(0);
     draw_map();
+    draw_coals();
     draw_log(0, vy_ + vh_, cw, 5);
     draw_buttons();
   } else {
@@ -1000,6 +1014,7 @@ void Client::draw_game() {
     case Over::Menu: dim_all(.3); draw_menu(); break;
     case Over::Hero: dim_all(.3); draw_hero(); break;
     case Over::Options: dim_all(.3); draw_options(); break;
+    case Over::Coal: dim_all(.3); draw_coal_window(); break;
     case Over::Ring: draw_ring(); break;
     case Over::Epigraph: draw_epigraph(); break;
     default: break;

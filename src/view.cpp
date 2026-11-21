@@ -46,6 +46,8 @@ static std::string describe(const Mon& m) {
   return out;
 }
 
+static json stacks(const Stacks& s) { json a = json::array(); for (int v : s.n) a.push_back(v); return a; }
+
 static json cmp(const Game& g, const Hero& h, const Item& it) {
   Verdict v = g.compare(h, it);
   json d = json::array();
@@ -104,6 +106,9 @@ json snapshot(Game& g, Hero& h, bool with_map) {
               {"busy", g.busy(*m, h)}};
     if (m->listen) e["listen"] = true;
     if (m->blow.turns > 0) e["wind"] = true;
+    if (m->stk.total() > 0) e["st"] = stacks(m->stk);
+    e["el"] = m->el;
+    if (m->discharger) e["disch"] = true;
     if (m->brace > 0) e["braced"] = true;
     if (m->awake && m->can("chill")) e["chill"] = true;
     if (m->dormant) e["dormant"] = true;
@@ -129,11 +134,18 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     ents.push_back({{"id", -1}, {"x", f.merchant.x}, {"y", f.merchant.y}, {"ch", int('@')}, {"col", 0xD2B48C},
                     {"name", "the trader"}, {"rank", "npc"}, {"hp", 1}, {"max", 1}, {"about", "a trader from Charnfen"}});
   out["ents"] = ents;
+  if (!f.coals.empty()) {
+    json coals = json::array();
+    for (auto& [c, e] : f.coals) coals.push_back({c.x, c.y, e});
+    out["coals"] = coals;
+  }
+  if (const elem::Zone* z = f.depth > 0 && !f.rest ? &elem::ZONE[std::clamp(f.act, 0, 9)] : nullptr)
+    out["zel"] = {z->atk[0], z->atk[1], z->resist, z->weak};
   json heroes = json::array();
   for (auto& [id, o] : g.heroes)
     if (!o->away)
       heroes.push_back({{"pid", o->pid}, {"name", o->name}, {"cls", o->cls->key}, {"x", o->x}, {"y", o->y}, {"hp", o->hp},
-                        {"max", g.stats(*o).maxhp}, {"lvl", o->lvl}, {"dead", o->dead}, {"gone", o->gone}, {"col", o->cls->col}});
+                        {"max", g.stats(*o).maxhp}, {"lvl", o->lvl}, {"st", stacks(o->stk)}, {"el", o->el}, {"dead", o->dead}, {"gone", o->gone}, {"col", o->cls->col}});
   out["heroes"] = heroes;
   json items = json::array();
   for (auto& fi : f.items) {
@@ -172,10 +184,18 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     if (k == "charge" && h.perk("frenzy")) cost = 0;
     if (k == "tumble") cost -= 2 * h.perk("quick");
     if (k == "kindle" && h.perk("deeprunes")) cost = 0;
-    skills.push_back({s.name, cost, s.target, s.about, data::SKILL_LEVELS[i]});
+    skills.push_back({s.name, cost, s.target, s.about, data::SKILL_LEVELS[i], elem::skill_sign(k)});
   }
   std::string dmg = std::to_string(st.lo) + "-" + std::to_string(st.hi) + (st.pct > 0 ? " +" + std::to_string(st.pct) + "%" : "");
-  out["me"] = {{"pid", h.pid}, {"name", h.name}, {"cls", h.cls->key}, {"clsname", h.cls->name}, {"x", h.x}, {"y", h.y},
+  // the elements a foe winding up near you will set off on you
+  json warn = json::array();
+  for (auto& m : f.mons)
+    if (m->blow.turns > 0 && h.sees(m->x, m->y) && (m->discharger || m->rank != "normal"))
+      for (int e = 0; e < elem::N; ++e)
+        if (h.stk.n[e] > 0 && (e == m->el || m->rank == "boss")) warn.push_back(e);
+  json res = json::array();
+  for (int e = 0; e < elem::N; ++e) res.push_back(g.hero_res(h, e));
+  out["me"] = {{"pid", h.pid}, {"st", stacks(h.stk)}, {"el", h.el}, {"el2", h.el2}, {"smother", h.smother}, {"warn", warn}, {"eres", res}, {"name", h.name}, {"cls", h.cls->key}, {"clsname", h.cls->name}, {"x", h.x}, {"y", h.y},
                {"hp", h.hp}, {"maxhp", st.maxhp}, {"mana", h.mana}, {"maxmana", st.maxmana}, {"lvl", h.lvl}, {"xp", h.xp},
                {"next", g.need(h.lvl)}, {"prev", h.lvl > 1 ? g.need(h.lvl - 1) : 0}, {"gold", h.gold}, {"heal", h.heal},
                {"manap", h.mana_pots}, {"dead", h.dead}, {"gone", h.gone}, {"shopping", h.shopping}, {"poison", h.poison > 0},

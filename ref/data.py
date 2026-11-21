@@ -451,8 +451,9 @@ PACKS = {'rat': (2, 4), 'bat': (2, 4), 'spider': (2, 4), 'leech': (2, 4), 'newt'
 # champions (blue) carry one of these, uniques (gold) two or three; a pack of champions shares one
 AFFIXES = {
     'Swift': 'it is quick', 'Brutal': 'it hits very hard', 'Stone Skin': 'it is hard to hurt',
-    'Vampiric': 'its blows heal it', 'Fire-blooded': 'it burns, and bursts into flame when slain',
-    'Regenerating': 'its wounds close', 'Venomous': 'its blows poison', 'Frost-touched': 'its cold touch numbs your arm',
+    'Vampiric': 'its blows lay Blood and heal it', 'Fire-blooded': 'its blows lay Ember, and it bursts into flame when slain',
+    'Regenerating': 'its wounds close', 'Venomous': 'its blows lay Rot', 'Frost-touched': 'its blows lay Rime',
+    'Ashen': 'its blows lay Ash',
 }
 UNIQUE_FIRST = ['Gorrath', 'Vesk', 'Old Murl', 'Ashka', 'Brannoc', 'Thessaly', 'Grimwald', 'Ulvane', 'Skarn', 'Morrow']
 UNIQUE_EPITHET = ['the Gnawer', 'the Patient', 'Bonechewer', 'the Hollow', 'Ironjaw', 'the Pale', 'of the Long Teeth',
@@ -620,14 +621,16 @@ SUFFIXES = {
     'of Embers': ('res_fire', (10, 25), 1.2, None),
     'of the Thaw': ('res_cold', (10, 25), 1.2, None),
     'of Purity': ('res_poison', (10, 25), 1.2, None),
+    'of Clear Sight': ('res_ash', (10, 25), 1.2, None),
+    'of Staunching': ('res_blood', (10, 25), 1.2, None),
     'of the Wellspring': ('regen', (1, 2), 1.3, ('ring', 'amulet', 'body', 'helm')),
     'of Thorns': ('thorns', (2, 5), 1.5, ('body', 'helm')),
 }
 STAT_TEXT = {
     'dmg': '+{} damage', 'dmg_pct': '+{}% damage', 'armour': '+{} armour', 'mana': '+{} mana', 'acc': '+{} accuracy',
     'fire_dmg': '+{} fire damage', 'spell': '+{}% spell power', 'hp': '+{} life', 'crit': '+{}% critical',
-    'leech': '{}% of damage heals you', 'res_fire': '+{}% resist fire', 'res_cold': '+{}% resist cold',
-    'res_poison': '+{}% resist poison', 'regen': '+{} mana each 3 turns', 'thorns': 'attackers take {} damage',
+    'leech': '{}% of damage heals you', 'res_fire': '+{}% resist Ember', 'res_cold': '+{}% resist Rime',
+    'res_poison': '+{}% resist Rot', 'res_ash': '+{}% resist Ash', 'res_blood': '+{}% resist Blood', 'regen': '+{} mana each 3 turns', 'thorns': 'attackers take {} damage',
 }
 RARE_A = ['Grim', 'Dusk', 'Blood', 'Storm', 'Bone', 'Ash', 'Wraith', 'Raven', 'Doom', 'Ember', 'Gloom', 'Iron']
 RARE_B = {'weapon': ['Bite', 'Song', 'Fang', 'Edge', 'Thirst', 'Reaver'], 'body': ['Shell', 'Hide', 'Coat', 'Carapace'],

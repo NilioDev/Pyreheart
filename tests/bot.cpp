@@ -71,7 +71,9 @@ static json dodge(Game& g, Hero& h) {
   return nullptr;
 }
 
+static int bot_elem = 0;  // BOTELEM=n, else one after another
 static json choose(Game& g, Hero& h) {
+  if (h.el < 0) return {{"t", "coal"}, {"e", std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
   if (!h.perk_choices.empty()) g.free_action(h, {{"t", "perk"}, {"k", h.perk_choices.front()[g.rnd.below(int(h.perk_choices.front().size()))]}});
   Stats st = g.stats(h);
   if (h.hp < st.maxhp * .4 && h.heal > 0) return {{"t", "quaff"}, {"k", "heal"}};
@@ -96,7 +98,7 @@ static json choose(Game& g, Hero& h) {
       ++visible;
       if (!seen || cheb(h.x, h.y, m->x, m->y) < cheb(h.x, h.y, seen->x, seen->y)) seen = m;
     }
-  if (seen && std::getenv("BOTDBG") && g.turn > 19990) std::printf("seen %s at %d,%d tile %d dormant %d hidden %d\n", seen->name.c_str(), seen->x, seen->y, f.tile(seen->x, seen->y), seen->dormant, seen->hidden);
+  if (seen && std::getenv("BOTDBG") && g.turn > 19990) std::printf("seen %s at %d,%d tile %d dormant %d hidden %d hp %d sees %d\n", seen->name.c_str(), seen->x, seen->y, f.tile(seen->x, seen->y), seen->dormant, seen->hidden, seen->hp, int(h.sees(seen->x, seen->y)));
   if (seen) {
     if (!h.cls->fury() && h.mana < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
     int d = cheb(h.x, h.y, seen->x, seen->y);
@@ -118,7 +120,7 @@ static json choose(Game& g, Hero& h) {
       if (purple && L >= 6 && M >= 6) return skill(4, purple);
       if (d <= 1 && L >= 3 && M >= 4) return skill(3);
       if (visible >= 3 && M >= 7) return skill(1);
-      if (d > 1) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+      if (d > 1 && d <= 8) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};  // a bow reaches 9
     } else if (k == "adept") {
       for (auto& m : f.mons) if (m->frozen > 0 && h.sees(m->x, m->y) && M >= 4) return skill(1, m);
       if (d <= 2 && M >= 10 && (near >= 1 || purple)) return skill(2);
@@ -225,6 +227,9 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
   for (auto& [s, it] : g.heroes.begin()->second->equip) gear += it->shortname() + ", ";
   std::string way;
   for (int z : g.route) way += (way.empty() ? "" : ">") + ACTS[z].key.substr(0, 4);
+  std::string els;
+  for (auto& [id, h] : g.heroes) els += (els.empty() ? "" : "+") + std::string(h->el >= 0 ? elem::NAME[h->el] : "-");
+  names += "/" + els;
   std::printf("%-22s seed %2llu: %-4s depth %2d%s turn %5d lvl %s kills %3d gold %4d | %s | %s\n", names.c_str(), (unsigned long long)seed,
               g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
               gear.c_str());

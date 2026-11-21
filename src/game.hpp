@@ -5,6 +5,7 @@
 
 #include "data.hpp"
 #include "defs.hpp"
+#include "elements.hpp"
 
 using json = nlohmann::json;
 
@@ -81,6 +82,10 @@ struct Hero {
   int shown = 0;  // the statuses already floated up over the hero
   int held = 0, dazed = 0, sunder = 0, brand = 0, bleed = 0, bleed_dmg = 0, ashen = 0, latched = 0, moved = 0;
   bool dimmed = false;
+  // the elements: the coals taken (the first from Charnfen's great fire, -1 none yet), the stacks carried, the turns
+  // the skills stay smothered by Ash, and the foes' discharges already warned of
+  int el = -1, el2 = -1, smother = 0;
+  Stacks stk;
   std::vector<char> vis = std::vector<char>(W * H, 0);
   std::vector<char> seen = std::vector<char>(W * H, 0);  // all it has seen of this floor, for a dive taken up again
   std::vector<LogLine> log;
@@ -125,6 +130,9 @@ struct Mon {
   // (a blind foe that has lost you), flee (turns it runs off), tcool (turns before the trick again), split (a swarm broken)
   int dormant = 0, hidden = 0, brace = 0, listen = 0, flee = 0, tcool = 0, sleep = 0;  // sleep: until a noise
   bool split = false, swum = false;
+  Stacks stk;              // the elements on it
+  int el = 0;              // the element its blows lay
+  bool discharger = false; // a slow, heavy foe: its telegraphed blow sets off the stacks of its element
   bool can(const std::string& t) const { return def->has(t); }
   std::string trick(const std::string& t) const;  // the part after the colon of a trait like "lob:acid", or 
   std::vector<std::string> deck;   // a boss's next moves
@@ -166,6 +174,7 @@ struct Floor {
   std::vector<Rune> runes;
   std::vector<Ground> ground;
   std::vector<Sleeper> sleepers;
+  std::vector<std::pair<P, int>> coals;  // Charnfen: the coals at the edge of the great fire, and their elements
   std::map<int, int> exits;  // in a waystation: the stairs down (cell index) and the zone each leads to
   bool burning(int x, int y) const { for (auto& g : ground) if ((g.kind == G_EMBER || g.kind == G_FIRE) && g.p == P{x, y}) return true; return false; }
   const Ground* ground_at(int x, int y) const { for (auto& g : ground) if (g.p == P{x, y}) return &g; return nullptr; }
@@ -293,6 +302,23 @@ class Game {
     add_fx({{"k", "num"}, {"x", x}, {"y", y}, {"t", t}, {"col", col}, {"delay", .14 * n}});
   }
   bool crit_next = false;  // the next harm to a foe was a critical blow: its number is gold
+  // elements.cpp: stacks laid, set off and fading
+  Hero* acting_ = nullptr;  // the hero whose action this is: its hits lay its element
+  int discharging_ = -1;    // and this element is set off instead, by a heavy skill
+  int scale_el() const { return 1 + lvl / 4; }
+ public:
+  int mon_res(const Mon& m, int e) const;
+  int hero_res(const Hero& h, int e) const;
+  int heal_cut(const Stacks& s, bool capped) const;
+  int rime_slow(const Mon& m) const;
+ private:
+  void assign_element(Mon& m);
+  void lay_on_mon(Hero& h, Mon& m, int n);
+  void lay_on_hero(Mon& m, Hero& h, int n);
+  void discharge_mon(Hero& h, Mon& m, int e);
+  void discharge_hero(Mon& m, Hero& h, int e);
+  void stacks_tick();
+  void take_coal(Hero& h, int e);
 
   void act(Hero& h, const json& a);
   void move(Hero& h, int dx, int dy);
