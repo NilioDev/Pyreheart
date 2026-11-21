@@ -211,9 +211,10 @@ static json choose(Game& g, Hero& h) {
   return a;
 }
 
-static void run(const std::vector<std::string>& classes, uint64_t seed) {
+// Returns the first hero as kept for the next Frost level when the dive is won, else null.
+static json run(const std::vector<std::string>& classes, uint64_t seed, int frost = -1, const json& kept = json()) {
   // BOTFROST=n plays on that Frost level; BOTTALENTS=all gives every bot the whole Pyre tree (or "kindled:3,glint:1")
-  Game g(seed, std::getenv("BOTFROST") ? std::atoi(std::getenv("BOTFROST")) : 0);
+  Game g(seed, frost >= 0 ? frost : std::getenv("BOTFROST") ? std::atoi(std::getenv("BOTFROST")) : 0);
   json talents = json::object();
   if (const char* t = std::getenv("BOTTALENTS")) {
     std::string s = t;
@@ -228,7 +229,7 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
         i = j + 1;
       }
   }
-  for (size_t i = 0; i < classes.size(); ++i) { bot_weapon[int(i) + 1] = classes[i]; g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents); }
+  for (size_t i = 0; i < classes.size(); ++i) { bot_weapon[int(i) + 1] = classes[i]; g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents, i == 0 ? kept : json()); }
   int steps = 0, last_depth = -1;
   std::string pace;  // the first hero's level as each new depth is reached (BOTPACE=1 prints it)
   while (g.state == "play" && steps < 20000) {
@@ -265,9 +266,41 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
               g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
               gear.c_str());
   if (std::getenv("BOTPACE")) std::printf("   pace (level at each depth): %s\n", pace.c_str());
+  return g.state == "won" ? g.record(*g.heroes.begin()->second) : json();
+}
+
+// The hero kept between dives comes back whole: what it grew, what it carries, where its keys and coals are.
+static int kept_test() {
+  Game a(3, 0);
+  Hero& h = a.join(1, "Kept", "", json::object());
+  h.equip["weapon"] = loot::make("staff", "magic", 2);
+  h.pack.push_back(loot::roll(5, a.rnd, {"bow"}));
+  h.lvl = 7; h.xp = 1234; h.gold = 99; h.srank[2] = 6; h.sxp[2] = 400; h.el = 2; h.el2 = 4; h.erank[2] = 5; h.wxp["staff"] = 300;
+  h.known = {"nova", "blink", "mend"}; h.path[2] = 1; h.slot_el[2] = 1; h.perks["tough"] = 2;
+  a.refit(h);
+  json rec = json::parse(a.record(h).dump());
+  Game b(4, 1);
+  Hero& k = b.join(1, "Kept", "", json::object(), rec);
+  bool ok = k.lvl == 7 && k.xp == 1234 && k.gold == 99 && k.srank[2] == 6 && k.sxp[2] == 400 && k.el == 2 && k.el2 == 4 &&
+            k.erank[2] == 5 && k.wxp["staff"] == 300 && k.known == h.known && k.path[2] == 1 && k.slot_el[2] == 1 && k.perk("tough") == 2 &&
+            k.equip.count("weapon") && k.equip["weapon"]->name == h.equip["weapon"]->name && k.equip["weapon"]->stats == h.equip["weapon"]->stats &&
+            k.pack.size() == 1 && k.pack[0]->name == h.pack[0]->name && k.cls->name == h.cls->name && b.frost == 1;
+  std::printf("kept hero: %s (%s, level %d, %s)\n", ok ? "comes back whole" : "BROKEN", k.cls->name.c_str(), k.lvl, k.equip.count("weapon") ? k.equip["weapon"]->name.c_str() : "-");
+  return ok ? 0 : 1;
 }
 
 int main() {
+  if (kept_test()) return 1;
+  // BOTLADDER=n: the first weapon's hero goes on down the Frost ladder, n dives at most, kept between them
+  if (const char* l = std::getenv("BOTLADDER")) {
+    std::string w = std::getenv("BOTWEAPON") ? std::getenv("BOTWEAPON") : "staff";
+    json kept;
+    for (int f = 0; f < std::atoi(l); ++f) {
+      kept = run({w}, 100 + f, f, kept);
+      if (kept.is_null()) break;
+    }
+    return 0;
+  }
   const char* only = std::getenv("BOTWEAPON") ? std::getenv("BOTWEAPON") : std::getenv("BOTCLASS");
   int seeds = std::getenv("BOTSEEDS") ? std::atoi(std::getenv("BOTSEEDS")) : 2;
   for (auto& w : WEAPONS)

@@ -45,6 +45,7 @@ int sgn(int v) { return (v > 0) - (v < 0); }
 Client::Client(tcod::Context& ctx) : ctx_(ctx), con_(WIDE_W, WIDE_H) {
   intro_start_ = now();
   load_settings();
+  load_hero();
   pick_layout();
   // the watch has less to spare: half the samples
   apply_volume();
@@ -91,9 +92,6 @@ void Client::load_settings() {
     if (line.rfind("numbers=", 0) == 0) numbers_on_ = line[8] != '0';
     if (line.rfind("music_volume=", 0) == 0) music_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
     if (line.rfind("sound_volume=", 0) == 0) sound_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
-    if (line.rfind("sparks=", 0) == 0) sparks_ = std::max(0, std::atoi(line.c_str() + 7));
-    if (line.rfind("frost_max=", 0) == 0) frost_max_ = std::clamp(std::atoi(line.c_str() + 10), 0, pyre::FROST_MAX);
-    if (line.rfind("frost=", 0) == 0) frost_ = std::max(0, std::atoi(line.c_str() + 6));
     auto list = [&](size_t from, auto fn) {
       for (size_t i = from; i < line.size();) {
         size_t j = line.find(',', i);
@@ -102,9 +100,6 @@ void Client::load_settings() {
         i = j + 1;
       }
     };
-    if (line.rfind("talents=", 0) == 0)
-      list(8, [&](const std::string& t) { auto c = t.find(':'); if (c != std::string::npos) talents_[t.substr(0, c)] = std::atoi(t.c_str() + c + 1); });
-    if (line.rfind("claimed=", 0) == 0) list(8, [&](const std::string& t) { claimed_.insert(t); });
     if (line.rfind("window=", 0) == 0) std::sscanf(line.c_str(), "window=%dx%d", &win_w_, &win_h_);
     if (line.rfind("fullscreen=", 0) == 0) fullscreen_ = line[11] == '1';
     if (line.rfind("bag_", 0) == 0 && line.find('=') != std::string::npos) {
@@ -134,13 +129,6 @@ void Client::save_settings() {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
   }
-  f << "sparks=" << sparks_ << "\nfrost_max=" << frost_max_ << "\nfrost=" << frost_ << "\ntalents=";
-  bool first = true;
-  for (auto& [k, v] : talents_) { f << (first ? "" : ",") << k << ":" << v; first = false; }
-  f << "\nclaimed=";
-  first = true;
-  for (auto& c : claimed_) { f << (first ? "" : ",") << c; first = false; }
-  f << "\n";
   for (auto& [k, bag] : bags_) {
     f << "bag_" << k << "=";
     for (size_t i = 0; i < bag.size(); ++i) f << (i ? "," : "") << bag[i];
@@ -176,6 +164,72 @@ void Client::queue_epigraph(const std::string& zone) {
   if (over_ != Over::Epigraph) { over_ = Over::Epigraph; epi_start_ = now(); }
 }
 
+static std::string pref(const char* file) {
+  char* p = SDL_GetPrefPath("NilioDev", "Pyreheart");
+  std::string s = p ? std::string(p) + file : file;
+  SDL_free(p);
+  return s;
+}
+
+void Client::load_hero() {
+  hero_ = json();
+  sparks_ = 0; frost_ = 0; respec_ = false; talents_.clear(); claimed_.clear();
+  { std::ifstream f(pref("hero.json")); if (f) hero_ = json::parse(f, nullptr, false); }
+  if (!hero_.is_object() || !hero_.contains("name")) hero_ = json();
+  else {
+    sparks_ = std::max(0, hero_.value("sparks", 0));
+    frost_ = std::max(0, hero_.value("frost", 0));
+    respec_ = hero_.value("respec", false);
+    if (hero_.contains("talents") && hero_["talents"].is_object()) for (auto& [k, v] : hero_["talents"].items()) talents_[k] = v.get<int>();
+    for (auto& c : hero_.value("claimed", json::array())) claimed_.insert(c.get<std::string>());
+  }
+  std::ifstream g(pref("graves.json"));
+  if (g) graves_ = json::parse(g, nullptr, false);
+  if (!graves_.is_array()) graves_ = json::array();
+}
+
+void Client::hello() {
+  json h = {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}};
+  if (hero_.is_object()) {
+    h["name"] = hero_.value("name", name_);
+    if (hero_.contains("record") && hero_["record"].is_object()) h["hero"] = hero_["record"];
+  }
+  respec_ = false;  // the tree is set for this dive
+  dive_closed_ = false;
+  save_hero();
+  link_->send({{"hello", h}});
+}
+
+void Client::save_hero() {
+  if (!hero_.is_object()) { std::remove(pref("hero.json").c_str()); return; }
+  hero_["sparks"] = sparks_; hero_["frost"] = frost_; hero_["respec"] = respec_;
+  hero_["talents"] = talents_;
+  hero_["claimed"] = std::vector<std::string>(claimed_.begin(), claimed_.end());
+  std::ofstream f(pref("hero.json"));
+  f << hero_.dump();
+}
+
+void Client::close_dive(const json& s) {
+  if (dive_closed_) return;
+  if (s.value("state", "play") == "won" && s.contains("record") && hero_.is_object()) {
+    dive_closed_ = true;
+    hero_["record"] = s["record"];
+    ++frost_;
+    respec_ = true;
+    save_hero();
+    log_.push_back({"You will wake in Charnfen, and go down again into Frost " + std::to_string(frost_) + ". The Pyre will let you take back your Sparks, once.", 0x90C8FF});
+  } else if (s.value("state", "play") == "over" && s.contains("grave")) {
+    dive_closed_ = true;
+    json g = s["grave"];
+    graves_.push_back(g);
+    std::ofstream f(pref("graves.json"));
+    f << graves_.dump();
+    hero_ = json();
+    save_hero();
+    load_hero();
+  }
+}
+
 static std::string save_file() {
   char* p = SDL_GetPrefPath("NilioDev", "Pyreheart");
   std::string s = p ? std::string(p) + "dive.jsonl" : "dive.jsonl";
@@ -186,12 +240,13 @@ static std::string save_file() {
 std::vector<std::string> Client::title_items() const {
   std::vector<std::string> items;
   if (saved_dive(save_file())) items.push_back("Go on with the dive");
-  for (auto s : {"Dive alone", "Host a game for friends", "Join a game", "How to play", "Listen to the music"}) items.push_back(s);
+  else if (hero_.is_object()) items.push_back("Go down again: " + hero_.value("name", std::string("Hero")));
+  else items.push_back("Dive alone");
+  for (auto s : {"Host a game for friends", "Join a game", "How to play", "Listen to the music"}) items.push_back(s);
   {
     int free = sparks_ - pyre::spent(pyre::clean(talents_, sparks_));
     items.push_back("The Pyre" + (sparks_ ? " (" + std::to_string(free) + (free == 1 ? " Spark)" : " Sparks)") : std::string()));
   }
-  if (frost_max_ > 0) items.push_back("Frost: " + std::to_string(std::min(frost_, frost_max_)) + " of " + std::to_string(frost_max_));
   items.push_back(music_on_ ? "Music: on" : "Music: off");
   items.push_back("Quit");
   return items;
@@ -209,9 +264,9 @@ void Client::start(bool host, bool open, bool resume) {
   open_ = open;
   // a dive alone is saved after every move, so it goes on after the app is closed or killed
   host_ = std::make_unique<Host>(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()), open,
-                                 open ? "" : save_file(), resume, std::min(frost_, frost_max_));
+                                 open ? "" : save_file(), resume, frost_);
   link_ = host_->local();
-  link_->send({{"hello", {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
+  hello();
   screen_ = Screen::Game;
   maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
   if (open) {
@@ -231,7 +286,7 @@ void Client::join(const std::string& address) {
   if (!link_) { message_ = err; screen_ = Screen::Title; return; }
   hosting_ = false;
   host_.reset();
-  link_->send({{"hello", {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
+  hello();
   screen_ = Screen::Game;
   maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
 }
@@ -281,6 +336,7 @@ void Client::apply(const json& s) {
     }
   }
   claim_sparks(s);
+  close_dive(s);
   snap_ = s;
   bool shopping = s["me"].value("shopping", false);
   if (shopping && !was_shopping) { over_ = Over::Shop; sel_ = 0; }
@@ -428,6 +484,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       if (screen_ == Screen::Name) {  // no class to choose: the hero takes a weapon from the gatekeeper's rack in Charnfen
         if (name_.empty()) name_ = "Hero";
         save_settings();
+        if (!hero_.is_object()) { hero_ = {{"name", name_}}; frost_ = 0; save_hero(); }  // a new hero: one life
         over_ = Over::None;
         if (pending_join_) { pending_join_ = false; join(addr_); } else start(true, hosting_);
       }
@@ -493,6 +550,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Coal: coal_key(k); return;
     case Over::Rack: rack_key(k); return;
     case Over::Fire: fire_key(k); return;
+    case Over::Grave: over_ = Over::None; return;
     case Over::Hero:
       if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
@@ -550,6 +608,11 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     // a step into the gatekeeper's rack with no weapon yet opens it
     if (!me["weapon"].is_object() && snap_.contains("rack") && snap_["rack"][0].get<int>() == me["x"].get<int>() + dx &&
         snap_["rack"][1].get<int>() == me["y"].get<int>() + dy) { over_ = Over::Rack; return; }
+    // a step into a grave in Charnfen reads its stone
+    if (snap_.value("town", false)) {
+      json g = grave_for(me["x"].get<int>() + dx, me["y"].get<int>() + dy);
+      if (!g.is_null()) { grave_at_ = g.value("i", -1); over_ = Over::Grave; return; }
+    }
     // a step into a waystation's fire opens THE FIRE
     if (snap_.contains("fire") && snap_["fire"][0].get<int>() == me["x"].get<int>() + dx && snap_["fire"][1].get<int>() == me["y"].get<int>() + dy) {
       over_ = Over::Fire; fire_sel_ = 0; fire_mark_ = -1; return;
@@ -619,12 +682,13 @@ void Client::click(int x, int y, bool down) {
       message_.clear();
       const std::string& it = items[choice];
       if (it == "Go on with the dive") start(true, false, true);
+      else if (it.rfind("Go down again", 0) == 0) start(true, false);
+      else if (hero_.is_object() && it == "Host a game for friends") start(true, true);
       else if (it == "Dive alone" || it == "Host a game for friends") { hosting_ = it != "Dive alone"; screen_ = Screen::Name; SDL_StartTextInput(ctx_.get_sdl_window()); }
       else if (it == "Join a game") { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
       else if (it == "How to play") { screen_ = Screen::Title; open_book(); }
       else if (it == "Listen to the music") { screen_ = Screen::Listen; menu_ = 0; }
-      else if (it.rfind("The Pyre", 0) == 0) { screen_ = Screen::Pyre; pyre_sel_ = 0; }
-      else if (it.rfind("Frost:", 0) == 0) { frost_ = (std::min(frost_, frost_max_) + 1) % (frost_max_ + 1); save_settings(); }
+      else if (it.rfind("The Pyre", 0) == 0) { screen_ = Screen::Pyre; pyre_sel_ = 0; talents_open_ = talents_; }
       else if (it.rfind("Music:", 0) == 0) { music_on_ = !music_on_; apply_volume(); save_settings(); }
       else running = false;
     } else if (screen_ == Screen::Listen) {
@@ -677,6 +741,7 @@ void Client::click(int x, int y, bool down) {
   if (over_ == Over::Book || over_ == Over::Menu || over_ == Over::Hero || over_ == Over::Options) { over_ = Over::None; return; }
   if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
   if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal || over_ == Over::Rack || over_ == Over::Fire) return;
+  if (over_ == Over::Grave) { over_ = Over::None; return; }
   // a tap on the map
   int mx = x - vx_ + camx_, my = y - vy_ + camy_;
   if (x < vx_ || y < vy_ || x >= vx_ + vw_ || y >= vy_ + vh_) return;
@@ -692,6 +757,7 @@ void Client::click(int x, int y, bool down) {
     for (auto& c : snap_["coals"])
       if (c[0].get<int>() == mx && c[1].get<int>() == my) { over_ = Over::Coal; coal_sel_ = c[2]; return; }
   if (!me["weapon"].is_object() && snap_.contains("rack") && snap_["rack"][0].get<int>() == mx && snap_["rack"][1].get<int>() == my) { over_ = Over::Rack; return; }
+  if (snap_.value("town", false) && !grave_for(mx, my).is_null() && cheb(mx, my, hx, hy) <= 3) { grave_at_ = grave_for(mx, my).value("i", -1); over_ = Over::Grave; return; }
   if (snap_.contains("fire") && snap_["fire"][0].get<int>() == mx && snap_["fire"][1].get<int>() == my) { over_ = Over::Fire; fire_sel_ = 0; fire_mark_ = -1; return; }
   if (mx == hx && my == hy) {
     if (layout_ == Layout::Watch) { over_ = Over::Ring; ring_ = 0; }
@@ -955,6 +1021,7 @@ void Client::draw_game() {
       else if (w == "coal") over_ = Over::Coal;
       else if (w == "hero") over_ = Over::Hero;
       else if (w == "fire") over_ = Over::Fire;
+      else if (w == "grave") { over_ = Over::Grave; grave_at_ = 0; }
     }
   }
   int cw = con_.get_width(), chh = con_.get_height();
@@ -1034,6 +1101,7 @@ void Client::draw_game() {
     case Over::Coal: dim_all(.3); draw_coal_window(); break;
     case Over::Rack: dim_all(.3); draw_rack_window(); break;
     case Over::Fire: dim_all(.3); draw_fire_window(); break;
+    case Over::Grave: dim_all(.3); draw_grave(); break;
     case Over::Ring: draw_ring(); break;
     case Over::Epigraph: draw_epigraph(); break;
     default: break;
@@ -1511,12 +1579,18 @@ void Client::draw_end() {
   auto& me = snap_["me"];
   int cw = con_.get_width(), chh = con_.get_height();
   bool won = snap_["state"] == "won";
-  int w = std::min(cw, 60), h = std::min(chh, 14);
+  int w = std::min(cw, 60), h = std::min(chh, 17);
   int x = (cw - w) / 2, y = (chh - h) / 2;
   box(x, y, w, h, won ? "The fire is yours" : "The dive is over");
   int r = y + 2;
-  if (won) for (auto& l : lore::VICTORY) r += wrap(x + 2, r, w - 4, l, GOLD);
-  else r += wrap(x + 2, r, w - 4, "Charnfen waits in vain.", 0xFF8080);
+  if (won) {
+    for (auto& l : lore::VICTORY) r += wrap(x + 2, r, w - 4, l, GOLD);
+    r += wrap(x + 2, r, w - 4, "You will wake in Charnfen. The frost comes back harder: Frost " + std::to_string(snap_.value("frost", 0) + 1) + " waits below.", 0x90C8FF);
+  } else {
+    r += wrap(x + 2, r, w - 4, "Charnfen waits in vain.", 0xFF8080);
+    if (snap_.contains("grave"))
+      r += wrap(x + 2, r, w - 4, "A stone is raised for you in the graveyard of Charnfen. Slain by " + snap_["grave"].value("killer", std::string("the dark")) + ".", 0xB0A890);
+  }
   ++r;
   text(x + 2, r++, me["name"].get<std::string>() + ", level " + std::to_string(me["lvl"].get<int>()) + " " + me["clsname"].get<std::string>(), WHITE);
   text(x + 2, r++, "depth " + std::to_string(snap_["depth"].get<int>()) + ", " + std::to_string(me["kills"].get<int>()) + " foes slain, " +
@@ -1541,12 +1615,8 @@ void Client::claim_sparks(const json& s) {
     got = true;
     log_.push_back({std::string(king ? "Three sparks leap" : "A spark leaps") + " from the dying fire and settle" + (king ? "" : "s") +
                         " in your palm, warm and unburning. Spend " + (king ? "them" : "it") + " at the Pyre in Charnfen.", 0xFFB040});
-    if (king && frost >= frost_max_ && frost_max_ < pyre::FROST_MAX) {
-      frost_max_ = frost + 1;
-      log_.push_back({"The frost will come back harder. Frost level " + std::to_string(frost_max_) + " is open.", 0x90C8FF});
-    }
   }
-  if (got) save_settings();
+  if (got) save_hero();
 }
 
 void Client::pyre_key(SDL_Keycode k) {
@@ -1557,7 +1627,7 @@ void Client::pyre_key(SDL_Keycode k) {
   auto& col = order[t.branch];
   int at = int(std::find(col.begin(), col.end(), pyre_sel_) - col.begin());
   auto have = pyre::clean(talents_, sparks_);
-  if (k == SDLK_ESCAPE) { talents_ = have; save_settings(); screen_ = Screen::Title; menu_ = 0; return; }
+  if (k == SDLK_ESCAPE) { talents_ = have; if (have != talents_open_) respec_ = false; save_hero(); screen_ = Screen::Title; menu_ = 0; return; }
   if (k == SDLK_UP || k == SDLK_KP_8) pyre_sel_ = col[(at + int(col.size()) - 1) % col.size()];
   else if (k == SDLK_DOWN || k == SDLK_KP_2) pyre_sel_ = col[(at + 1) % col.size()];
   else if (k == SDLK_LEFT || k == SDLK_KP_4 || k == SDLK_RIGHT || k == SDLK_KP_6) {
@@ -1565,15 +1635,17 @@ void Client::pyre_key(SDL_Keycode k) {
     pyre_sel_ = order[b][std::min(at, int(order[b].size()) - 1)];
   } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE || k == SDLK_KP_PLUS || k == SDLK_EQUALS) {
     int r = have.count(t.key) ? have[t.key] : 0;
-    if (r < t.ranks && pyre::open(have, t) && pyre::spent(have) < sparks_) { have[t.key] = r + 1; talents_ = have; save_settings(); }
+    if (r < t.ranks && pyre::open(have, t) && pyre::spent(have) < sparks_) { have[t.key] = r + 1; talents_ = have; save_hero(); }
   } else if (k == SDLK_BACKSPACE || k == SDLK_MINUS || k == SDLK_KP_MINUS) {
-    // a rank comes back only if the rows below still stand without it
-    if (have.count(t.key)) {
+    // a rank comes back only if the rows below still stand without it, and only one given since the Pyre was opened,
+    // unless a King has fallen since the last dive: then the whole tree may be taken back
+    int given = talents_open_.count(t.key) ? talents_open_.at(t.key) : 0;
+    if (have.count(t.key) && (respec_ || have[t.key] > given)) {
       auto less = have;
       if (--less[t.key] == 0) less.erase(t.key);
-      if (pyre::clean(less) == less) { talents_ = less; save_settings(); }
+      if (pyre::clean(less) == less) { talents_ = less; save_hero(); }
     }
-  } else if (k == SDLK_R) { talents_.clear(); save_settings(); }
+  } else if (k == SDLK_R && respec_) { talents_.clear(); save_hero(); }
 }
 
 void Client::draw_pyre() {
@@ -1628,9 +1700,11 @@ void Client::draw_pyre() {
   if (!pyre::open(have, cur))
     text((cw - w) / 2, by + 3 * step, "Opens after " + std::to_string(3 * (cur.row - 1)) + " points in the rows above, in " + pyre::BRANCHES[cur.branch] + ".", 0x907060);
   else if (r == cur.ranks) text((cw - w) / 2, by + 3 * step, "Full.", 0xFFD060);
-  std::string keys = "[Enter] give a Spark   [Bksp] take one back   [r] start over   [Esc] back";
-  if (narrow) keys = "[Enter] give  [Bksp] back  [r] reset  [Esc]";
+  std::string keys = respec_ ? "[Enter] give a Spark   [Bksp] take one back   [r] start over   [Esc] back" : "[Enter] give a Spark   [Bksp] take back one just given   [Esc] back";
+  if (narrow) keys = respec_ ? "[Enter] give  [Bksp] back  [r] reset  [Esc]" : "[Enter] give  [Bksp] undo  [Esc]";
   centre(chh - 2, keys, 0x808080);
   buttons_.push_back({0, chh - 2, cw, 1, "", "key:" + std::to_string(SDLK_ESCAPE)});
-  if (frost_max_ > 0) centre(chh - 2 - step, "The frost deepens: level " + std::to_string(std::min(frost_, frost_max_)) + " of " + std::to_string(frost_max_) + " (choose on the title screen).", 0x90C8FF);
+  if (!hero_.is_object()) centre(chh - 2 - step, "No hero yet: Sparks come from the great foes a hero slays.", 0x907060);
+  else centre(chh - 2 - step, hero_.value("name", std::string("Hero")) + "'s Pyre. " + (frost_ ? "Next dive: Frost " + std::to_string(frost_) + "." : std::string("Next dive: Normal.")) +
+                                  (respec_ ? " A King fell: the tree may be taken back." : ""), 0x90C8FF);
 }

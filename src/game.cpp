@@ -55,7 +55,7 @@ json xy(int x, int y) { return json::array({x, y}); }
 json cells_json(const std::vector<P>& cs) { json a = json::array(); for (auto c : cs) a.push_back(xy(c.x, c.y)); return a; }
 }  // namespace
 
-Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, pyre::FROST_MAX)), rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
+Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, 99)), rnd(std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed) {
   // for screenshots and tests: PYREHEART_ZONE=vaults starts the dive in that zone (by the first way there), and
   // PYREHEART_BOSS=1 on its boss's map, next to it; PYREHEART_ROUTE=cistern,vaults,prison picks the ways a whole dive takes
   this->seed = std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed;
@@ -153,7 +153,7 @@ void Game::set_level() {
 }
 
 // ------------------------------------------------------------------ players
-Hero& Game::join(int pid, const std::string& name, const std::string& cls, const json& talents) {
+Hero& Game::join(int pid, const std::string& name, const std::string& cls, const json& talents, const json& record) {
   for (auto& [id, h] : heroes)
     if (h->away && h->name == name) {  // the same player back again: they keep their hero
       auto back = std::move(h);
@@ -179,9 +179,11 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
   }
   h->heal += 2 * h->tal("credit");
   { auto coat = loot::make("leather"); h->equip[coat->slot] = coat; }
+  bool kept = record.is_object() && record.value("v", 0) == 1;
+  if (kept) restore(*h, record);  // the hero who came back up: all it grew and carries
   // a dive that starts below (tests, screenshots) skips the gatekeeper's rack: the weapon comes from the hello, an old
   // class name standing for the weapon it fought with
-  if (floor->depth != 0) {
+  if (floor->depth != 0 && !h->equip.count("weapon")) {
     static const std::map<std::string, std::string> OLD = {{"warrior", "sword"}, {"ranger", "bow"}, {"adept", "staff"},
                                                            {"lamplighter", "lantern"}, {"runecarver", "chisel"}, {"cutthroat", "dagger"}};
     std::string k = std::getenv("PYREHEART_WEAPON") ? std::getenv("PYREHEART_WEAPON") : cls;
@@ -194,7 +196,7 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
   // for screenshots and tests: start with a full pack of things to compare
   if (const char* g = std::getenv("PYREHEART_GIFTS"))
     for (int i = 0; i < std::atoi(g) && int(h->pack.size()) < PACK_MAX; ++i) h->pack.push_back(loot::roll(3, rnd, h->cls->kinds));
-  if (std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_ZONE")) {  // grown as far as a hero who came down to here
+  if (!kept && (std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_ZONE"))) {  // grown as far as a hero who came down to here
     int p = std::max(1, lvl * 2 - 1);
     h->lvl = 1 + (p - 1) / 3;
     int s = main_style(*h);
@@ -204,7 +206,7 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
   }
   h->hp = stats(*h).maxhp;
   h->mana = stats(*h).maxmana;
-  if (floor->depth != 0) {  // a dive that starts below (tests, screenshots): the coal is taken already
+  if (floor->depth != 0 && h->el < 0) {  // a dive that starts below (tests, screenshots): the coal is taken already
     const char* e = std::getenv("PYREHEART_ELEM");
     h->el = e ? std::clamp(std::atoi(e), 0, elem::N - 1) : (pid - 1) % elem::N;
     refit(*h);
@@ -222,7 +224,8 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
     r.say(open[0] + ": " + open[1], 0xFFD27F);
   }
   r.say("Walk with the arrow keys or the number pad. Bump a foe to fight it. Help: [?].", 0x9CC89C);
-  if (floor->depth == 0) {
+  if (floor->depth == 0 && kept) r.say("You come back up into the cold, " + r.cls->name + ". The frost bites deeper now; so will the dark.", 0xFFD27F);
+  if (floor->depth == 0 && !kept) {
     r.say("By the gate north of the square stands the gatekeeper's rack: bump it and take a weapon.", 0x9CC89C);
     r.say("Then walk to the great fire on the square and take a coal: bump one of the five at its edge.", 0x9CC89C);
   }
@@ -2349,6 +2352,7 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   if (h.hp <= 0) {
     h.hp = 0;
     h.dead = true;
+    h.killer = m ? m->name : kind.empty() ? "the dark" : kind == "ember" ? "fire" : kind;
     h.say("You die.", 0xFF4040);
     say_all(h.name + " has fallen.", 0xFF6060);
     if (!living().empty() && !final_floor()) say_all(h.name + " will wake at the next waystation, if the others reach it.", 0xA0A0A0);

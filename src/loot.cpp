@@ -48,6 +48,24 @@ json Item::to_json() const {
 
 namespace loot {
 
+json save(const Item& it) {
+  json st = json::array();
+  for (auto& [k, v] : it.stats) st.push_back({k, v});
+  return {{"base", it.base}, {"name", it.name}, {"slot", it.slot}, {"kind", it.kind}, {"rarity", it.rarity}, {"bname", it.base_name},
+          {"tier", it.tier}, {"lo", it.lo}, {"hi", it.hi}, {"ar", it.ar}, {"value", it.value}, {"stats", st}};
+}
+
+ItemP load(const json& j) {
+  if (!j.is_object() || !j.contains("base") || !j.contains("slot")) return nullptr;
+  auto it = std::make_shared<Item>();
+  it->id = next_id++;
+  it->base = j.value("base", ""); it->name = j.value("name", ""); it->slot = j.value("slot", ""); it->kind = j.value("kind", "");
+  it->rarity = j.value("rarity", "normal"); it->base_name = j.value("bname", "");
+  it->tier = j.value("tier", 1); it->lo = j.value("lo", 0); it->hi = j.value("hi", 0); it->ar = j.value("ar", 0); it->value = j.value("value", 10);
+  for (auto& s : j.value("stats", json::array())) if (s.is_array() && s.size() == 2) it->stats.push_back({s[0].get<std::string>(), s[1].get<int>()});
+  return it;
+}
+
 ItemP make(const std::string& base, const std::string& rarity, int tier) {
   const BaseDef& b = base_def(base);
   auto it = std::make_shared<Item>();

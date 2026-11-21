@@ -719,3 +719,66 @@ void Client::fire_key(SDL_Keycode k) {
       if (styles[s][1].get<int>() >= data::PATH_RANK && path[s].get<int>() < 0) { send({{"t", "path"}, {"s", s}, {"c", k == SDLK_B ? 1 : 0}}); break; }
   }
 }
+
+// ------------------------------------------------------------------ the graves of Charnfen
+
+// Every grave in Charnfen stands for a fallen hero, the best nearest the great fire: the stones in turn are a solo
+// hero's and a co-op hero's, each list by how far it got (Frost level, then depth). A stone with no one is old.
+json Client::grave_for(int x, int y) {
+  int fl = snap_.value("floor", -1);
+  if (!maps_.count(fl) || x < 0 || y < 0 || x >= W || y >= H) return nullptr;
+  const std::string& map = maps_[fl];
+  if (tile_of(map[y * W + x]) != data::GRAVE) return nullptr;
+  std::vector<std::pair<int, int>> stones;  // (distance to the fire, cell)
+  for (int i = 0; i < W * H && i < int(map.size()); ++i)
+    if (tile_of(map[i]) == data::GRAVE) stones.push_back({std::abs(i % W - 60) + 2 * std::abs(i / W - 53), i});
+  std::sort(stones.begin(), stones.end());
+  int at = -1;
+  for (size_t k = 0; k < stones.size(); ++k) if (stones[k].second == y * W + x) at = int(k);
+  std::vector<json> solo, coop;
+  for (auto& g : graves_) (g.value("coop", false) ? coop : solo).push_back(g);
+  auto better = [](const json& a, const json& b) {
+    return a.value("frost", 0) != b.value("frost", 0) ? a.value("frost", 0) > b.value("frost", 0) : a.value("depth", 0) > b.value("depth", 0);
+  };
+  std::stable_sort(solo.begin(), solo.end(), better);
+  std::stable_sort(coop.begin(), coop.end(), better);
+  auto& list = at % 2 ? coop : solo;
+  size_t n = size_t(at / 2);
+  json g = n < list.size() ? list[n] : json::object();
+  g["i"] = at;
+  g["place"] = int(n) + 1;
+  g["list"] = at % 2 ? "co-op" : "solo";
+  return g;
+}
+
+void Client::draw_grave() {
+  json g = json::object();
+  // grave_at_ is the stone's order; find the stone again by walking the list the same way
+  int fl = snap_.value("floor", -1);
+  if (maps_.count(fl)) {
+    const std::string& map = maps_[fl];
+    for (int i = 0; i < W * H && i < int(map.size()); ++i)
+      if (tile_of(map[i]) == data::GRAVE) { json c = grave_for(i % W, i / W); if (c.value("i", -2) == grave_at_) { g = c; break; } }
+  }
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 50), h = std::min(chh, 21);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  window(x, y, w, h, "A grave", Mat::Stone);
+  int r = y + 2;
+  auto centre = [&](const std::string& t, int col) { text(x + (w - ulen(t)) / 2, r, t, col, win_bg_); r += 2; };
+  if (!g.contains("name")) {
+    r += 4;
+    centre("An old stone. The name is worn away.", 0x8A8478);
+    centre("Snow lies on it.", 0x6A6458);
+  } else {
+    centre("HERE LIES", 0x8A8478);
+    centre(g.value("name", std::string("?")), 0xE8E0D0);
+    centre(g.value("title", std::string("")) + ", level " + std::to_string(g.value("lvl", 1)), 0xB0A890);
+    int frost = g.value("frost", 0);
+    centre(std::string(frost ? "Frost " + std::to_string(frost) : std::string("Normal")) + ", " + g.value("zone", std::string("")) + ", depth " + std::to_string(g.value("depth", 0)), 0x90C8FF);
+    centre("slain by " + g.value("killer", std::string("the dark")), 0xC08070);
+    centre(std::to_string(g.value("kills", 0)) + " foes went before", 0x8A8478);
+    centre(std::string(g.value("list", std::string("solo")) == "solo" ? "Solo" : "Co-op") + ": number " + std::to_string(g.value("place", 1)), GOLD);
+  }
+  rich(x + w - 12, y + h - 2, "[Esc] back", INK, win_bg_);
+}
