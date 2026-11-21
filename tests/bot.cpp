@@ -1,4 +1,4 @@
-// A plain bot dives with each class (and once as a party of three) to see that nothing breaks and how far it gets.
+// A plain bot dives with each starting weapon (and once as a party of three) to see that nothing breaks and how far it gets.
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -72,7 +72,9 @@ static json dodge(Game& g, Hero& h) {
 }
 
 static int bot_elem = 0;  // BOTELEM=n, else one after another
+static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from the rack
 static json choose(Game& g, Hero& h) {
+  if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
   if (h.el < 0) return {{"t", "coal"}, {"e", std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
   if (!h.perk_choices.empty()) g.free_action(h, {{"t", "perk"}, {"k", h.perk_choices.front()[g.rnd.below(int(h.perk_choices.front().size()))]}});
   Stats st = g.stats(h);
@@ -80,16 +82,19 @@ static json choose(Game& g, Hero& h) {
   auto score = [](const ItemP& i) { if (!i) return 0; int s = i->lo + i->hi + i->ar * 2; for (auto& [k, v] : i->stats) s += v / 3; return s; };
   for (auto& it : h.pack) {
     if (!g.can_use(h, *it)) continue;
+    if (it->slot == "weapon" && it->kind != bot_weapon[h.pid]) continue;  // each bot keeps to its weapon
     auto cur = h.equip.find(it->slot);
     if (score(it) > score(cur == h.equip.end() ? nullptr : cur->second)) return {{"t", "equip"}, {"id", it->id}};
   }
   Floor& f = *g.floor;
   if (h.shopping) g.free_action(h, {{"t", "buyp"}, {"k", "heal"}});
-  // the cutthroat answers a blow by stepping behind the one who swings it
-  if (h.cls->key == "cutthroat" && h.mana >= 3)
+  // the keys the skills sit on now: [1] the weapon's, [2]-[5] the styles'
+  auto slot = [&](const char* key) { for (size_t i = 0; i < h.cls->skills.size(); ++i) if (h.cls->skills[i] == key) return int(i) + 1; return 0; };
+  // Shadowstep answers a blow by stepping behind the one who swings it
+  if (int n = slot("shadowstep"); n && h.fury >= 3)
     for (auto& m : f.mons)
       if (m->blow.turns > 0 && m->blow.kind == BLOW_RED && cheb(m->x, m->y, h.x, h.y) <= 4)
-        for (auto& c : m->blow.cells) if (c.x == h.x && c.y == h.y) return skill(1, m);
+        for (auto& c : m->blow.cells) if (c.x == h.x && c.y == h.y) return skill(n, m);
   if (auto d = dodge(g, h); !d.is_null()) return d;
   MonP seen;
   int visible = 0;
@@ -100,45 +105,66 @@ static json choose(Game& g, Hero& h) {
     }
   if (seen && std::getenv("BOTDBG") && g.turn > 19990) std::printf("seen %s at %d,%d tile %d dormant %d hidden %d hp %d sees %d\n", seen->name.c_str(), seen->x, seen->y, f.tile(seen->x, seen->y), seen->dormant, seen->hidden, seen->hp, int(h.sees(seen->x, seen->y)));
   if (seen) {
-    if (!h.cls->fury() && h.mana < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
     int d = cheb(h.x, h.y, seen->x, seen->y);
-    int near = 0;
-    for (auto& m : f.mons) if (cheb(h.x, h.y, m->x, m->y) <= 1) ++near;
+    int near = 0, within2 = 0;
+    for (auto& m : f.mons) { if (cheb(h.x, h.y, m->x, m->y) <= 1) ++near; if (cheb(h.x, h.y, m->x, m->y) <= 2 && h.sees(m->x, m->y)) ++within2; }
     MonP purple;
     for (auto& m : f.mons) if (m->blow.turns > 0 && m->blow.kind == BLOW_PURPLE && h.sees(m->x, m->y)) purple = m;
     MonP adj;
     for (auto& m : f.mons) if (cheb(h.x, h.y, m->x, m->y) == 1 && (!adj || g.busy(*m, h))) adj = m;
     const std::string& k = h.cls->key;
     if (std::getenv("BOTWHY")) std::printf("   why: k=%s d=%d near=%d seen=%s\n", k.c_str(), d, near, seen->name.c_str());
-    int L = h.lvl, M = h.mana;
-    if (k == "warrior") {
-      if (purple && cheb(h.x, h.y, purple->x, purple->y) <= 2 && M >= 3) return skill(2);
-      if (L >= 6 && M >= 4 && h.standfast == 0 && h.hp < st.maxhp * .6 && near >= 1) return skill(4);
-      if (near >= 2 && M >= 2) return skill(1);
-      if (L >= 3 && M >= 2 && d >= 2 && d <= 5) return skill(3, seen);
-    } else if (k == "ranger") {
-      if (purple && L >= 6 && M >= 6) return skill(4, purple);
-      if (d <= 1 && L >= 3 && M >= 4) return skill(3);
-      if (visible >= 3 && M >= 7) return skill(1);
-      if (d > 1 && d <= 8) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};  // a bow reaches 9
-    } else if (k == "adept") {
-      for (auto& m : f.mons) if (m->frozen > 0 && h.sees(m->x, m->y) && M >= 4) return skill(1, m);
-      if (d <= 2 && M >= 10 && (near >= 1 || purple)) return skill(2);
-      if (d <= 1 && L >= 3 && M >= 5) return skill(3);
-      if (L >= 6 && M >= 8 && d >= 3 && seen->rank != "normal") return skill(4, seen);
-      if (M >= 4) return skill(1, seen);
-    } else if (k == "lamplighter") {
-      if (h.hp < st.maxhp * .5 && M >= 6) return skill(2);
-      if (purple && L >= 6 && M >= 9 && cheb(h.x, h.y, purple->x, purple->y) <= 4) return skill(4);
-      if (near >= 2 && L >= 3 && M >= 7) return skill(3);
-      if (adj && M >= 3) return skill(1);
-    } else if (k == "runecarver") {
+    int M = h.mana, F = h.fury;
+    bool caster = g.main_style(h) != 0;
+    if (caster && M < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
+    // the style skills, wherever they sit
+    if (int n = slot("warcry"); n && F >= 3 && ((purple && cheb(h.x, h.y, purple->x, purple->y) <= 2) || near >= 3)) return skill(n);
+    if (int n = slot("standfast"); n && F >= 4 && h.standfast == 0 && h.hp < st.maxhp * .6 && near >= 1) return skill(n);
+    if (int n = slot("whirlwind"); n && F >= 5 && within2 >= 2) return skill(n);
+    if (int n = slot("ward"); n && purple && M >= 6 && cheb(h.x, h.y, purple->x, purple->y) <= 7) return skill(n, purple);
+    if (int n = slot("smoke"); n && M >= 7 && near >= 2 && h.hp < st.maxhp * .4) return skill(n);
+    if (int n = slot("volley"); n && M >= 7 && visible >= 3 && st.reach >= 5) return skill(n);
+    if (int n = slot("tumble"); n && M >= 4 && d <= 1 && st.reach >= 5) return skill(n);
+    if (int n = slot("mend"); n && M >= 6 && h.hp < st.maxhp * .5) return skill(n);
+    if (int n = slot("nova"); n && M >= 10 && d <= 2 && (near >= 1 || purple)) return skill(n);
+    if (int n = slot("blink"); n && M >= 5 && d <= 1 && h.hp < st.maxhp * .5) return skill(n);
+    if (int n = slot("hallow"); n && M >= 7 && near >= 2) return skill(n);
+    if (int n = slot("emberwall"); n && M >= 8 && d >= 3 && seen->rank != "normal") return skill(n, seen);
+    // the weapon's own skill on [1], and what [f] does with it
+    if (k == "dagger") {
+      if (adj && g.busy(*adj, h)) return {{"t", "move"}, {"dx", adj->x - h.x}, {"dy", adj->y - h.y}};
+      if (adj && F >= 5) return skill(1);
+    } else if (k == "sword") {
+      if (F >= 2 && d >= 2 && d <= 5) return skill(1, seen);
+    } else if (k == "axe") {
+      if (near >= 2 && F >= 2) return skill(1);
+    } else if (k == "mace") {
+      if (adj && F >= 3) return skill(1);
+    } else if (k == "bow") {
+      if (M >= 5 && d > 1 && seen->rank != "normal") return skill(1, seen);
+      if (d > 1 && d <= 8) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+    } else if (k == "crossbow") {
+      if (M >= 6 && d > 1 && d <= 8 && (purple || seen->rank != "normal")) return skill(1, purple ? purple : seen);
+      if (d > 1 && d <= 8) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+    } else if (k == "thrown") {
+      if (within2 >= 2 && M >= 5) return skill(1);
+      if (d > 1 && d <= 5) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+    } else if (k == "spear") {
+      if (M >= 4 && d >= 3 && d <= 6) return skill(1, seen);
+      if (d == 2) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+    } else if (k == "staff") {
+      if (M >= 4 && d <= 9) return skill(1, seen);
+      if (d > 1 && d <= 6) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+    } else if (k == "wand") {
+      if (M >= 5 && visible >= 2) return skill(1);
+      if (d > 1 && d <= 7) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
+    } else if (k == "lantern") {
+      if (M >= 9 && (near >= 2 || (purple && cheb(h.x, h.y, purple->x, purple->y) <= 4))) return skill(1);
+    } else if (k == "chisel") {
       int mine = 0; bool on = false, foe_on = false;
       for (auto& r : f.runes) if (r.owner == h.pid) { ++mine; if (r.p == P{h.x, h.y}) on = true; for (auto& m : f.mons) if (cheb(m->x, m->y, r.p.x, r.p.y) <= 1) foe_on = true; }
-      if (purple && L >= 3 && M >= 6) return skill(3, purple);
-      if (foe_on && M >= 4) return skill(2);
-      if (d <= 1 && L >= 6 && mine > 0 && M >= 6) return skill(4);
-      if (!on && M >= 3 && d <= 6) return skill(1);
+      if (foe_on && M >= 4) return skill(1);
+      if (!on && d <= 6 && d > 1) return {{"t", "shoot"}, {"x", h.x}, {"y", h.y}};
       static std::map<int, int> waited;  // a foe that does not come is gone after, runes or not
       if (d >= 2 && on && ++waited[seen->id] < 16) {  // step back and let them come over it
         int bx = 0, by = 0, bd = d;
@@ -149,13 +175,6 @@ static json choose(Game& g, Hero& h) {
           }
         if (bx || by) return {{"t", "move"}, {"dx", bx}, {"dy", by}};
       }
-    } else if (k == "cutthroat") {
-      if (purple && L >= 6 && M >= 6 && cheb(h.x, h.y, purple->x, purple->y) == 1) return skill(4);
-      if (adj && g.busy(*adj, h)) return {{"t", "move"}, {"dx", adj->x - h.x}, {"dy", adj->y - h.y}};
-      if (near >= 3 && L >= 3 && M >= 7) return skill(3);
-      if (near >= 2 && M >= 5) return skill(2);
-      if (adj && L >= 6 && M >= 6) return skill(4);
-      if (d <= 4 && M >= 3) return skill(1, adj ? adj : seen);
     }
     if (d == 1) return {{"t", "move"}, {"dx", seen->x - h.x}, {"dy", seen->y - h.y}};
     auto a = toward(g, h, seen->x, seen->y);
@@ -201,7 +220,7 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
         i = j + 1;
       }
   }
-  for (size_t i = 0; i < classes.size(); ++i) g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents);
+  for (size_t i = 0; i < classes.size(); ++i) { bot_weapon[int(i) + 1] = classes[i]; g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents); }
   int steps = 0, last_depth = -1;
   std::string pace;  // the first hero's level as each new depth is reached (BOTPACE=1 prints it)
   while (g.state == "play" && steps < 20000) {
@@ -223,7 +242,11 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
   std::string names, lvls, gear;
   for (auto& c : classes) names += (names.empty() ? "" : "+") + c;
   int kills = 0;
-  for (auto& [id, h] : g.heroes) { lvls += std::to_string(h->lvl) + " "; kills += h->kills; }
+  for (auto& [id, h] : g.heroes) {
+    lvls += std::to_string(h->lvl) + "(" + std::to_string(h->srank[0]) + "/" + std::to_string(h->srank[1]) + "/" + std::to_string(h->srank[2]) +
+            " w" + std::to_string(g.mastery(*h, h->cls->key)) + " e" + std::to_string(h->el >= 0 ? h->erank[h->el] : 0) + ") ";
+    kills += h->kills;
+  }
   for (auto& [s, it] : g.heroes.begin()->second->equip) gear += it->shortname() + ", ";
   std::string way;
   for (int z : g.route) way += (way.empty() ? "" : ">") + ACTS[z].key.substr(0, 4);
@@ -237,11 +260,11 @@ static void run(const std::vector<std::string>& classes, uint64_t seed) {
 }
 
 int main() {
-  const char* only = std::getenv("BOTCLASS");
-  int seeds = std::getenv("BOTSEEDS") ? std::atoi(std::getenv("BOTSEEDS")) : 3;
-  for (auto& c : CLASSES)
-    if (!only || c.key == only)
-      for (uint64_t s = 1; s <= uint64_t(seeds); ++s) run({c.key}, s);
-  if (!only) run({"warrior", "lamplighter", "cutthroat"}, 9);
+  const char* only = std::getenv("BOTWEAPON") ? std::getenv("BOTWEAPON") : std::getenv("BOTCLASS");
+  int seeds = std::getenv("BOTSEEDS") ? std::atoi(std::getenv("BOTSEEDS")) : 2;
+  for (auto& w : WEAPONS)
+    if (!only || w.key == only)
+      for (uint64_t s = 1; s <= uint64_t(seeds); ++s) run({w.key}, s);
+  if (!only) run({"sword", "lantern", "dagger"}, 9);
   return 0;
 }

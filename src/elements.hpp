@@ -37,8 +37,8 @@ constexpr int KING_ATK[2] = {RIME, ASH};
 
 // What a skill does with stacks, as its sign on the panel: \u25A0 lays them (it hits), \u263C sets them all off, \u00B7 neither.
 inline int skill_sign(const std::string& k) {
-  for (const char* d : {"charge", "pierce", "firebolt", "smite", "kindle", "garrote"}) if (k == d) return 0x263C;
-  for (const char* b : {"cleave", "volley", "pin", "nova", "emberwall", "beacon", "shadowstep", "fan"}) if (k == b) return 0x25A0;
+  for (const char* d : {"charge", "pierce", "firebolt", "smite", "kindle", "garrote", "hurl"}) if (k == d) return 0x263C;
+  for (const char* b : {"cleave", "volley", "pin", "nova", "emberwall", "beacon", "shadowstep", "fan", "scatter", "whirlwind"}) if (k == b) return 0x25A0;
   return 0xB7;
 }
 }  // namespace elem

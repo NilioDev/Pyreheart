@@ -66,8 +66,18 @@ struct LogLine { std::string text; int col; };
 struct Hero {
   int pid = 0;
   std::string name;
-  const ClassDef* cls = nullptr;
+  const ClassDef* cls = &kit;  // what its weapon and its ranks make of the hero (Game::refit fills kit)
+  ClassDef kit;
   int x = 0, y = 0, hp = 1, mana = 0, lvl = 1, xp = 0, gold = 0;
+  // The classless hero (plan.md section 1): fury for the melee skills beside mana for the rest; the fighting styles
+  // (melee, ranged, magic) and the elements grow by use, each with its rank and the xp toward the next; mastery with
+  // each kind of weapon; the style skills learned, in the order they came; a crossbow to wind
+  int fury = 0;
+  int srank[3] = {0, 0, 0}, sxp[3] = {0, 0, 0};
+  int erank[5] = {0, 0, 0, 0, 0}, exq[5] = {0, 0, 0, 0, 0};
+  std::map<std::string, int> wxp;
+  std::vector<std::string> known;
+  int reload = 0;
   std::map<std::string, ItemP> equip;
   std::vector<ItemP> pack;
   int heal = 3, mana_pots = 2;
@@ -131,6 +141,7 @@ struct Mon {
   int dormant = 0, hidden = 0, brace = 0, listen = 0, flee = 0, tcool = 0, sleep = 0;  // sleep: until a noise
   bool split = false, swum = false;
   Stacks stk;              // the elements on it
+  std::map<int, std::array<int, 4>> work;  // harm done to it by each hero: melee, ranged, magic, and with the weapon
   int el = 0;              // the element its blows lay
   bool discharger = false; // a slow, heavy foe: its telegraphed blow sets off the stacks of its element
   bool can(const std::string& t) const { return def->has(t); }
@@ -175,6 +186,7 @@ struct Floor {
   std::vector<Ground> ground;
   std::vector<Sleeper> sleepers;
   std::vector<std::pair<P, int>> coals;  // Charnfen: the coals at the edge of the great fire, and their elements
+  P rack{-1, -1};                        // Charnfen: the gatekeeper's rack of first weapons
   std::map<int, int> exits;  // in a waystation: the stairs down (cell index) and the zone each leads to
   bool burning(int x, int y) const { for (auto& g : ground) if ((g.kind == G_EMBER || g.kind == G_FIRE) && g.p == P{x, y}) return true; return false; }
   const Ground* ground_at(int x, int y) const { for (auto& g : ground) if (g.p == P{x, y}) return &g; return nullptr; }
@@ -190,7 +202,8 @@ struct Verdict { int v = 0; std::vector<Change> d; };  // v: 2 better, 1 mostly 
 
 struct Stats {
   int maxhp, maxmana, lo, hi, pct, acc, crit, armour, res_f, res_c, res_p, leech, spell, fire, regen, thorns;
-  bool bow;
+  bool bow;    // [f] does something with this weapon
+  int reach;   // how far [f] reaches
 };
 
 namespace k5 { struct Plan; }
@@ -199,7 +212,8 @@ inline bool way_down(int t) { return t == data::STAIRS || t == data::EDGE; }
 // can every open cell still be walked to from the stairs up?
 bool whole(const Floor& f);
 
-const ClassDef& class_def(const std::string& key);
+const WeaponDef* weapon_def(const std::string& kind);  // nullptr for no weapon
+int style_index(const std::string& key);
 const MonDef& mon_def(const std::string& key);
 const PerkDef& perk_def(const std::string& key);
 const SkillDef& skill_def(const std::string& key);
@@ -319,6 +333,25 @@ class Game {
   void discharge_hero(Mon& m, Hero& h, int e);
   void stacks_tick();
   void take_coal(Hero& h, int e);
+ public:
+  // hero.cpp: the classless hero (plan.md section 1)
+  int power(const Hero& h) const;
+  double catch_up(const Hero& h) const;  // how much faster a hero behind the pace learns (up to 2x), or slower ahead         // how far the hero has grown: what a level was to the old classes
+  int main_style(const Hero& h) const;    // the style with the highest rank (the weapon's on a tie)
+  int mastery(const Hero& h, const std::string& kind) const;
+  static int rank_need(int r);            // style or element xp to reach rank r + 1
+  static int mastery_need(int r);
+  static bool fury_skill(const std::string& key);
+  int skill_style(const Hero& h, const std::string& key) const;
+  std::string title(const Hero& h) const;  // the combo title, or what the hero carries
+  void refit(Hero& h);
+ private:
+  int credit_ = -1;  // the style (0..2) the harm being dealt now is learned in; -1: the hero's main style
+  bool credit_weapon_ = false;  // and whether it was dealt with the weapon in hand
+  void learn(Mon& m);           // a kill teaches each hero who hurt it, by what did the work
+  void take_weapon(Hero& h, const std::string& kind);
+  void offer_perk(Hero& h);
+  void shoot_with(Hero& h, int x, int y);
 
   void act(Hero& h, const json& a);
   void move(Hero& h, int dx, int dy);

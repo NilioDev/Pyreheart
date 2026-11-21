@@ -28,6 +28,8 @@ struct ClassDef {
   std::vector<std::string> start, skills, kinds; std::string about, res; std::vector<std::string> paths;
   bool fury() const { return res == "fury"; }
 };
+struct WeaponDef { std::string key, name, style, start, sig; int reach; std::string trait; };
+struct StyleDef { std::string key, name, res; int hp, hp_lvl, mana, mana_lvl, acc, col; std::vector<std::string> skills; };
 struct SkillDef { std::string key, name; int mana; bool target; std::string about; };
 struct PerkDef { std::string key, name, text; int max; std::string cls, path; };  // path "*": a path itself
 struct BaseDef { std::string key, name, slot, kind; int tier, lo, hi, ar, spell; };

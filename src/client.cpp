@@ -87,7 +87,6 @@ void Client::load_settings() {
   while (std::getline(f, line)) {
     if (line.rfind("name=", 0) == 0) name_ = line.substr(5);
     if (line.rfind("addr=", 0) == 0) addr_ = line.substr(5);
-    if (line.rfind("class=", 0) == 0) cls_ = std::clamp(std::atoi(line.c_str() + 6), 0, int(data::CLASSES.size()) - 1);
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
     if (line.rfind("numbers=", 0) == 0) numbers_on_ = line[8] != '0';
     if (line.rfind("music_volume=", 0) == 0) music_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
@@ -130,7 +129,7 @@ void Client::remember_window() {
 
 void Client::save_settings() {
   std::ofstream f(pref_file());
-  f << "name=" << name_ << "\naddr=" << addr_ << "\nclass=" << cls_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\nmusic_volume=" << music_vol_ << "\nsound_volume=" << sound_vol_ << "\n";
+  f << "name=" << name_ << "\naddr=" << addr_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\nmusic_volume=" << music_vol_ << "\nsound_volume=" << sound_vol_ << "\n";
   if (layout_ == Layout::Wide) {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
@@ -212,7 +211,7 @@ void Client::start(bool host, bool open, bool resume) {
   host_ = std::make_unique<Host>(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()), open,
                                  open ? "" : save_file(), resume, std::min(frost_, frost_max_));
   link_ = host_->local();
-  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
+  link_->send({{"hello", {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
   screen_ = Screen::Game;
   maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
   if (open) {
@@ -232,7 +231,7 @@ void Client::join(const std::string& address) {
   if (!link_) { message_ = err; screen_ = Screen::Title; return; }
   hosting_ = false;
   host_.reset();
-  link_->send({{"hello", {{"name", name_}, {"cls", data::CLASSES[cls_].key}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
+  link_->send({{"hello", {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}}}});
   screen_ = Screen::Game;
   maps_.clear(); seen_.clear(); log_.clear(); fx_.clear(); snap_ = json(); pid_ = 0;
 }
@@ -353,14 +352,17 @@ void Client::act(const std::string& what) {
   else if (what == "help") open_book();
   else if (what == "hero") over_ = Over::Hero;
   else if (what == "look") begin_aim("look");
-  else if (what == "shoot") { if (me.value("bow", false)) begin_aim("shoot"); else log_.push_back({"You have no bow.", GREY}); }
+  else if (what == "shoot") {
+    if (me["weapon"].is_object() && me["cls"] == "chisel") send({{"t", "shoot"}, {"x", me["x"]}, {"y", me["y"]}});  // a rune where you stand
+    else if (me.value("bow", false)) begin_aim("shoot");
+    else log_.push_back({me["weapon"].is_object() ? "Your weapon does not shoot. Walk into a foe to strike it." : "You have no weapon yet.", GREY});
+  }
   else if (what.rfind("skill", 0) == 0) {
     int n = what.back() - '0';
-    if (n < 1 || n > int(me["skills"].size())) return;
+    if (n < 1 || n > int(me["skills"].size())) { log_.push_back({"No skill on [" + std::to_string(n) + "] yet: skills come as your styles grow.", GREY}); return; }
     auto& sk = me["skills"][n - 1];
-    if (me["lvl"].get<int>() < sk[4].get<int>()) { log_.push_back({sk[0].get<std::string>() + " comes to you at level " + std::to_string(sk[4].get<int>()) + ".", GREY}); return; }
-    bool fury = me.value("pool", "mana") == "fury";
-    if (me["mana"].get<int>() < sk[1].get<int>()) { log_.push_back({std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk[0].get<std::string>() + ".", 0x7090FF}); return; }
+    bool fury = sk.size() > 6 && sk[6].get<bool>();
+    if (me[fury ? "fury" : "mana"].get<int>() < sk[1].get<int>()) { log_.push_back({std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk[0].get<std::string>() + ".", 0x7090FF}); return; }
     if (sk[2].get<bool>()) begin_aim(what);
     else send({{"t", "skill"}, {"n", n}});
   } else if (what == "menu") over_ = Over::Menu;
@@ -423,7 +425,12 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     if (k == SDLK_BACKSPACE && !s.empty()) s.pop_back();
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       SDL_StopTextInput(ctx_.get_sdl_window());
-      if (screen_ == Screen::Name) { if (name_.empty()) name_ = "Hero"; screen_ = Screen::Class; }
+      if (screen_ == Screen::Name) {  // no class to choose: the hero takes a weapon from the gatekeeper's rack in Charnfen
+        if (name_.empty()) name_ = "Hero";
+        save_settings();
+        over_ = Over::None;
+        if (pending_join_) { pending_join_ = false; join(addr_); } else start(true, hosting_);
+      }
       else { save_settings(); join(addr_); }
     } else if (k == SDLK_ESCAPE) { SDL_StopTextInput(ctx_.get_sdl_window()); screen_ = Screen::Title; }
     return;
@@ -439,8 +446,8 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     }
     if (k == SDLK_ESCAPE) { screen_ = Screen::Title; menu_ = title_index("Listen to the music"); return; }
   }
-  if (screen_ == Screen::Title || screen_ == Screen::Class || screen_ == Screen::Finding || screen_ == Screen::Listen) {
-    int n = screen_ == Screen::Title ? int(title_items().size()) : screen_ == Screen::Class ? int(data::CLASSES.size()) : screen_ == Screen::Listen ? LISTEN_N : int(found_.size()) + 1;
+  if (screen_ == Screen::Title || screen_ == Screen::Finding || screen_ == Screen::Listen) {
+    int n = screen_ == Screen::Title ? int(title_items().size()) : screen_ == Screen::Listen ? LISTEN_N : int(found_.size()) + 1;
     if (k == SDLK_UP || k == SDLK_KP_8) menu_ = (menu_ + n - 1) % n;
     else if (k == SDLK_DOWN || k == SDLK_KP_2) menu_ = (menu_ + 1) % n;
     else if (k == SDLK_ESCAPE) { if (screen_ == Screen::Title) running = false; else { screen_ = Screen::Title; menu_ = 0; } }
@@ -484,6 +491,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Menu: menu_key(k); return;
     case Over::Options: options_key(k); return;
     case Over::Coal: coal_key(k); return;
+    case Over::Rack: rack_key(k); return;
     case Over::Hero:
       if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
@@ -538,6 +546,9 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (k == SDLK_O) { over_ = Over::Options; opt_sel_ = 0; return; }
   if (me.value("dead", false) || me.value("gone", false)) return;
   if (dx || dy) {
+    // a step into the gatekeeper's rack with no weapon yet opens it
+    if (!me["weapon"].is_object() && snap_.contains("rack") && snap_["rack"][0].get<int>() == me["x"].get<int>() + dx &&
+        snap_["rack"][1].get<int>() == me["y"].get<int>() + dy) { over_ = Over::Rack; return; }
     // a step into a coal at the great fire, with no coal yet, opens the choice of coals
     if (me.value("el", -1) < 0 && snap_.contains("coals"))
       for (auto& c : snap_["coals"])
@@ -553,6 +564,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case SDLK_2: act("skill2"); break;
     case SDLK_3: act("skill3"); break;
     case SDLK_4: act("skill4"); break;
+    case SDLK_5: act("skill5"); break;
     case SDLK_F: act("shoot"); break;
     case SDLK_Q: act("heal"); break;
     case SDLK_W: act("mana"); break;
@@ -615,13 +627,6 @@ void Client::click(int x, int y, bool down) {
       if (choice >= 0 && choice < LISTEN_N) { if (choice == menu_) music_.renew(); menu_ = choice; }
       else if (choice == LISTEN_N + 1) listen_fight_ = !listen_fight_;  // the line "[f] a great foe awake"
       else if (choice > LISTEN_N + 1 || choice < 0) { screen_ = Screen::Title; menu_ = title_index("Listen to the music"); }
-    } else if (screen_ == Screen::Class) {
-      if (choice < 0 || choice >= int(data::CLASSES.size())) return;
-      cls_ = choice;
-      save_settings();
-      if (pending_join_) { pending_join_ = false; join(addr_); }
-      else start(true, hosting_);
-      over_ = Over::None;
     } else if (screen_ == Screen::Finding) {
       if (choice < 0 || choice > int(found_.size())) return;
       if (choice < int(found_.size())) {
@@ -656,6 +661,7 @@ void Client::click(int x, int y, bool down) {
       else if (b.action.rfind("key:", 0) == 0) key(SDL_Keycode(arg), SDL_KMOD_NONE);
       else if (b.action.rfind("menu:", 0) == 0) { if (menu_sel_ == arg) menu_do(arg); else menu_sel_ = arg; }
       else if (b.action.rfind("opt:", 0) == 0) { if (opt_sel_ == arg) options_key(SDLK_RETURN); else opt_sel_ = arg; }
+      else if (b.action.rfind("rack:", 0) == 0) { if (rack_sel_ == arg) rack_key(SDLK_RETURN); else rack_sel_ = arg; }
       else if (b.action.rfind("coal:", 0) == 0) { if (coal_sel_ == arg) coal_key(SDLK_RETURN); else coal_sel_ = arg; }
       else if (b.action.rfind("book:", 0) == 0) { book_ch_ = arg; book_scroll_ = 0; book_why_.clear(); }
       else if (b.action == "close") key(SDLK_ESCAPE, SDL_KMOD_NONE);
@@ -664,7 +670,7 @@ void Client::click(int x, int y, bool down) {
     }
   if (over_ == Over::Book || over_ == Over::Menu || over_ == Over::Hero || over_ == Over::Options) { over_ = Over::None; return; }
   if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
-  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal) return;
+  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal || over_ == Over::Rack) return;
   // a tap on the map
   int mx = x - vx_ + camx_, my = y - vy_ + camy_;
   if (x < vx_ || y < vy_ || x >= vx_ + vw_ || y >= vy_ + vh_) return;
@@ -679,6 +685,7 @@ void Client::click(int x, int y, bool down) {
   if (me.value("el", -1) < 0 && snap_.contains("coals"))
     for (auto& c : snap_["coals"])
       if (c[0].get<int>() == mx && c[1].get<int>() == my) { over_ = Over::Coal; coal_sel_ = c[2]; return; }
+  if (!me["weapon"].is_object() && snap_.contains("rack") && snap_["rack"][0].get<int>() == mx && snap_["rack"][1].get<int>() == my) { over_ = Over::Rack; return; }
   if (mx == hx && my == hy) {
     if (layout_ == Layout::Watch) { over_ = Over::Ring; ring_ = 0; }
     else act("wait");
@@ -890,10 +897,7 @@ void Client::draw_title() {
     title = "The music writes itself: a new piece every time.";
     for (auto& p : LISTEN) items.push_back(p.name);
   }
-  else if (screen_ == Screen::Class) {
-    title = "Who are you, " + name_ + "?";
-    for (auto& c : data::CLASSES) items.push_back(c.name);
-  } else if (screen_ == Screen::Finding) {
+  else if (screen_ == Screen::Finding) {
     title = found_.empty() ? "No game found on this network." : "Games on this network:";
     for (auto& f : found_) items.push_back(f.substr(0, f.find('|')) + "  " + f.substr(f.find('|') + 1));
     items.push_back("Type an address...");
@@ -927,11 +931,6 @@ void Client::draw_title() {
       centre(y + 2, std::string("[f] a great foe awake: ") + (listen_fight_ ? "yes" : "no"), listen_fight_ ? 0xFF8060 : GREY);
     centre(y + 4, "[Enter] a new piece    [Esc] back", 0x808080);
   }
-  if (screen_ == Screen::Class && layout_ != Layout::Watch) {
-    auto& c = data::CLASSES[std::clamp(menu_, 0, int(data::CLASSES.size()) - 1)];
-    int w = std::min(cw - 4, 60);
-    wrap((cw - w) / 2, top + 2 * int(data::CLASSES.size()) + 1, w, c.about, 0xB4A078);
-  }
   if (!message_.empty()) centre(con_.get_height() - 3, message_, 0xFF8080);
 }
 
@@ -939,6 +938,16 @@ void Client::draw_game() {
   if (!snap_.is_object()) {
     text(2, 2, "Waiting for the host...", GREY);
     return;
+  }
+  // for screenshots: PYREHEART_OPEN=rack, coal or hero opens that window once the game is up
+  if (static bool opened = false; !opened) {
+    opened = true;
+    if (const char* o = SDL_getenv("PYREHEART_OPEN")) {
+      std::string w = o;
+      if (w == "rack") over_ = Over::Rack;
+      else if (w == "coal") over_ = Over::Coal;
+      else if (w == "hero") over_ = Over::Hero;
+    }
   }
   int cw = con_.get_width(), chh = con_.get_height();
   if (layout_ == Layout::Wide && SDL_getenv("PYREHEART_WHOLE")) {
@@ -1015,6 +1024,7 @@ void Client::draw_game() {
     case Over::Hero: dim_all(.3); draw_hero(); break;
     case Over::Options: dim_all(.3); draw_options(); break;
     case Over::Coal: dim_all(.3); draw_coal_window(); break;
+    case Over::Rack: dim_all(.3); draw_rack_window(); break;
     case Over::Ring: draw_ring(); break;
     case Over::Epigraph: draw_epigraph(); break;
     default: break;

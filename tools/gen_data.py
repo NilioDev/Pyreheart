@@ -58,15 +58,19 @@ o.append('inline const std::map<std::string, std::pair<int, int>> PACKS = {' + '
 o.append('inline const std::vector<std::pair<std::string, std::string>> AFFIXES = {' + ', '.join('{%s, %s}' % (s(k), s(v)) for k, v in D.AFFIXES.items()) + '};')
 o.append('inline const std::vector<std::string> UNIQUE_FIRST = ' + lst(D.UNIQUE_FIRST) + ';')
 o.append('inline const std::vector<std::string> UNIQUE_EPITHET = ' + lst(D.UNIQUE_EPITHET) + ';')
-o.append('inline const std::vector<ClassDef> CLASSES = {')
-for k in D.CLASS_ORDER:
-    cl = D.CLASSES[k]
-    o.append('    {%s, %s, %s, %d, %d, %d, %d, %d, %s, %s, %s, %s, %s, %s},' % (s(k), s(cl['name']), col(cl['col']), cl['hp'], cl['mana'],
-             cl['hp_lvl'], cl['mana_lvl'], cl['acc'], lst(cl['start']), lst(cl['skills']), lst(cl['kinds']), s(cl['about']),
-             s(cl['res']), lst(cl['paths'])))
+o.append('inline const std::vector<WeaponDef> WEAPONS = {')
+for k, (n, st, start, sig, reach, trait) in D.WEAPONS.items():
+    o.append('    {%s, %s, %s, %s, %s, %d, %s},' % (s(k), s(n), s(st), s(start), s(sig), reach, s(trait)))
 o.append('};')
-o.append('inline const int SKILL_LEVELS[] = {' + ', '.join(str(x) for x in D.SKILL_LEVELS) + '};')
-o.append('constexpr int PATH_LEVEL = %d;' % D.PATH_LEVEL)
+o.append('inline const std::vector<StyleDef> STYLES = {')
+for k in D.STYLE_ORDER:
+    c = D.STYLES[k]
+    o.append('    {%s, %s, %s, %d, %d, %d, %d, %d, %s, %s},' % (s(k), s(c['name']), s(c['res']), c['hp'], c['hp_lvl'], c['mana'],
+             c['mana_lvl'], c['acc'], col(c['col']), lst(c['skills'])))
+o.append('};')
+o.append('inline const int STYLE_RANKS[] = {' + ', '.join(str(x) for x in D.STYLE_RANKS) + '};')
+o.append('constexpr int MASTERY_MAX = %d;' % D.MASTERY_MAX)
+o.append('inline const char* const TITLES[3][5] = {' + ', '.join('{' + ', '.join(s(t) for t in D.TITLES[k]) + '}' for k in D.STYLE_ORDER) + '};')
 o.append('inline const std::vector<SkillDef> SKILLS = {')
 for k, sk in D.SKILLS.items(): o.append('    {%s, %s, %d, %s, %s},' % (s(k), s(sk['name']), sk['mana'], b(sk['target']), s(sk['about'])))
 o.append('};')

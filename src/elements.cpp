@@ -208,6 +208,7 @@ void Game::take_coal(Hero& h, int e) {
   if (e < 0 || e >= N) return;
   if (h.el < 0) {
     h.el = e;
+    refit(h);
     h.say(std::string("You take a coal from the great fire. It glows ") + NAME[e] + " in your hand, and its warmth runs into your arms.", COL[e]);
     tip(h, "coal", std::string("Your blows now lay ") + NAME[e] + " on your foes; your heavy skills (marked ☼) set it all off at once.");
     add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", COL[e]}});
