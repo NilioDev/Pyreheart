@@ -199,11 +199,29 @@ json Game::record(const Hero& h) const {
   json equip = json::object(), pack = json::array();
   for (auto& [slot, it] : h.equip) equip[slot] = loot::save(*it);
   for (auto& it : h.pack) pack.push_back(loot::save(*it));
-  return {{"v", 1}, {"name", h.name}, {"lvl", h.lvl}, {"xp", h.xp}, {"gold", h.gold}, {"kills", h.kills},
+  json r = {{"v", 1}, {"name", h.name}, {"lvl", h.lvl}, {"xp", h.xp}, {"gold", h.gold}, {"kills", h.kills},
           {"srank", h.srank}, {"sxp", h.sxp}, {"erank", h.erank}, {"exq", h.exq}, {"wxp", h.wxp}, {"known", h.known},
           {"path", h.path}, {"slotel", h.slot_el}, {"el", h.el}, {"el2", h.el2}, {"perks", h.perks}, {"choices", h.perk_choices},
           {"equip", equip}, {"pack", pack}, {"heal", h.heal}, {"manap", h.mana_pots}, {"scars", h.scars}, {"rekindled", h.rekindled},
           {"tips", std::vector<std::string>(h.tips.begin(), h.tips.end())}};
+  r.update(group_json());
+  return r;
+}
+
+// the group a hero who won belongs to: everyone who came through with it (not the lost)
+json Game::group_json() const {
+  std::vector<std::string> names;
+  for (auto& [id, o] : heroes) if (!o->lost) names.push_back(o->name);
+  if (names.size() < 2 && group.empty()) return json::object();
+  return {{"group", {{"id", group_id()}, {"members", names}}}};
+}
+
+std::string Game::can_join(const json& record) const {
+  std::string want = record.is_object() && record.contains("group") ? record["group"].value("id", std::string()) : std::string();
+  if (heroes.empty()) return "";
+  if (!group.empty() && want != group) return "This dive belongs to another group: its heroes only go down together.";
+  if (group.empty() && !want.empty()) return "Your hero belongs to a group, and only goes down with it.";
+  return "";
 }
 
 void Game::restore(Hero& h, const json& j) {

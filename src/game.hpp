@@ -253,6 +253,13 @@ class Game {
   int lvl = 1;               // how hard this map is, 1 at the top to 16 at the King: the depth on the old scale
   bool final_floor() const;  // the King's
   std::string state = "play";
+  // co-op groups (plan.md section 1): heroes who won a dive together go down again only together. group: the dive's
+  // group id (empty for a hero alone, or a party that has not won yet); members: the names that must all be there
+  std::string group;
+  std::vector<std::string> members;
+  std::string can_join(const json& record) const;
+  json group_json() const;  // empty if a hero with this record may join, else why not
+  std::string group_id() const { return group.empty() ? "g" + std::to_string(seed) : group; }
   std::vector<json> fx;
 
   Hero& join(int pid, const std::string& name, const std::string& cls, const json& talents = json(), const json& record = json());

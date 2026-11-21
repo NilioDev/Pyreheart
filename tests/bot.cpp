@@ -306,8 +306,29 @@ static int kept_test() {
   return ok ? 0 : 1;
 }
 
+// Heroes who won together go down again only together: the group comes with the first hero, strangers are turned
+// away, and the stairs in Charnfen wait for every member.
+static int group_test() {
+  Game a(5, 0);
+  Hero& x = a.join(1, "Ash", "", json::object());
+  a.join(2, "Bryn", "", json::object());
+  json rx = json::parse(a.record(x).dump());
+  bool ok = rx.contains("group") && rx["group"]["members"].size() == 2;
+  Game b(6, 1);
+  b.join(1, "Ash", "", json::object(), rx);
+  ok = ok && b.group == rx["group"]["id"].get<std::string>() && b.members.size() == 2;
+  ok = ok && !b.can_join(json()).empty();  // a stranger
+  ok = ok && b.can_join(rx).empty();       // a member
+  Game c(7, 0);
+  c.join(1, "Solo", "", json::object());
+  ok = ok && !c.can_join(rx).empty();      // a grouped hero cannot join a stranger's dive
+  std::printf("groups: %s\n", ok ? "hold together" : "BROKEN");
+  return ok ? 0 : 1;
+}
+
 int main() {
   if (kept_test()) return 1;
+  if (group_test()) return 1;
   // BOTLADDER=n: the first weapon's hero goes on down the Frost ladder, n dives at most, kept between them
   if (const char* l = std::getenv("BOTLADDER")) {
     std::string w = std::getenv("BOTWEAPON") ? std::getenv("BOTWEAPON") : "staff";

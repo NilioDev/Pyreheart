@@ -354,6 +354,7 @@ void Host::handle(const std::shared_ptr<Peer>& peer, const json& m) {
     peer->pid = next_pid_++;
     json talents = hello.contains("talents") && hello["talents"].is_object() ? hello["talents"] : json::object();
     json record = hello.contains("hero") && hello["hero"].is_object() ? hello["hero"] : json();  // a hero kept from a dive won
+    if (std::string why = game_.can_join(record); !why.empty()) { peer->pid = 0; peer->out(json{{"error", why}}.dump()); return; }
     Hero& h = game_.join(peer->pid, name, hello.value("cls", "warrior"), talents, record);
     json kept(h.talents);  // only what the tree allows
     write({{"j", {peer->pid, name, hello.value("cls", "warrior"), kept, record}}});

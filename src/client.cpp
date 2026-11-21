@@ -359,7 +359,7 @@ void Client::apply(const json& s) {
 void Client::send(const json& a) {
   if (!link_ || !snap_.is_object()) return;
   std::string t = a.value("t", "");
-  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel";
+  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel" || t == "talents";
   if (!free) {
     if (waiting_) return;
     waiting_ = true;
@@ -566,6 +566,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Rack: rack_key(k); return;
     case Over::Fire: fire_key(k); return;
     case Over::Grave: graves_key(k); return;
+    case Over::Pyre: pyre_key(k); return;
     case Over::Hero:
       if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
@@ -628,6 +629,11 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       json g = grave_for(me["x"].get<int>() + dx, me["y"].get<int>() + dy);
       if (!g.is_null()) { grave_at_ = g.value("i", -1); over_ = Over::Grave; return; }
     }
+    // a step into Charnfen's great fire opens the Pyre: where Sparks are spent
+    if (snap_.contains("pyre") && std::abs(snap_["pyre"][0].get<int>() - me["x"].get<int>() - dx) <= 1 &&
+        std::abs(snap_["pyre"][1].get<int>() - me["y"].get<int>() - dy) <= 1) {
+      over_ = Over::Pyre; pyre_sel_ = 0; talents_open_ = talents_; return;
+    }
     // a step into a waystation's fire opens THE FIRE
     if (snap_.contains("fire") && snap_["fire"][0].get<int>() == me["x"].get<int>() + dx && snap_["fire"][1].get<int>() == me["y"].get<int>() + dy) {
       over_ = Over::Fire; fire_sel_ = 0; fire_mark_ = -1; return;
@@ -668,7 +674,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
 void Client::click(int x, int y, bool down) {
   if (!down) { held_ = false; return; }
   if (screen_ == Screen::Intro) { screen_ = Screen::Title; menu_ = 0; return; }
-  if (screen_ == Screen::Pyre) {
+  if (screen_ == Screen::Pyre || over_ == Over::Pyre) {
     for (auto& b : buttons_)
       if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
         if (b.action.rfind("pyre:", 0) == 0) {
@@ -1098,6 +1104,7 @@ void Client::draw_game() {
       else if (w == "hero") over_ = Over::Hero;
       else if (w == "fire") over_ = Over::Fire;
       else if (w == "grave") { over_ = Over::Grave; grave_at_ = 0; }
+      else if (w == "pyre") { over_ = Over::Pyre; talents_open_ = talents_; }
     }
   }
   int cw = con_.get_width(), chh = con_.get_height();
@@ -1177,6 +1184,7 @@ void Client::draw_game() {
     case Over::Coal: dim_all(.3); draw_coal_window(); break;
     case Over::Rack: dim_all(.3); draw_rack_window(); break;
     case Over::Fire: dim_all(.3); draw_fire_window(); break;
+    case Over::Pyre: con_.clear(); buttons_.clear(); draw_pyre(); break;
     case Over::Grave: dim_all(.3); draw_grave(); break;
     case Over::Ring: draw_ring(); break;
     case Over::Epigraph: draw_epigraph(); break;
@@ -1709,7 +1717,20 @@ void Client::pyre_key(SDL_Keycode k) {
   auto& col = order[t.branch];
   int at = int(std::find(col.begin(), col.end(), pyre_sel_) - col.begin());
   auto have = pyre::clean(talents_, sparks_);
-  if (k == SDLK_ESCAPE) { talents_ = have; if (have != talents_open_) respec_ = false; save_hero(); screen_ = Screen::Title; menu_ = 0; return; }
+  if (k == SDLK_ESCAPE) {
+    talents_ = have;
+    if (have != talents_open_) respec_ = false;
+    save_hero();
+    if (over_ == Over::Pyre) {  // by the great fire in Charnfen: the hero in this dive takes the gifts at once
+      over_ = Over::None;
+      json v = json::object();
+      for (auto& [key, n] : have) v[key] = n;
+      send({{"t", "talents"}, {"v", v}});
+      return;
+    }
+    screen_ = Screen::Title; menu_ = 0;
+    return;
+  }
   if (k == SDLK_UP || k == SDLK_KP_8) pyre_sel_ = col[(at + int(col.size()) - 1) % col.size()];
   else if (k == SDLK_DOWN || k == SDLK_KP_2) pyre_sel_ = col[(at + 1) % col.size()];
   else if (k == SDLK_LEFT || k == SDLK_KP_4 || k == SDLK_RIGHT || k == SDLK_KP_6) {
