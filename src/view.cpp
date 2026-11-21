@@ -233,7 +233,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                {"bleeding", h.bleed > 0}, {"branded", h.brand > 0}, {"sundered", h.sunder > 0}, {"dazed", h.dazed > 0}, {"dmg", dmg}, {"armour", st.armour}, {"acc", st.acc},
                {"crit", st.crit}, {"res", {st.res_f, st.res_c, st.res_p}}, {"equip", equip}, {"pack", pack}, {"perks", perks},
                {"choice", choice}, {"skills", skills}, {"pool", h.cls->res}, {"fury", h.fury}, {"maxfury", 10}, {"usesfury", uses_fury},
-               {"usesmana", uses_mana || g.main_style(h) != 0}, {"styles", styles}, {"weapon", weapon}, {"eranks", eranks}, {"known", known}, {"slotel", h.slot_el}, {"path", h.path},
+               {"usesmana", uses_mana || g.main_style(h) != 0}, {"styles", styles}, {"weapon", weapon}, {"eranks", eranks}, {"known", known}, {"slotel", h.slot_el}, {"path", h.path}, {"combo", h.el >= 0 && std::max({h.srank[0], h.srank[1], h.srank[2]}) > 0 ? g.main_style(h) * 5 + h.el : -1},
                {"power", g.power(h)}, {"reload", h.reload}, {"focus", h.focus}, {"standfast", h.standfast}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
   if (h.shopping) {
     json shop = json::array();

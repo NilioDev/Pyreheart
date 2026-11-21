@@ -1018,6 +1018,7 @@ void Game::bleed(Hero& h, Mon& m, int dmg) {
 bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   Stats st = stats(h);
   bool opening = h.cls->key == "dagger" && !ranged && busy(m, h);
+  bool unseen = !m.awake;
   m.awake = true;
   m.open = 0;
   int chance = std::clamp(st.acc - m.ar * 2 + 12 + (opening ? 30 : 0) - 8 * h.stk.n[elem::ASH], 25, 97);
@@ -1027,6 +1028,7 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   if (h.perk("berserker")) d *= 1 + .03 * h.fury;
   if (ranged && h.cls->key == "bow") d *= 1 + .2 * h.focus;
   if (m.frozen > 0 && h.perk("frostbinder")) d *= 1.25;
+  if (ranged && combo(h, 1, elem::RIME)) d *= 1 + .08 * m.stk.n[elem::RIME];  // Coldeye
   if (h.perk("duelist")) {
     if (h.combo_id == m.id) h.combo = std::min(6, h.combo + 1); else { h.combo_id = m.id; h.combo = 1; }
     d *= 1 + .12 * (h.combo - 1);
@@ -1056,6 +1058,10 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
     num(m.x, m.y, "stunned", 0xE0D080);
   }
   crit_next = crit;
+  if (ranged && &h == acting_) {  // Smokestalker and Plaguehunter lay a second stack before the blow lays its own
+    if (unseen && combo(h, 1, elem::ASH) && hero_el(h) == elem::ASH) lay_on_mon(h, m, 1);
+    if (combo(h, 1, elem::ROT) && hero_el(h) == elem::ROT && cheb(m.x, m.y, h.x, h.y) >= std::max(1, st.reach - 1)) lay_on_mon(h, m, 1);
+  }
   hurt(m, dmg, &h, opening ? "An opening: you cut " + the(m) + " deep (" + std::to_string(dmg) + ")."
                    : crit ? "You strike " + the(m) + " hard (" + std::to_string(dmg) + ")." : "");
   return true;
@@ -1082,6 +1088,7 @@ void Game::melee(Hero& h, Mon& m) {
 void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
   dmg = trait_hurt(m, dmg);
   if (m.spent > 0) dmg = dmg * 3 / 2;
+  if (m.smothered > 0) dmg = dmg * 5 / 4;
   m.hp -= dmg;
   num(m.x, m.y, std::to_string(dmg), crit_next ? 0xFFD25A : 0xFFFFFF);
   if (by) {  // learn by doing: the harm counts for the style (and the weapon) that dealt it
@@ -1317,6 +1324,19 @@ void Game::kill(Mon& m, Hero* by) {
   MonP keep;
   for (auto it = floor->mons.begin(); it != floor->mons.end(); ++it)
     if (it->get() == &m) { keep = *it; floor->mons.erase(it); break; }
+  if (int r = m.stk.n[elem::ROT]; r > 0) {  // Blightreaver: the rot goes to the neighbours; Rotspeaker: to the nearest foe
+    auto it = heroes.find(m.stk.by[elem::ROT]);
+    Hero* rh = it == heroes.end() ? nullptr : it->second.get();
+    auto give = [&](Mon& o) { o.stk.n[elem::ROT] = std::min(elem::MAX, o.stk.n[elem::ROT] + r); o.stk.idle[elem::ROT] = 0; o.stk.by[elem::ROT] = rh->pid; };
+    if (rh && combo(*rh, 0, elem::ROT)) {
+      for (auto& o : floor->mons) if (o->hp > 0 && cheb(o->x, o->y, m.x, m.y) <= 1) give(*o);
+    } else if (rh && combo(*rh, 2, elem::ROT)) {
+      Mon* best = nullptr;
+      int bd = 6;
+      for (auto& o : floor->mons) if (o->hp > 0 && cheb(o->x, o->y, m.x, m.y) < bd) { bd = cheb(o->x, o->y, m.x, m.y); best = o.get(); }
+      if (best) { give(*best); add_fx({{"k", "line"}, {"cells", json::array({xy(m.x, m.y), xy(best->x, best->y)})}, {"col", elem::COL[elem::ROT]}, {"dur", .3}}); }
+    }
+  }
   int col = m.rank == "champion" ? 0x7090FF : (m.rank == "unique" || m.rank == "boss") ? 0xE0B050 : 0xC8C8C8;
   say_near(m.x, m.y, cap(the(m)) + " dies.", col);
   if (by) {
@@ -1521,9 +1541,15 @@ void Game::skill(Hero& h, int n, int x, int y) {
   if (key == "charge" && h.perk("frenzy")) cost = 0;
   if (key == "tumble") cost -= 2 * h.perk("quick");
   if (key == "kindle" && h.perk("deeprunes")) cost = 0;
-  if (pool < cost) { h.say(std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk.name + ".", fury ? 0xE08040 : 0x7090FF); return; }
+  bool in_blood = !fury && pool < cost && combo(h, 2, elem::BLOOD) && h.hp > 2 * cost + 1;  // Bloodbinder
+  if (pool < cost && !in_blood) { h.say(std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk.name + ".", fury ? 0xE08040 : 0x7090FF); return; }
   if (sk.target && !target(h, x, y)) { h.say("No target.", 0x909090); return; }
   if (h.smother > 0) { h.say("Soot chokes you: your skills will not come this turn.", elem::COL[elem::ASH]); return; }
+  if (in_blood) {
+    h.hp -= 2 * cost;
+    num(h.x, h.y, std::to_string(2 * cost), elem::COL[elem::BLOOD]);
+    cost = 0;
+  }
   if (n >= 2 && h.el2 >= 0 && h.slot_el[n - 1] == 1) acting_el_ = h.el2;  // a key set to the second coal at the fire
   if (elem::skill_sign(key) == 0x263C) discharging_ = hero_el(h);
   Stats st = stats(h);
@@ -1975,7 +2001,18 @@ void Game::shoot_with(Hero& h, int x, int y) {
   MonP t = hit[0];
   double mult = k == "staff" ? .9 * sp : k == "wand" ? .7 * sp : k == "thrown" && h.moved == turn - 1 ? 1.25 : 1.0;
   if (h.perk("skirmisher") && h.moved == turn - 1) mult *= 1.2;
+  bool burning = t->stk.n[elem::EMBER] > 0;
   strike(h, *t, mult, true);
+  if (burning && combo(h, 1, elem::EMBER)) {  // Kindler: the shot goes on through a burning foe
+    std::vector<P> c2; std::vector<MonP> h2;
+    path(h, x, y, st.reach, true, c2, h2);
+    for (size_t i = 1; i < h2.size(); ++i) {
+      if (h2[i]->hp <= 0) continue;
+      bool on = h2[i]->stk.n[elem::EMBER] > 0;
+      strike(h, *h2[i], mult, true);
+      if (!on) break;
+    }
+  }
   if (k == "wand" && t->hp > 0 && rnd.below(100) < 25 + 5 * mastery(h, "wand")) {
     add_fx({{"k", "bolt"}, {"cells", cells_json(cells)}, {"col", col}, {"ch", "*"}, {"src", xy(h.x, h.y)}, {"delay", .08}});
     strike(h, *t, mult, true);
@@ -2135,6 +2172,7 @@ Hero* Game::nearest_hero(const Mon& m, bool seen_only) {
 }
 
 void Game::mon_turn(Mon& m) {
+  if (m.smothered > 0) --m.smothered;
   if (m.stun > 0) { --m.stun; return; }
   if (m.frozen > 0) { --m.frozen; return; }
   if (!m.awake) return;
@@ -2236,7 +2274,20 @@ void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   Stats st = stats(h);
   int chance = std::clamp(m.acc + lvl * 2 - st.armour - (h.cls->key == "dagger" && !ranged ? 15 : 0) - 8 * m.stk.n[elem::ASH], 20, 95);
   if (!ranged) add_fx({{"k", "swing"}, {"src", xy(m.x, m.y)}, {"cells", json::array({xy(h.x, h.y)})}});
-  if (rnd.below(100) >= chance) { if (h.perk("riposte")) m.open = 2; num(h.x, h.y, "dodge", 0x808080); return; }
+  if (rnd.below(100) >= chance) {
+    if (h.perk("riposte")) m.open = 2;
+    num(h.x, h.y, "dodge", 0x808080);
+    if (!ranged && m.stk.n[elem::ASH] > 0 && cheb(m.x, m.y, h.x, h.y) == 1 && combo(h, 0, elem::ASH)) {  // Cinderguard
+      h.say(cap(the(m)) + " swings blind through the ash, and you strike back.", elem::COL[elem::ASH]);
+      Hero* was = acting_;
+      acting_ = &h;
+      credit_ = 0; credit_weapon_ = true;
+      strike(h, m, .6);
+      credit_ = -1; credit_weapon_ = false;
+      acting_ = was;
+    }
+    return;
+  }
   // the sword's parry: a blow turned aside, and a riposte
   if (!ranged && h.cls->key == "sword" && cheb(m.x, m.y, h.x, h.y) == 1 && rnd.below(100) < 12 + 3 * mastery(h, "sword")) {
     num(h.x, h.y, "parry", 0xE0E0F0);

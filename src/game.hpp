@@ -135,6 +135,7 @@ struct Mon {
   std::string rank = "normal";
   std::vector<std::string> mods;
   int energy = 0, stun = 0, frozen = 0, cool = 3;
+  int smothered = 0;  // an Ashseer's discharge: it takes a quarter more from everything
   bool awake = false, summoned = false;
   Blow blow;                       // turns > 0 while it winds up
   int bleed = 0, bleed_dmg = 0;    // turns left, harm each turn
@@ -342,6 +343,7 @@ class Game {
  public:
   // hero.cpp: the classless hero (plan.md section 1)
   int power(const Hero& h) const;
+  bool combo(const Hero& h, int style, int e) const;  // the hero's title is this style and element: its talent holds
   int hero_el(const Hero& h) const { return acting_el_ >= 0 ? acting_el_ : h.el; }
   double catch_up(const Hero& h) const;  // how much faster a hero behind the pace learns (up to 2x), or slower ahead         // how far the hero has grown: what a level was to the old classes
   int main_style(const Hero& h) const;    // the style with the highest rank (the weapon's on a tie)

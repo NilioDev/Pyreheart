@@ -206,6 +206,7 @@ void Client::draw_hero() {
   // left: who you are and how you grow: the title, the level, the three ways of fighting, the weapon, the element
   int r = y + 2;
   text(L, r++, me["clsname"].get<std::string>(), me["col"].get<int>(), PAPER);
+  if (int c = me.value("combo", -1); c >= 0) r += rich_wrap(L, r, W2, std::string("Talent: ") + data::TALENTS[c / 5][c % 5] + ".", 0xB89868, PAPER);
   int prev = me["prev"], next = me["next"], xp = me["xp"];
   text(L, r, "Level " + std::to_string(me["lvl"].get<int>()), ASH, PAPER);
   text(L + 10, r, "XP", DIM, PAPER);

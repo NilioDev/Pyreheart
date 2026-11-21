@@ -506,6 +506,15 @@ TITLES = {
     'ranged': ('Kindler', 'Coldeye', 'Smokestalker', 'Plaguehunter', 'Bloodhunter'),
     'magic': ('Pyrebinder', 'Rimecaller', 'Ashseer', 'Rotspeaker', 'Bloodbinder'),
 }
+# each title's own talent, in the same order
+TALENTS = {
+    'melee': ('each discharge gives back 3 fury', 'a shattered foe slows all beside it', 'an ashen foe that misses you takes a counterblow',
+              'a foe that dies rotting passes its rot to its neighbours', 'healing past full life becomes a short shield'),
+    'ranged': ('your shots pass through burning foes', 'slowed foes take more from your shots', 'a shot at a foe that has not seen you lays double Ash',
+               'at full range Rot builds twice as fast', 'your Blood discharges heal you in full even at range'),
+    'magic': ('your discharges leave burning ground', 'your discharges leave a patch of ice that freezes', 'smothered foes take more from everything',
+              'rot jumps to a new foe when its host dies', 'out of mana, your spells cost life'),
+}
 SKILLS = {
     'cleave': dict(name='Cleave', mana=2, target=False, about='strike every foe next to you'),
     'warcry': dict(name='War Cry', mana=3, target=False, about='stun foes within 2'),

@@ -65,7 +65,7 @@ inline const std::vector<Chapter>& chapters() {
         {'p', "Your weapon has one trait and its own skill on [1]. Fighting with it brings mastery, up to 5: more harm, and a stronger trait. Any weapon you find can be used, but a new kind starts from nothing."},
         {'p', "Your element grows with every kill too, and its stacks bite harder."},
         {'h', "Level and title"},
-        {'p', "Levels come slowly, about two a zone. Each brings a perk to choose: [p]. Your best style and your element give your hero a title, such as Forgeborn or Rimecaller."},
+        {'p', "Levels come slowly, about two a zone. Each brings a perk to choose: [p]. Your best style and your element give your hero a title, such as Forgeborn or Rimecaller. Each title brings its own talent, shown on the Hero screen [c]. A style that reaches rank 5 opens two paths, chosen at a waystation's fire."},
         {'p', "The panel shows your name, title and level, and three orbs for life, fury and mana. The Hero screen [c] shows the rest."}}},
       {"gear", "Gear",
        {{'p', "Open your pack with [i]. [Enter] wears or uses the chosen thing, [d] puts it down for anyone to take, [t] gives it to the hero next to you."},

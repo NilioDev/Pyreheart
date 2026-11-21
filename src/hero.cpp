@@ -56,6 +56,10 @@ int Game::skill_style(const Hero& h, const std::string& key) const {
   return main_style(h);
 }
 
+bool Game::combo(const Hero& h, int style, int e) const {
+  return h.el == e && std::max({h.srank[0], h.srank[1], h.srank[2]}) > 0 && main_style(h) == style;
+}
+
 std::string Game::title(const Hero& h) const {
   int top = std::max({h.srank[0], h.srank[1], h.srank[2]});
   if (h.el >= 0 && top > 0) return TITLES[main_style(h)][h.el];
