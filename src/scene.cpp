@@ -469,10 +469,20 @@ void Client::draw_tiles() {
         pool(gx, gy, 3 * flick(tt, gx * 7 + gy), 1.1, .9);
         if (vis[gy * W + gx] == '1') emits_.push_back({float(gx), float(gy), 'f', gx * 7 + gy});
       }
+  if (s.contains("embers"))
+    for (auto& e : s["embers"]) {
+      int ex = e[0], ey = e[1];
+      pool(ex, ey, 3 * flick(tt, ex * 11 + ey), 1.1, .9);
+      if (vis[ey * W + ex] == '1') emits_.push_back({float(ex), float(ey), 'f', ex * 11 + ey});
+    }
   for (auto& h : s["heroes"])
     if (!h.value("gone", false) && !h.value("dead", false)) {
       int hx = h["x"].get<int>(), hy = h["y"].get<int>();
       pool(hx, hy, 6, 1.25, 0);
+      if (h.value("carry", 0) > 0) {  // the ember in their hands lights the way
+        pool(hx, hy, 9 * flick(tt, hx * 5 + hy), 1.2, .9);
+        emits_.push_back({float(hx), float(hy), 'f', hx * 5 + hy});
+      }
       if (tile(hx, hy) == GRATE) emits_.push_back({float(hx), float(hy), 'q', hx * 31 + hy});  // something follows below
     }
 

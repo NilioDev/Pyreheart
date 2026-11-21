@@ -62,11 +62,11 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["turn"] = g.turn;
   out["state"] = g.state;
   // the end of a dive: a hero who beat the King is kept for the next Frost level; one who fell gets a grave (a friend who fell in a dive won is woken by the victory)
-  if (g.state == "won") out["record"] = g.record(h);
-  if (g.state == "over")
+  if (g.state == "won" && !h.lost) out["record"] = g.record(h);
+  if (g.state == "over" || h.lost)
     out["grave"] = {{"name", h.name}, {"title", h.cls->name}, {"lvl", h.lvl}, {"frost", g.frost}, {"depth", f.depth},
                     {"zone", data::ACTS[f.act].name}, {"killer", h.killer.empty() ? "the dark" : h.killer}, {"kills", h.kills},
-                    {"coop", g.heroes.size() > 1}};
+                    {"coop", g.heroes.size() > 1}, {"rekindled", h.rekindled}};
   out["depth"] = g.depth;
   out["act"] = f.act;
   out["rest"] = f.rest;
@@ -153,8 +153,11 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   for (auto& [id, o] : g.heroes)
     if (!o->away)
       heroes.push_back({{"pid", o->pid}, {"name", o->name}, {"cls", o->cls->key}, {"x", o->x}, {"y", o->y}, {"hp", o->hp},
-                        {"max", g.stats(*o).maxhp}, {"lvl", o->lvl}, {"st", stacks(o->stk)}, {"el", o->el}, {"dead", o->dead}, {"gone", o->gone}, {"col", o->cls->col}});
+                        {"max", g.stats(*o).maxhp}, {"lvl", o->lvl}, {"st", stacks(o->stk)}, {"el", o->el}, {"dead", o->dead}, {"gone", o->gone}, {"lost", o->lost}, {"carry", o->carry.size()}, {"col", o->cls->col}});
   out["heroes"] = heroes;
+  json embers = json::array();
+  for (auto& [c, pid] : f.embers) if (h.sees(c.x, c.y)) embers.push_back({c.x, c.y, pid});
+  out["embers"] = embers;
   json items = json::array();
   for (auto& fi : f.items) {
     if ((fi.owner && fi.owner != h.pid) || !h.sees(fi.x, fi.y)) continue;

@@ -95,6 +95,19 @@ static json choose(Game& g, Hero& h) {
     if (score(it) > score(cur == h.equip.end() ? nullptr : cur->second)) return {{"t", "equip"}, {"id", it->id}};
   }
   Floor& f = *g.floor;
+  // co-op: take up a fallen friend's ember, and bear it to the waystation's fire
+  if (!f.embers.empty()) {
+    auto [at, pid] = f.embers.front();
+    auto a = toward(g, h, at.x, at.y);
+    if (!still(a)) return a;
+  }
+  if (!h.carry.empty() && f.rest && f.fire.x >= 0 && cheb(h.x, h.y, f.fire.x, f.fire.y) > 1)
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx)
+        if ((dx || dy) && f.walk(f.fire.x + dx, f.fire.y + dy)) {
+          auto a = toward(g, h, f.fire.x + dx, f.fire.y + dy);
+          if (!still(a)) return a;
+        }
   if (h.shopping) g.free_action(h, {{"t", "buyp"}, {"k", "heal"}});
   // the keys the skills sit on now: [1] the weapon's, [2]-[5] the styles'
   auto slot = [&](const char* key) { for (size_t i = 0; i < h.cls->skills.size(); ++i) if (h.cls->skills[i] == key) return int(i) + 1; return 0; };
@@ -255,6 +268,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
     lvls += std::to_string(h->lvl) + "(" + std::to_string(h->srank[0]) + "/" + std::to_string(h->srank[1]) + "/" + std::to_string(h->srank[2]) +
             " w" + std::to_string(g.mastery(*h, h->cls->key)) + " e" + std::to_string(h->el >= 0 ? h->erank[h->el] : 0) + ") ";
     kills += h->kills;
+    if (h->rekindled || h->dead) lvls += std::string(h->lost ? "LOST " : h->dead ? "ghost " : "") + (h->rekindled ? "rekindled" + std::to_string(h->rekindled) + " " : "");
   }
   for (auto& [s, it] : g.heroes.begin()->second->equip) gear += it->shortname() + ", ";
   std::string way;
@@ -307,5 +321,8 @@ int main() {
     if (!only || w.key == only)
       for (uint64_t s = 1; s <= uint64_t(seeds); ++s) run({w.key}, s);
   if (!only) run({"sword", "lantern", "dagger"}, 9);
+  // BOTCOOP=n: n co-op dives of three, to see embers carried and friends rekindled
+  if (const char* c = std::getenv("BOTCOOP"))
+    for (int i = 0; i < std::atoi(c); ++i) run({"sword", "lantern", "dagger"}, 20 + uint64_t(i));
   return 0;
 }

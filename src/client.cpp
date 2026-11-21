@@ -189,7 +189,7 @@ void Client::load_hero() {
 }
 
 void Client::hello() {
-  json h = {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}};
+  json h = {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}, {"frost", frost_}};
   if (hero_.is_object()) {
     h["name"] = hero_.value("name", name_);
     if (hero_.contains("record") && hero_["record"].is_object()) h["hero"] = hero_["record"];
@@ -218,7 +218,7 @@ void Client::close_dive(const json& s) {
     respec_ = true;
     save_hero();
     log_.push_back({"You will wake in Charnfen, and go down again into Frost " + std::to_string(frost_) + ". The Pyre will let you take back your Sparks, once.", 0x90C8FF});
-  } else if (s.value("state", "play") == "over" && s.contains("grave")) {
+  } else if (s.contains("grave")) {  // the dive ended in death, or in co-op the ember went out
     dive_closed_ = true;
     json g = s["grave"];
     graves_.push_back(g);
@@ -1278,10 +1278,16 @@ void Client::draw_map() {
       put(X + 1, Y - 1, ph < .5 ? 'z' : 'Z', ph < .5 ? 0x9696BE : 0x50506E);
     }
   }
+  if (s.contains("embers"))  // a fallen friend's ember, waiting to be carried to the fire
+    for (auto& e : s["embers"]) {
+      double fl = .75 + .25 * std::sin(now() * 5.0 + e[0].get<int>() * 1.7);
+      put(sx(e[0]), sy(e[1]), '*', (int(0xFF * fl) << 16) | (int(0x8C * fl) << 8) | 0x28);
+    }
   for (auto& h : s["heroes"]) {
-    if (h.value("gone", false)) continue;
+    if (h.value("gone", false) || h.value("lost", false)) continue;
     bool dead = h.value("dead", false);
-    put(sx(h["x"]), sy(h["y"]), dead ? '%' : '@', dead ? 0x803030 : h["col"].get<int>());
+    // a ghost: the hero's @ in faint grey, drifting after a living friend
+    put(sx(h["x"]), sy(h["y"]), '@', dead ? (std::fmod(now() * .8 + h["pid"].get<int>(), 2.0) < 1 ? 0x5A5A64 : 0x46464E) : h["col"].get<int>());
   }
   // effects
   double t = now();

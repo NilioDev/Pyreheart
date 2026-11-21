@@ -202,7 +202,7 @@ json Game::record(const Hero& h) const {
   return {{"v", 1}, {"name", h.name}, {"lvl", h.lvl}, {"xp", h.xp}, {"gold", h.gold}, {"kills", h.kills},
           {"srank", h.srank}, {"sxp", h.sxp}, {"erank", h.erank}, {"exq", h.exq}, {"wxp", h.wxp}, {"known", h.known},
           {"path", h.path}, {"slotel", h.slot_el}, {"el", h.el}, {"el2", h.el2}, {"perks", h.perks}, {"choices", h.perk_choices},
-          {"equip", equip}, {"pack", pack}, {"heal", h.heal}, {"manap", h.mana_pots},
+          {"equip", equip}, {"pack", pack}, {"heal", h.heal}, {"manap", h.mana_pots}, {"scars", h.scars}, {"rekindled", h.rekindled},
           {"tips", std::vector<std::string>(h.tips.begin(), h.tips.end())}};
 }
 
@@ -226,7 +226,62 @@ void Game::restore(Hero& h, const json& j) {
   if (j.contains("equip") && j["equip"].is_object())
     for (auto& [slot, it] : j["equip"].items()) if (auto i = loot::load(it)) h.equip[slot] = i;
   for (auto& it : j.value("pack", json::array())) if (auto i = loot::load(it); i && int(h.pack.size()) < PACK_MAX) h.pack.push_back(i);
+  h.scars = j.value("scars", 0); h.rekindled = j.value("rekindled", 0);
   h.heal = j.value("heal", h.heal); h.mana_pots = j.value("manap", h.mana_pots);
   for (auto& t : j.value("tips", json::array())) h.tips.insert(t.get<std::string>());
   refit(h);
+}
+
+// ------------------------------------------------------------------ co-op: ghosts and the ember-run
+
+void Game::ember_out(Hero& o, const std::string& why) {
+  if (o.lost || !o.dead) return;
+  o.lost = true;
+  say_all(o.name + "'s ember goes out: " + why + ". " + o.name + " is gone for good.", 0xFF6060);
+}
+
+// Each turn: a ghost drifts after the nearest living friend; a living hero who steps on an ember takes it up; a carrier
+// who reaches a waystation's fire rekindles the friend, who wakes there scarred.
+void Game::embers_tick() {
+  auto alive = living();
+  if (alive.empty()) return;
+  for (auto& [id, hp] : heroes) {
+    Hero& g = *hp;
+    if (!g.dead || g.lost || g.away) continue;
+    Hero* near = nullptr;
+    for (auto* o : alive) if (!near || cheb(o->x, o->y, g.x, g.y) < cheb(near->x, near->y, g.x, g.y)) near = o;
+    if (near && cheb(near->x, near->y, g.x, g.y) > 2) {
+      P c;
+      if (free_near(near->x, near->y, 2, c)) { g.x = c.x; g.y = c.y; }
+      else { g.x = near->x; g.y = near->y; }
+    }
+  }
+  for (auto* h : alive)
+    for (size_t i = 0; i < floor->embers.size();) {
+      auto [at, pid] = floor->embers[i];
+      if (at.x != h->x || at.y != h->y) { ++i; continue; }
+      floor->embers.erase(floor->embers.begin() + long(i));
+      h->carry.push_back(pid);
+      auto it = heroes.find(pid);
+      std::string who = it == heroes.end() ? "a friend" : it->second->name;
+      say_all(h->name + " takes up " + who + "'s ember. It glows in their hands.", 0xFFA040);
+    }
+  if (floor->rest && floor->fire.x >= 0)
+    for (auto* h : alive) {
+      if (h->carry.empty() || cheb(h->x, h->y, floor->fire.x, floor->fire.y) > 1) continue;
+      for (int pid : h->carry) {
+        auto it = heroes.find(pid);
+        if (it == heroes.end() || it->second->lost) continue;
+        Hero& o = *it->second;
+        o.dead = false;
+        ++o.scars; ++o.rekindled;
+        o.hp = stats(o).maxhp / 2; o.poison = 0; o.stk.clear();
+        P c;
+        if (free_near(floor->fire.x, floor->fire.y, 2, c)) { o.x = c.x; o.y = c.y; }
+        add_fx({{"k", "rise"}, {"x", o.x}, {"y", o.y}, {"col", elem::COL[elem::EMBER]}});
+        say_all(h->name + " lays the ember in the fire. " + o.name + " is rekindled, and keeps a scar.", 0xFFD27F);
+        o.say("You wake by the fire. A scar stays: a tenth of your life is gone for good.", 0xB4DCB4);
+      }
+      h->carry.clear();
+    }
 }

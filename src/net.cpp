@@ -347,6 +347,8 @@ void Host::handle(const std::shared_ptr<Peer>& peer, const json& m) {
       for (auto& p : peers_) push(*p);
       return;
     }
+    if (hello.value("frost", 0) < game_.frost)  // a friend joins only at a Frost their hero has reached
+      { peer->out(json{{"error", "This dive is at Frost " + std::to_string(game_.frost) + ". Your hero has not reached it yet."}}.dump()); return; }
     std::string name = hello.value("name", "Nameless").substr(0, 16);
     if (name.empty()) name = "Nameless";
     peer->pid = next_pid_++;
