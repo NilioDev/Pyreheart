@@ -7,6 +7,7 @@
 
 #include "client.hpp"
 #include "data.hpp"
+#include "elements.hpp"
 #include "palette.hpp"
 
 namespace {
@@ -178,7 +179,14 @@ void Client::draw_side(int x0, int y, int w, int h) {
   orb(x, 6, hp, mhp, LIFE, "LIFE", true);
   orb(x + 7, 6, mn, mmn, FURY, "FURY", fury);
   orb(x + 14, 6, mn, mmn, MANA, "MANA", !fury);
-  // what holds you: today's states, until the elements' stacks come
+  // the stacks you carry, five fixed slots; a slot a foe is about to set off blinks, and ! lights up
+  {
+    std::set<int> warn;
+    for (auto& e : me.value("warn", json::array())) warn.insert(e.get<int>());
+    stacks_row(x, 16, me.value("st", json::array()), warn);
+    if (!warn.empty()) put(right, 16, '!', std::fmod(now(), .5) < .25 ? 0xFF6040 : 0x802010);
+  }
+  // what else holds you
   {
     std::string st;
     auto add = [&](const char* k, const char* w2) { if (me.value(k, false)) st += std::string(st.empty() ? "" : " ") + w2; };
@@ -187,7 +195,7 @@ void Client::draw_side(int x0, int y, int w, int h) {
     if (me.value("focus", 0) > 0) st += std::string(st.empty() ? "" : " ") + "focus " + std::string(me["focus"].get<int>(), '*');
     if (me.value("standfast", 0) > 0) st += std::string(st.empty() ? "" : " ") + "fast " + std::to_string(me["standfast"].get<int>());
     if (ulen(st) > inner) st = st.substr(0, inner);
-    text(x, 16, st, 0x96E65A);
+    text(x, 17, st, 0x6E9A48);
   }
   // skills: key, sign, name, cost in its pool's colour; a skill not yet come is dimmed with its level
   int r = 18;
@@ -200,7 +208,9 @@ void Client::draw_side(int x0, int y, int w, int h) {
     put(x, r, '1' + i, KEY);
     if (me["lvl"].get<int>() < lv) { text(x + 4, r, sk[0].get<std::string>(), DIM); std::string a = "lvl " + std::to_string(lv); text(right + 1 - ulen(a), r, a, DIM); continue; }
     bool ok = mn >= cost;
-    put(x + 2, r, 0xB7, ok ? ASH : DIM);
+    int sign = sk.size() > 5 ? sk[5].get<int>() : 0xB7, el = me.value("el", -1);
+    int sc = sign != 0xB7 && el >= 0 ? elem::COL[el] : ASH;
+    put(x + 2, r, sign, ok ? sc : DIM);
     text(x + 4, r, sk[0].get<std::string>(), ok ? ASH : DIM);
     std::string c = std::to_string(cost);
     text(right + 1 - ulen(c), r, c, ok ? pool_col : DIM);
@@ -268,11 +278,11 @@ void Client::draw_in_sight(int x, int r, int right, int last) {
     return cheb(a["x"], a["y"], hx, hy) < cheb(b["x"], b["y"], hx, hy);
   });
   for (auto& e : fs) {
-    bool plain = e.value("rank", "") == "normal" && e["hp"] == e["max"] && tag(e).empty() && !target(e);
+    bool plain = e.value("rank", "") == "normal" && e["hp"] == e["max"] && tag(e).empty() && !target(e) && !e.contains("st");
     if (plain) {
       auto it = std::find_if(rows.begin(), rows.end(), [&](const Row& w) {
         auto& o = w.e;
-        return o["name"] == e["name"] && o["ch"] == e["ch"] && o.value("rank", "") == "normal" && o["hp"] == o["max"] && tag(o).empty() && !target(o);
+        return o["name"] == e["name"] && o["ch"] == e["ch"] && o.value("rank", "") == "normal" && o["hp"] == o["max"] && tag(o).empty() && !target(o) && !o.contains("st");
       });
       if (it != rows.end()) { ++it->n; continue; }
     }
@@ -280,7 +290,8 @@ void Client::draw_in_sight(int x, int r, int right, int last) {
   }
   int shown = 0, n = int(rows.size());
   for (int i = 0; i < n; ++i) {
-    bool fits = r + 1 <= last && (i == n - 1 || r + 3 <= last);
+    int need = rows[i].e.contains("st") ? 3 : 2;
+    bool fits = r + need - 1 <= last && (i == n - 1 || r + need + 1 <= last);
     if (!fits) break;
     auto& e = rows[i].e;
     if (target(e)) put(x - 1, r, 0x25BA, GOLD);
@@ -295,6 +306,7 @@ void Client::draw_in_sight(int x, int r, int right, int last) {
     if (e["hp"].get<int>() > 0 && f == 0) f = 1;
     for (int k = 0; k < bw; ++k) put(x + 2 + k, r + 1, 0x2580, k < f ? 0xB03024 : 0x2E2018);
     r += 2;
+    if (e.contains("st")) { stacks_row(x + 2, r, e["st"], {}); ++r; }
     ++shown;
   }
   if (shown < n) {
@@ -400,6 +412,29 @@ void Client::draw_ui_particles(SDL_Renderer* r, double ox, double oy, double cel
       dot(bx, by, mix(light, ob.col, ph * .5), .9 - ph * .4);
     }
   }
+  // on the map: two motes a stack circle whoever carries them, in each element's colour; sparks rise off the coals
+  auto map_dot = [&](double mx, double my, int c, double a) {
+    double X = mx - camx_ + vx_, Y = my - camy_ + vy_;
+    if (X < vx_ || Y < vy_ || X >= vx_ + vw_ || Y >= vy_ + vh_) return;
+    dot(X * 8, Y * 8, c, a);
+  };
+  auto orbit = [&](int cx, int cy, const json& st, int seed) {
+    std::vector<int> cols;
+    for (int e = 0; e < elem::N && e < int(st.size()); ++e) for (int k = 0; k < 2 * st[e].get<int>(); ++k) cols.push_back(elem::COL[e]);
+    for (size_t k = 0; k < cols.size(); ++k) {
+      double ang = t * 2.2 + k * 6.2832 / cols.size() + seed, rr = .75 + .15 * std::sin(t * 5 + k);
+      map_dot(cx + .5 + std::cos(ang) * rr, cy + .5 + std::sin(ang) * rr * .8, cols[k], .9);
+    }
+  };
+  if (snap_.contains("me")) orbit(snap_["me"]["x"], snap_["me"]["y"], snap_["me"].value("st", json::array()), 0);
+  for (auto& e : snap_["ents"]) if (e.contains("st")) orbit(e["x"], e["y"], e["st"], e.value("id", 0));
+  if (snap_.contains("coals"))
+    for (auto& c : snap_["coals"])
+      for (int j = 0; j < 3; ++j) {
+        int e = c[2];
+        double ph = std::fmod(t * (.5 + .15 * j) + (hsh(e, j) % 100) / 100.0, 1.0);
+        map_dot(c[0].get<int>() + .5 + std::sin(t * 3 + j + e) * .15, c[1].get<int>() + .3 - ph * 1.6, mix(0xFFFFFF, elem::COL[e], ph), 1 - ph);
+      }
   for (size_t k = 0; k < suns_.size(); ++k) {
     auto [x, y] = suns_[k];
     for (int j = 0; j < 2; ++j) {
@@ -409,5 +444,29 @@ void Client::draw_ui_particles(SDL_Renderer* r, double ox, double oy, double cel
       if (ey < 0) continue;
       dot(ex, ey, mix(0xFFDC82, 0x6E280A, ph / .7), 1 - ph / .7);
     }
+  }
+}
+
+// Five fixed slots, always Ember, Rime, Ash, Rot, Blood: ■3/5 in the element's colour, empty while there is none.
+void Client::stacks_row(int x, int y, const json& st, const std::set<int>& warn) {
+  bool blink = std::fmod(now(), .5) < .25;
+  for (int e = 0; e < elem::N && e < int(st.size()); ++e) {
+    int n = st[e];
+    if (n <= 0) continue;
+    int c = warn.count(e) && blink ? 0xFFFFFF : elem::COL[e];
+    put(x + 4 * e, y, 0x25A0, c);
+    text(x + 4 * e + 1, y, std::to_string(n) + "/" + std::to_string(elem::MAX), c);
+  }
+}
+
+// The five coals at the edge of Charnfen's great fire, glowing in their colours.
+void Client::draw_coals() {
+  if (!snap_.contains("coals")) return;
+  double t = now();
+  for (auto& c : snap_["coals"]) {
+    int x = c[0].get<int>() - camx_ + vx_, y = c[1].get<int>() - camy_ + vy_, e = c[2];
+    if (x < vx_ || y < vy_ || x >= vx_ + vw_ || y >= vy_ + vh_) continue;
+    double f = .75 + .25 * std::sin(t * 3.1 + e * 1.7);
+    put(x, y, 0x25AA, scl(elem::COL[e], f), scl(elem::COL[e], .18));
   }
 }

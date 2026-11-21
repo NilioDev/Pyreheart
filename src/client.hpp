@@ -26,7 +26,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
-  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options };
+  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -137,6 +137,11 @@ class Client {
   void orb(int x, int y, int val, int max, int liquid, const std::string& label, bool used);
   void draw_frame_wide(int px, int ly);
   void draw_in_sight(int x, int r, int right, int last);
+  void stacks_row(int x, int y, const json& st, const std::set<int>& warn);
+  void draw_coals();
+  int coal_sel_ = 0;
+  void draw_coal_window();
+  void coal_key(SDL_Keycode k);
   void low_life_edge();
   void burn_suns();
   void draw_ui_particles(SDL_Renderer* r, double ox, double oy, double cell);

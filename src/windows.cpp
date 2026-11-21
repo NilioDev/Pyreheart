@@ -6,6 +6,7 @@
 
 #include "client.hpp"
 #include "data.hpp"
+#include "elements.hpp"
 #include "handbook.hpp"
 #include "palette.hpp"
 
@@ -237,14 +238,22 @@ void Client::draw_hero() {
   right_val(r++, "Critical", std::to_string(me.value("crit", 0)) + "%", INK, ASH);
   ++r;
   head(R, r++, "Resist");
-  static const char* RES[] = {"Fire", "Cold", "Poison"};
-  static const int RCOL[] = {0xFF8A30, 0xA8D8FF, 0x9CC850};
-  for (int i = 0; i < 3; ++i) {
-    int v = me["res"].size() > size_t(i) ? me["res"][i].get<int>() : 0;
-    put(R, r, 0x25A0, RCOL[i], PAPER);
-    text(R + 2, r, RES[i], RCOL[i], PAPER);
+  for (int i = 0; i < elem::N; ++i) {
+    int v = me.contains("eres") && me["eres"].size() > size_t(i) ? me["eres"][i].get<int>() : 0;
+    put(R, r, 0x25A0, elem::COL[i], PAPER);
+    text(R + 2, r, elem::NAME[i], elem::COL[i], PAPER);
     std::string vs = std::to_string(v) + "%";
     text(R + W2 - ulen(vs), r++, vs, v < 0 ? 0xE05040 : ASH, PAPER);
+  }
+  if (frost) text(R, r++, "Frost takes " + std::to_string(10 * frost) + "% from each", 0x8AB8E0, PAPER);
+  int el = me.value("el", -1);
+  if (el >= 0) {
+    ++r;
+    head(R, r++, "Your coal");
+    text(R, r, elem::NAME[el], elem::COL[el], PAPER);
+    int el2 = me.value("el2", -1);
+    if (el2 >= 0) { text(R + ulen(elem::NAME[el]), r, " and ", INK, PAPER); text(R + ulen(elem::NAME[el]) + 5, r, elem::NAME[el2], elem::COL[el2], PAPER); }
+    ++r;
   }
   rich(x + w - 13, y + h - 2, "[Esc] back", INK, PAPER);
 }
@@ -346,6 +355,12 @@ void Client::draw_book() {
   std::vector<std::pair<char, std::string>> blocks;
   for (auto& b : ch.blocks) blocks.push_back({b.kind, b.text});
   if (ch.key == "keys") for (auto& [k, v] : book::KEYS) blocks.push_back({'k', k + "\t" + v});
+  if (ch.key == "elements" && screen_ == Screen::Game && snap_.is_object() && snap_.contains("zel")) {
+    auto& z = snap_["zel"];
+    auto nm = [&](int i) { return "{" + std::string(elem::NAME[z[i].get<int>()]) + "}"; };
+    blocks.push_back({'h', "Here, in " + snap_.value("zname", std::string("this zone"))});
+    blocks.push_back({'p', "The foes here strike with " + nm(0) + " and " + nm(1) + ". They resist " + nm(2) + " and fear " + nm(3) + "."});
+  }
   int total = 2;
   for (auto& [k, s] : blocks) total += k == 'h' ? 1 : k == 'k' ? 1 : k == 'p' ? rich_wrap(0, 0, pw, s, INK, PAPER, false) + 1 : 1;
   int room = bottom - top - 1;
@@ -393,4 +408,52 @@ void Client::note_tip(const std::string& s) {
       {"foe", "fighting"}, {"perk", "hero"}, {"vault", "gear"}, {"Spark", "frost"}, {"great foe", "foes"}};
   for (auto& [w, c] : MAP)
     if (s.find(w) != std::string::npos) { tip_ch_ = book::index_of(c); tip_t_ = now(); return; }
+}
+
+// ------------------------------------------------------------------ the coals at the great fire
+
+// Five coals side by side, each a glowing heap with what its element does; the one you take burns in your hits.
+void Client::draw_coal_window() {
+  int cw = con_.get_width(), chh = con_.get_height();
+  int col_w = 18, w = std::min(cw, col_w * elem::N + 5), h = std::min(chh, 27);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  window(x, y, w, h, "A coal from the great fire");
+  text(x + 3, y + 2, "Take one coal down with you. Your hits lay its element on the foe.", INK, PAPER);
+  double t = now();
+  coal_sel_ = std::clamp(coal_sel_, 0, elem::N - 1);
+  for (int e = 0; e < elem::N; ++e) {
+    int cx = x + 3 + e * col_w, mid = cx + col_w / 2 - 1;
+    bool on = e == coal_sel_;
+    int c = elem::COL[e], bg = on ? mix(PAPER, c, .12) : PAPER;
+    for (int j = y + 4; j < y + h - 4; ++j) for (int i = cx; i < cx + col_w - 1; ++i) put(i, j, ' ', INK, bg);
+    if (on) { for (int i = cx; i < cx + col_w - 1; ++i) { put(i, y + 4, 0x2580, mix(bg, c, .6), PAPER); put(i, y + h - 5, 0x2584, mix(bg, c, .6), PAPER); } }
+    // the heap: a glowing core under a flicker
+    double f = .7 + .3 * std::sin(t * (on ? 5.0 : 2.4) + e * 1.3);
+    int core = mix(0x201810, c, f), rim = mix(0x201810, c, f * .55);
+    put(mid, y + 6, std::fmod(t * 3 + e, 1.0) < .5 ? 0x2219 : 0xB7, mix(bg, c, f * (on ? 1 : .5)), bg);
+    text(mid - 1, y + 7, "▄█▄", core, bg);
+    text(mid - 2, y + 8, "▀▀▀▀▀", rim, bg);
+    put(mid, y + 7, 0x25AA, 0xFFF0D0, core);
+    std::string name = elem::NAME[e], role = elem::ROLE[e];
+    text(cx + (col_w - 1 - ulen(name)) / 2, y + 10, name, on ? c : mix(c, PAPER, .3), bg);
+    text(cx + (col_w - 1 - ulen(role)) / 2, y + 11, role, on ? ASH : DIM, bg);
+    std::string lays = std::string(elem::PLAYS[e][0]) + (elem::PLAYS[e][1][0] ? std::string(" ") + elem::PLAYS[e][1] : "");
+    int rr = y + 13;
+    text(cx + 1, rr++, "each stack:", on ? DIM : 0x5A5048, bg);
+    rr += rich_wrap(cx + 1, rr, col_w - 3, lays, on ? INK : DIM, bg) + 1;
+    text(cx + 1, rr++, "set off:", on ? DIM : 0x5A5048, bg);
+    rich_wrap(cx + 1, rr, col_w - 3, elem::PLAYS[e][2], on ? GOLD : DIM, bg);
+    buttons_.push_back({cx, y + 4, col_w - 1, h - 7, "", "coal:" + std::to_string(e)});
+  }
+  text(x + 3, y + h - 3, "■ a hit lays a stack   ☼ a heavy hit sets them all off", DIM, PAPER);
+  rich(x + 3, y + h - 2, "[◄►] coal  [Enter] take it  [?] more in the handbook  [Esc] not yet", INK, PAPER);
+}
+
+void Client::coal_key(SDL_Keycode k) {
+  if (k == SDLK_ESCAPE) { over_ = Over::None; return; }
+  if (k == SDLK_LEFT || k == SDLK_KP_4 || k == SDLK_A) coal_sel_ = (coal_sel_ + elem::N - 1) % elem::N;
+  else if (k == SDLK_RIGHT || k == SDLK_KP_6 || k == SDLK_D) coal_sel_ = (coal_sel_ + 1) % elem::N;
+  else if (k >= SDLK_1 && k < SDLK_1 + elem::N) coal_sel_ = int(k - SDLK_1);
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) { send({{"t", "coal"}, {"e", coal_sel_}}); over_ = Over::None; }
+  else if (k == SDLK_SLASH || k == SDLK_QUESTION || k == SDLK_F1) { open_book(); book_ch_ = book::index_of("elements"); book_scroll_ = 0; }
 }

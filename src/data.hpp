@@ -319,7 +319,7 @@ inline const std::vector<std::vector<std::pair<std::string, int>>> SPAWNS = {
     {{"zealot", 4}, {"censer", 3}, {"altarguard", 2}, {"spirit", 3}, {"idol", 2}},
 };
 inline const std::map<std::string, std::pair<int, int>> PACKS = {{"rat", {2, 4}}, {"bat", {2, 4}}, {"spider", {2, 4}}, {"leech", {2, 4}}, {"newt", {2, 4}}, {"citizen", {3, 5}}, {"warhound", {2, 3}}, {"bonearcher", {1, 2}}, {"spitter", {1, 2}}, {"imp", {1, 2}}, {"caller", {1, 2}}, {"acidspitter", {1, 2}}, {"beggar", {1, 1}}, {"jarthrower", {1, 2}}, {"crossbow", {1, 2}}, {"mimic", {1, 1}}, {"sentinel", {1, 1}}, {"guardian", {1, 1}}, {"altarguard", {1, 1}}, {"idol", {1, 1}}, {"maiden", {1, 1}}};
-inline const std::vector<std::pair<std::string, std::string>> AFFIXES = {{"Swift", "it is quick"}, {"Brutal", "it hits very hard"}, {"Stone Skin", "it is hard to hurt"}, {"Vampiric", "its blows heal it"}, {"Fire-blooded", "it burns, and bursts into flame when slain"}, {"Regenerating", "its wounds close"}, {"Venomous", "its blows poison"}, {"Frost-touched", "its cold touch numbs your arm"}};
+inline const std::vector<std::pair<std::string, std::string>> AFFIXES = {{"Swift", "it is quick"}, {"Brutal", "it hits very hard"}, {"Stone Skin", "it is hard to hurt"}, {"Vampiric", "its blows lay Blood and heal it"}, {"Fire-blooded", "its blows lay Ember, and it bursts into flame when slain"}, {"Regenerating", "its wounds close"}, {"Venomous", "its blows lay Rot"}, {"Frost-touched", "its blows lay Rime"}, {"Ashen", "its blows lay Ash"}};
 inline const std::vector<std::string> UNIQUE_FIRST = {"Gorrath", "Vesk", "Old Murl", "Ashka", "Brannoc", "Thessaly", "Grimwald", "Ulvane", "Skarn", "Morrow"};
 inline const std::vector<std::string> UNIQUE_EPITHET = {"the Gnawer", "the Patient", "Bonechewer", "the Hollow", "Ironjaw", "the Pale", "of the Long Teeth", "the Unwashed", "Dreadmaw", "the Restless"};
 inline const std::vector<ClassDef> CLASSES = {
@@ -451,10 +451,12 @@ inline const std::vector<AffixDef> SUFFIXES = {
     {"of Embers", "res_fire", 10, 25, 1.2, {}},
     {"of the Thaw", "res_cold", 10, 25, 1.2, {}},
     {"of Purity", "res_poison", 10, 25, 1.2, {}},
+    {"of Clear Sight", "res_ash", 10, 25, 1.2, {}},
+    {"of Staunching", "res_blood", 10, 25, 1.2, {}},
     {"of the Wellspring", "regen", 1, 2, 1.3, {"ring", "amulet", "body", "helm"}},
     {"of Thorns", "thorns", 2, 5, 1.5, {"body", "helm"}},
 };
-inline const std::vector<std::pair<std::string, std::string>> STAT_TEXT = {{"dmg", "+{} damage"}, {"dmg_pct", "+{}% damage"}, {"armour", "+{} armour"}, {"mana", "+{} mana"}, {"acc", "+{} accuracy"}, {"fire_dmg", "+{} fire damage"}, {"spell", "+{}% spell power"}, {"hp", "+{} life"}, {"crit", "+{}% critical"}, {"leech", "{}% of damage heals you"}, {"res_fire", "+{}% resist fire"}, {"res_cold", "+{}% resist cold"}, {"res_poison", "+{}% resist poison"}, {"regen", "+{} mana each 3 turns"}, {"thorns", "attackers take {} damage"}};
+inline const std::vector<std::pair<std::string, std::string>> STAT_TEXT = {{"dmg", "+{} damage"}, {"dmg_pct", "+{}% damage"}, {"armour", "+{} armour"}, {"mana", "+{} mana"}, {"acc", "+{} accuracy"}, {"fire_dmg", "+{} fire damage"}, {"spell", "+{}% spell power"}, {"hp", "+{} life"}, {"crit", "+{}% critical"}, {"leech", "{}% of damage heals you"}, {"res_fire", "+{}% resist Ember"}, {"res_cold", "+{}% resist Rime"}, {"res_poison", "+{}% resist Rot"}, {"res_ash", "+{}% resist Ash"}, {"res_blood", "+{}% resist Blood"}, {"regen", "+{} mana each 3 turns"}, {"thorns", "attackers take {} damage"}};
 inline const std::vector<std::string> RARE_A = {"Grim", "Dusk", "Blood", "Storm", "Bone", "Ash", "Wraith", "Raven", "Doom", "Ember", "Gloom", "Iron"};
 inline const std::vector<std::pair<std::string, std::vector<std::string>>> RARE_B = {{"weapon", {"Bite", "Song", "Fang", "Edge", "Thirst", "Reaver"}}, {"body", {"Shell", "Hide", "Coat", "Carapace"}}, {"helm", {"Crown", "Visage", "Brow"}}, {"gloves", {"Grip", "Hand", "Clutch"}}, {"boots", {"Stride", "Tread", "Road"}}, {"ring", {"Loop", "Band", "Coil"}}, {"amulet", {"Charm", "Eye", "Heart"}}};
 inline const std::vector<UniqueDef> UNIQUES = {
