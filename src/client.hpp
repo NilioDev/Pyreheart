@@ -126,6 +126,20 @@ class Client {
   void draw_particles(SDL_Renderer* r, double ox, double oy, double cell);
   void present(const TCOD_ViewportOptions& vp);
   void draw_side(int x, int y, int w, int h);
+  // the dwarven frame, orbs and suns of the wide layout (hud.cpp)
+  struct OrbAt { int x, y; double frac; int col; };
+  std::vector<OrbAt> orbs_;
+  std::vector<std::pair<int, int>> suns_;
+  int frame_col() const;
+  int rivet_col() const;
+  void header(int x0, int x1, int y, const std::string& title, int left, int right);
+  void stone(int x0, int y0, int x1, int y1);
+  void orb(int x, int y, int val, int max, int liquid, const std::string& label, bool used);
+  void draw_frame_wide(int px, int ly);
+  void draw_in_sight(int x, int r, int right, int last);
+  void low_life_edge();
+  void burn_suns();
+  void draw_ui_particles(SDL_Renderer* r, double ox, double oy, double cell);
   void draw_status_tall(int y);
   void draw_log(int x, int y, int w, int h);
   void draw_buttons();
