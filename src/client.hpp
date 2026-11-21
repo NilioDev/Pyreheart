@@ -26,7 +26,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
-  enum class Over { None, Pack, Perk, Shop, Help, Target, Menu, Ring, Epigraph, Debug };
+  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -147,8 +147,28 @@ class Client {
   int draw_changes(int x, int y, int w, const json& it);
   void draw_perk();
   void draw_shop();
-  void draw_help();
   void draw_menu();
+  // windows as objects (windows.cpp): the main menu, the Hero screen, the options and the handbook
+  enum class Mat { Bronze, Leather, Wood, Stone };
+  int win_bg_ = 0x1A140F, menu_sel_ = 0, opt_sel_ = 0, music_vol_ = 7, sound_vol_ = 7;
+  int book_ch_ = 0, book_scroll_ = 0, book_last_ = 0, tip_ch_ = -1;
+  double tip_t_ = -99;
+  std::string book_why_;
+  void dim_all(double f);
+  void window(int x, int y, int w, int h, const std::string& title, Mat m = Mat::Bronze);
+  void keycap(int x, int y, const std::string& k);
+  int rich(int x, int y, const std::string& s, int col, int bg);
+  int rich_wrap(int x, int y, int w, const std::string& s, int col, int bg, bool draw = true);
+  void menu_do(int i);
+  void menu_key(SDL_Keycode k);
+  void draw_hero();
+  void apply_volume();
+  void draw_options();
+  void options_key(SDL_Keycode k);
+  void open_book();
+  void draw_book();
+  void book_key(SDL_Keycode k);
+  void note_tip(const std::string& s);
   // the debug and testing menu (debug.cpp)
   int dbg_tab_ = 0, dbg_scroll_ = 0, bug_next_ = 1;
   bool typing_ = false, dbg_skip_ = false, dbg_pending_ = false, tests_loaded_ = false;
