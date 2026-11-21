@@ -49,6 +49,7 @@ Client::Client(tcod::Context& ctx) : ctx_(ctx), con_(WIDE_W, WIDE_H) {
   pick_layout();
   // the watch has less to spare: half the samples
   apply_volume();
+  music_.use_lab(music_lab_);
   music_.open(layout_ == Layout::Watch ? 22050 : 44100);
 }
 
@@ -90,6 +91,7 @@ void Client::load_settings() {
     if (line.rfind("addr=", 0) == 0) addr_ = line.substr(5);
     if (line.rfind("music=", 0) == 0) music_on_ = line[6] != '0';
     if (line.rfind("numbers=", 0) == 0) numbers_on_ = line[8] != '0';
+    if (line.rfind("music_lab=", 0) == 0) music_lab_ = line[10] != '0';
     if (line.rfind("music_volume=", 0) == 0) music_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
     if (line.rfind("sound_volume=", 0) == 0) sound_vol_ = std::clamp(std::atoi(line.c_str() + 13), 0, 10);
     auto list = [&](size_t from, auto fn) {
@@ -124,7 +126,7 @@ void Client::remember_window() {
 
 void Client::save_settings() {
   std::ofstream f(pref_file());
-  f << "name=" << name_ << "\naddr=" << addr_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\nmusic_volume=" << music_vol_ << "\nsound_volume=" << sound_vol_ << "\n";
+  f << "name=" << name_ << "\naddr=" << addr_ << "\nmusic=" << (music_on_ ? 1 : 0) << "\nnumbers=" << (numbers_on_ ? 1 : 0) << "\nmusic_lab=" << (music_lab_ ? 1 : 0) << "\nmusic_volume=" << music_vol_ << "\nsound_volume=" << sound_vol_ << "\n";
   if (layout_ == Layout::Wide) {
     if (win_w_ > 0) f << "window=" << win_w_ << "x" << win_h_ << "\n";
     f << "fullscreen=" << (fullscreen_ ? 1 : 0) << "\n";
@@ -496,6 +498,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   if (screen_ == Screen::Listen) {
     if (k == SDLK_F) { listen_fight_ = !listen_fight_; return; }
     if (k == SDLK_N) { music_.renew(); return; }
+    if (k == SDLK_M) { music_lab_ = !music_lab_; music_.use_lab(music_lab_); save_settings(); return; }
     if (layout_ != Layout::Watch && (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_KP_4 || k == SDLK_KP_6)) {
       menu_ = (menu_ + LISTEN_ROWS) % (2 * LISTEN_ROWS);  // to the other column
       if (menu_ >= LISTEN_N) menu_ -= LISTEN_ROWS;
@@ -1002,7 +1005,7 @@ void Client::draw_title() {
     centre(y, "Now: " + music_.describe(), 0xB4A078);
     if (listen_foe(menu_))
       centre(y + 2, std::string("[f] a great foe awake: ") + (listen_fight_ ? "yes" : "no"), listen_fight_ ? 0xFF8060 : GREY);
-    centre(y + 4, "[Enter] a new piece    [Esc] back", 0x808080);
+    centre(y + 4, std::string("[m] music: ") + (music_lab_ ? "lab" : "classic") + "    [Enter] a new piece    [Esc] back", 0x808080);
   }
   if (!message_.empty()) centre(con_.get_height() - 3, message_, 0xFF8080);
 }
