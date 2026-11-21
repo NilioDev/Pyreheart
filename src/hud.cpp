@@ -173,12 +173,11 @@ void Client::draw_side(int x0, int y, int w, int h) {
     for (int i = 0; i < n; ++i) put(x + 3 + i, 4, 0x2584, i < fill ? 0xC09040 : 0x2E261C);
   }
   // the three orbs: a pool the hero does not use is an empty, dark globe
-  bool fury = me.value("pool", "mana") == "fury";
-  int hp = me["hp"].get<int>(), mhp = me["maxhp"], mn = me["mana"], mmn = me["maxmana"];
+  int hp = me["hp"].get<int>(), mhp = me["maxhp"], mn = me["mana"], mmn = me["maxmana"], fu = me.value("fury", 0), mfu = me.value("maxfury", 10);
   orbs_.clear();
   orb(x, 6, hp, mhp, LIFE, "LIFE", true);
-  orb(x + 7, 6, mn, mmn, FURY, "FURY", fury);
-  orb(x + 14, 6, mn, mmn, MANA, "MANA", !fury);
+  orb(x + 7, 6, fu, mfu, FURY, "FURY", me.value("usesfury", false));
+  orb(x + 14, 6, mn, mmn, MANA, "MANA", me.value("usesmana", true));
   // the stacks you carry, five fixed slots; a slot a foe is about to set off blinks, and ! lights up
   {
     std::set<int> warn;
@@ -197,17 +196,23 @@ void Client::draw_side(int x0, int y, int w, int h) {
     if (ulen(st) > inner) st = st.substr(0, inner);
     text(x, 17, st, 0x6E9A48);
   }
-  // skills: key, sign, name, cost in its pool's colour; a skill not yet come is dimmed with its level
+  // skills: key, sign, name, cost in its pool's colour; [1] is the weapon's own, named in grey above it
   int r = 18;
   header(x0, x0 + w - 1, r++, "SKILLS", 0x2560, 0x2563);
+  if (me["weapon"].is_object()) {
+    std::string wn = me["weapon"]["name"].get<std::string>();
+    int m = me["weapon"].value("mastery", 0);
+    if (m > 0) wn += " " + std::string(m, '+');
+    text(x, r, wn.substr(0, inner), DIM);
+  }
   ++r;
-  int pool_col = fury ? FURY_TEXT : MANA_TEXT;
   for (int i = 0; i < int(me["skills"].size()); ++i, ++r) {
     auto& sk = me["skills"][i];
-    int lv = sk[4], cost = sk[1];
+    int cost = sk[1];
+    bool fury = sk.size() > 6 && sk[6].get<bool>();
+    int pool_col = fury ? FURY_TEXT : MANA_TEXT;
     put(x, r, '1' + i, KEY);
-    if (me["lvl"].get<int>() < lv) { text(x + 4, r, sk[0].get<std::string>(), DIM); std::string a = "lvl " + std::to_string(lv); text(right + 1 - ulen(a), r, a, DIM); continue; }
-    bool ok = mn >= cost;
+    bool ok = (fury ? fu : mn) >= cost;
     int sign = sk.size() > 5 ? sk[5].get<int>() : 0xB7, el = me.value("el", -1);
     int sc = sign != 0xB7 && el >= 0 ? elem::COL[el] : ASH;
     put(x + 2, r, sign, ok ? sc : DIM);
@@ -217,7 +222,7 @@ void Client::draw_side(int x0, int y, int w, int h) {
   }
   ++r;
   put(x, r, 0xA1, 0xFF5040); text(x + 1, r, "×" + std::to_string(me["heal"].get<int>()), ASH); text(x + 4, r, "[q]", KEY);
-  put(x + 10, r, 0xA1, fury ? FURY_TEXT : MANA_TEXT); text(x + 11, r, "×" + std::to_string(me["manap"].get<int>()), ASH); text(x + 14, r, "[w]", KEY);
+  put(x + 10, r, 0xA1, MANA_TEXT); text(x + 11, r, "×" + std::to_string(me["manap"].get<int>()), ASH); text(x + 14, r, "[w]", KEY);
   r += 2;
   // friends: one line each, no blank lines
   if (snap_["heroes"].size() > 1) {
@@ -267,7 +272,7 @@ void Client::draw_in_sight(int x, int r, int right, int last) {
     if (e.value("pinned", false)) return "held";
     if (e.value("bleed", false)) return "bleeding";
     if (e.value("asleep", false)) return "asleep";
-    if (snap_["me"]["cls"] == "cutthroat" && e.value("busy", false)) return "open";
+    if (snap_["me"]["cls"] == "dagger" && e.value("busy", false)) return "open";
     return "";
   };
   std::vector<json> fs;

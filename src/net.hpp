@@ -1,6 +1,6 @@
 // The host keeps the one true game. Every player, the host's own too, talks to it through a Link: in-process for the
 // host, a TCP socket for the others. Messages are lines of JSON.
-//   player -> host: {"hello": {"name", "cls", "ver", "talents": {key: rank}}}, {"act": {...}}
+//   player -> host: {"hello": {"name", "cls" (a weapon kind for a dive that starts below Charnfen), "ver", "talents": {key: rank}}}, {"act": {...}}
 //   host -> player: {"welcome": pid}, {"snap": {...}}, {"ready": [pids]}, {"error": "..."}
 // The world steps when every hero has chosen; whoever has not chosen 4 seconds after the first did, waits.
 // On a local network hosts also answer a UDP call on the same port, so phones and watches can find them.
@@ -17,7 +17,7 @@
 #include "game.hpp"
 
 constexpr int PORT = 7777;
-constexpr int NET_VERSION = 3;
+constexpr int NET_VERSION = 4;
 constexpr int AUTO_WAIT_MS = 4000;
 
 class Link {

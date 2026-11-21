@@ -56,7 +56,7 @@ std::vector<std::string> Client::test_items() const {
       "Co-op: trading loot between players",
       "Victory: the Ashen King and the ending text",
   };
-  for (auto& c : data::CLASSES) t.push_back("Class " + c.name + ": skills, balance, feel");
+  for (auto& w : data::WEAPONS) t.push_back("Weapon " + w.name + ": trait, skill, balance, feel");
   for (int i = 0; i < data::ZONES; ++i) {
     const std::string& z = data::ACTS[i].name;
     t.push_back(z + ": maps look right, room to walk and fight");

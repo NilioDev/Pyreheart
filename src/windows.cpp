@@ -203,34 +203,57 @@ void Client::draw_hero() {
   auto head = [&](int hx, int hy, const std::string& t) { text(hx, hy, "══ " + t + " ══", BRONZE, PAPER); text(hx + 3, hy, t, GOLD, PAPER); };
   auto bar = [&](int bx, int by, int n, double f, int col) { for (int i = 0; i < n; ++i) put(bx + i, by, 0x2584, i < std::lround(n * f) ? col : 0x3A2E22, PAPER); };
   auto right_val = [&](int ry, const std::string& name, const std::string& v, int nc, int vc) { text(R, ry, name, nc, PAPER); text(R + W2 - ulen(v), ry, v, vc, PAPER); };
-  // left: who you are and how you grow
+  // left: who you are and how you grow: the title, the level, the three ways of fighting, the weapon, the element
   int r = y + 2;
   text(L, r++, me["clsname"].get<std::string>(), me["col"].get<int>(), PAPER);
-  r += rich_wrap(L, r, W2, me.value("rule", std::string("")), INK, PAPER);
-  ++r;
   int prev = me["prev"], next = me["next"], xp = me["xp"];
   text(L, r, "Level " + std::to_string(me["lvl"].get<int>()), ASH, PAPER);
   text(L + 10, r, "XP", DIM, PAPER);
   bar(L + 13, r++, W2 - 13, next > prev ? double(xp - prev) / (next - prev) : 0, 0xC09040);
   int frost = snap_.value("frost", 0);
-  text(L, r++, (frost ? "Frost " + std::to_string(frost) : std::string("Normal")) + ", depth " + std::to_string(snap_.value("depth", 0)), DIM, PAPER);
-  text(L, r++, std::to_string(me.value("kills", 0)) + " foes slain", DIM, PAPER);
   ++r;
-  head(L, r++, "Perks");
-  if (me["perks"].empty()) text(L, r++, "none yet", DIM, PAPER);
-  for (auto& p : me["perks"]) {
-    if (r >= y + h - 3) break;
-    std::string n = p[0].get<std::string>();
-    int rank = p[1];
-    text(L, r, n, ASH, PAPER);
-    if (rank > 1) text(L + W2 - 2, r, "x" + std::to_string(rank), INK, PAPER);
+  text(L, r++, (frost ? "Frost " + std::to_string(frost) : std::string("Normal")) + ", depth " + std::to_string(snap_.value("depth", 0)) + ", " +
+                   std::to_string(me.value("kills", 0)) + " slain", DIM, PAPER);
+  ++r;
+  head(L, r++, "Styles");
+  for (auto& st : me.value("styles", json::array())) {
+    int rank = st[1], sx = st[2], sp = st[3], sn = st[4], nxt = st[5], col = st[6];
+    text(L, r, st[0].get<std::string>(), rank > 0 ? col : DIM, PAPER);
+    text(L + 7, r, std::to_string(rank), rank > 0 ? ASH : DIM, PAPER);
+    bar(L + 10, r, W2 - 20, sn > sp ? double(sx - sp) / (sn - sp) : 0, rank > 0 ? col : 0x5A5048);
+    if (nxt > 0) { std::string ns = "skill " + std::to_string(nxt); text(L + W2 - ulen(ns), r, ns, 0x7A7068, PAPER); }
+    r += 2;
+  }
+  if (me["weapon"].is_object()) {
+    auto& wp = me["weapon"];
     ++r;
+    head(L, r++, "Weapon");
+    int m = wp.value("mastery", 0), wx = wp.value("xp", 0), wp0 = wp.value("prev", 0), wn = wp.value("next", 0);
+    text(L, r, wp["name"].get<std::string>(), ASH, PAPER);
+    std::string ms = "mastery " + std::to_string(m) + "/5";
+    text(L + W2 - ulen(ms), r++, ms, INK, PAPER);
+    if (wn > wp0) bar(L, r++, W2, double(wx - wp0) / (wn - wp0), 0xC0A060);
+    ++r;
+    r += rich_wrap(L, r, W2, wp["trait"].get<std::string>(), DIM, PAPER);
+  }
+  int el = me.value("el", -1);
+  if (el >= 0) {
+    ++r;
+    head(L, r++, "Element");
+    for (int e : {el, me.value("el2", -1)}) {
+      if (e < 0) continue;
+      auto& er = me["eranks"][e];
+      int rk = er[0], ex = er[1], e0 = er[2], e1 = er[3];
+      text(L, r, elem::NAME[e], elem::COL[e], PAPER);
+      text(L + 7, r, std::to_string(rk), ASH, PAPER);
+      bar(L + 10, r++, W2 - 10, e1 > e0 ? double(ex - e0) / (e1 - e0) : 0, elem::COL[e]);
+    }
   }
   // right: what you can take
   r = y + 2;
-  bool fury = me.value("pool", "mana") == "fury";
   right_val(r++, "Life", std::to_string(me["maxhp"].get<int>()), 0xE06050, ASH);
-  right_val(r++, fury ? "Fury" : "Mana", std::to_string(me["maxmana"].get<int>()), fury ? FURY_TEXT : MANA_TEXT, ASH);
+  right_val(r++, "Fury", std::to_string(me.value("maxfury", 10)), FURY_TEXT, ASH);
+  right_val(r++, "Mana", std::to_string(me["maxmana"].get<int>()), MANA_TEXT, ASH);
   ++r;
   right_val(r++, "Damage", me["dmg"].get<std::string>(), INK, ASH);
   right_val(r++, "Armour", std::to_string(me["armour"].get<int>()), INK, ASH);
@@ -246,14 +269,22 @@ void Client::draw_hero() {
     text(R + W2 - ulen(vs), r++, vs, v < 0 ? 0xE05040 : ASH, PAPER);
   }
   if (frost) text(R, r++, "Frost takes " + std::to_string(10 * frost) + "% from each", 0x8AB8E0, PAPER);
-  int el = me.value("el", -1);
-  if (el >= 0) {
+  ++r;
+  head(R, r++, "Perks");
+  if (me["perks"].empty()) text(R, r++, "none yet", DIM, PAPER);
+  for (auto& p : me["perks"]) {
+    if (r >= y + h - 3) break;
+    int rank = p[1];
+    text(R, r, p[0].get<std::string>(), ASH, PAPER);
+    if (rank > 1) text(R + W2 - 2, r, "x" + std::to_string(rank), INK, PAPER);
     ++r;
-    head(R, r++, "Your coal");
-    text(R, r, elem::NAME[el], elem::COL[el], PAPER);
-    int el2 = me.value("el2", -1);
-    if (el2 >= 0) { text(R + ulen(elem::NAME[el]), r, " and ", INK, PAPER); text(R + ulen(elem::NAME[el]) + 5, r, elem::NAME[el2], elem::COL[el2], PAPER); }
+  }
+  if (me.value("known", json::array()).size() > 4 && r < y + h - 4) {
     ++r;
+    head(R, r++, "Skills known");
+    std::string all;
+    for (auto& k : me["known"]) all += (all.empty() ? "" : ", ") + k.get<std::string>();
+    r += rich_wrap(R, r, W2, all, DIM, PAPER);
   }
   rich(x + w - 13, y + h - 2, "[Esc] back", INK, PAPER);
 }
@@ -456,4 +487,88 @@ void Client::coal_key(SDL_Keycode k) {
   else if (k >= SDLK_1 && k < SDLK_1 + elem::N) coal_sel_ = int(k - SDLK_1);
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) { send({{"t", "coal"}, {"e", coal_sel_}}); over_ = Over::None; }
   else if (k == SDLK_SLASH || k == SDLK_QUESTION || k == SDLK_F1) { open_book(); book_ch_ = book::index_of("elements"); book_scroll_ = 0; }
+}
+
+// ------------------------------------------------------------------ the gatekeeper's rack in Charnfen
+
+// Twelve first weapons in three columns; below, what the chosen one does. A first weapon, not a class.
+void Client::draw_rack_window() {
+  int cw = con_.get_width(), chh = con_.get_height();
+  int w = std::min(cw, 76), h = std::min(chh, 34);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  window(x, y, w, h, "The gatekeeper's rack");
+  rich_wrap(x + 3, y + 2, w - 6, "\"One each,\" says the old gatekeeper. \"A first weapon, not a calling. What you do with it is what you become.\"", INK, PAPER);
+  int n = int(data::WEAPONS.size());
+  rack_sel_ = std::clamp(rack_sel_, 0, n - 1);
+  int col_w = (w - 6) / 3;
+  for (int s = 0; s < 3; ++s) {
+    int cx = x + 3 + s * col_w;
+    const auto& st = data::STYLES[s];
+    std::string head = st.name;
+    for (auto& c : head) c = char(std::toupper((unsigned char)c));
+    text(cx, y + 5, "══ " + head + " ══", BRONZE, PAPER);
+    text(cx + 3, y + 5, head, st.col, PAPER);
+    text(cx, y + 6, st.res == "fury" ? "skills use fury" : "skills use mana", DIM, PAPER);
+    int r = y + 8;
+    for (int i = 0; i < n; ++i) {
+      const auto& wd = data::WEAPONS[i];
+      if (wd.style != st.key) continue;
+      bool on = i == rack_sel_;
+      int bg = on ? SEL : PAPER;
+      for (int k = cx - 1; k < cx + col_w - 2; ++k) put(k, r, ' ', INK, bg);
+      std::string g = wd.key == "bow" || wd.key == "crossbow" ? "}" : wd.key == "staff" || wd.key == "wand" ? "/" : "|";
+      text(cx, r, g, on ? GOLD : 0xB0A080, bg);
+      text(cx + 2, r, wd.name, on ? GOLD : INK, bg);
+      buttons_.push_back({cx - 1, r, col_w - 1, 1, "", "rack:" + std::to_string(i)});
+      r += 2;
+    }
+  }
+  // the chosen weapon
+  const auto& wd = data::WEAPONS[rack_sel_];
+  int r = y + 17;
+  for (int i = x + 2; i < x + w - 2; ++i) put(i, r - 1, 0x2500, 0x5A4028, PAPER);
+  const BaseDef* base = nullptr;
+  for (auto& b : data::BASES) if (b.key == wd.start) base = &b;
+  text(x + 3, r, base ? base->name : wd.name, GOLD, PAPER);
+  std::string dmg = base ? "damage " + std::to_string(base->lo) + "-" + std::to_string(base->hi) : "";
+  text(x + w - 3 - ulen(dmg), r, dmg, ASH, PAPER);
+  r += 2;
+  r += rich_wrap(x + 3, r, w - 6, wd.trait, INK, PAPER);
+  ++r;
+  std::string attack = wd.key == "chisel" ? "walk into a foe to strike; [f] carves a rune" : wd.reach > 0 ? "[f] reaches " + std::to_string(wd.reach) + "; walking into a foe strikes too" : "walk into a foe to strike it";
+  ++r;
+  rich(x + 3, r++, "Attack: " + attack, INK, PAPER);
+  ++r;
+  int sign = elem::skill_sign(wd.sig);
+  const SkillDef* sk = nullptr;
+  for (auto& k : data::SKILLS) if (k.key == wd.sig) sk = &k;
+  if (sk) {
+    int sx = x + 3 + rich(x + 3, r, "Skill [1]", INK, PAPER) + 1;
+    put(sx, r, sign, sign == 0xB7 ? ASH : GOLD, PAPER);
+    text(sx + 2, r, sk->name, GOLD, PAPER);
+    r += 2;
+    rich_wrap(x + 5, r, w - 8, std::string(sk->about) + (sign == 0x263C ? ", and sets off your stacks" : sign == 0x25A0 ? ", laying a stack with each hit" : ""), DIM, PAPER);
+  }
+  rich(x + 3, y + h - 2, "[◄►] style  [↑↓] weapon  [Enter] take it  [Esc] leave", INK, PAPER);
+}
+
+void Client::rack_key(SDL_Keycode k) {
+  int n = int(data::WEAPONS.size());
+  auto style_of = [&](int i) { return data::WEAPONS[i].style; };
+  auto in_style = [&](const std::string& st) { std::vector<int> v; for (int i = 0; i < n; ++i) if (style_of(i) == st) v.push_back(i); return v; };
+  if (k == SDLK_ESCAPE) { over_ = Over::None; return; }
+  int s = 0;
+  for (int i = 0; i < 3; ++i) if (data::STYLES[i].key == style_of(rack_sel_)) s = i;
+  auto col = in_style(data::STYLES[s].key);
+  int pos = int(std::find(col.begin(), col.end(), rack_sel_) - col.begin());
+  if (k == SDLK_UP || k == SDLK_KP_8) rack_sel_ = col[(pos + int(col.size()) - 1) % col.size()];
+  else if (k == SDLK_DOWN || k == SDLK_KP_2) rack_sel_ = col[(pos + 1) % col.size()];
+  else if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_KP_4 || k == SDLK_KP_6) {
+    int ns = (s + (k == SDLK_LEFT || k == SDLK_KP_4 ? 2 : 1)) % 3;
+    auto other = in_style(data::STYLES[ns].key);
+    rack_sel_ = other[std::min(pos, int(other.size()) - 1)];
+  } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    send({{"t", "rack"}, {"w", data::WEAPONS[rack_sel_].key}});
+    over_ = Over::None;
+  }
 }

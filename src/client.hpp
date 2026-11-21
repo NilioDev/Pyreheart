@@ -26,7 +26,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
-  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal };
+  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal, Rack };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -141,6 +141,9 @@ class Client {
   void draw_coals();
   int coal_sel_ = 0;
   void draw_coal_window();
+  int rack_sel_ = 0;
+  void draw_rack_window();
+  void rack_key(SDL_Keycode k);
   void coal_key(SDL_Keycode k);
   void low_life_edge();
   void burn_suns();

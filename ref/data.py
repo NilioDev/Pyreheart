@@ -462,35 +462,40 @@ UNIQUE_EPITHET = ['the Gnawer', 'the Patient', 'Bonechewer', 'the Hollow', 'Iron
 # ------------------------------------------------------------------ classes, skills, perks
 # res: what the skills cost. Fury fills by striking and by being struck, and drains away out of a fight.
 # skills: the first two from the start, the third at level 3, the fourth at level 6. paths: one to choose at level 5.
-CLASSES = {
-    'warrior': dict(name='Warrior', ch='@', col=(230, 200, 150), hp=64, mana=10, hp_lvl=10, mana_lvl=0, acc=80, res='fury',
-                    start=('sword', 'leather'), skills=('cleave', 'warcry', 'charge', 'standfast'), kinds=('sword', 'axe', 'mace'),
-                    paths=('berserker', 'guardian'),
-                    about='The wall in front. Every blow he gives or takes fills his fury. Fury pays for his skills, and the more he has, the less he feels.'),
-    'ranger': dict(name='Ranger', ch='@', col=(150, 220, 140), hp=46, mana=30, hp_lvl=7, mana_lvl=3, acc=85, res='mana',
-                   start=('bow', 'leather'), skills=('volley', 'pierce', 'tumble', 'pin'), kinds=('bow',),
-                   paths=('sharpshooter', 'skirmisher'),
-                   about='Place and distance. Each arrow loosed without moving hits harder than the last: [f] shoots.'),
-    'adept': dict(name='Adept', ch='@', col=(160, 170, 255), hp=36, mana=55, hp_lvl=5, mana_lvl=6, acc=80, res='mana',
-                  start=('staff', 'robe'), skills=('firebolt', 'nova', 'blink', 'emberwall'), kinds=('staff',),
-                  paths=('pyromancer', 'frostbinder'),
-                  about='Fire and frost together: fire on a frozen foe shatters it for three times the harm.'),
-    'lamplighter': dict(name='Lamplighter', ch='@', col=(250, 220, 120), hp=54, mana=35, hp_lvl=8, mana_lvl=4, acc=80, res='mana',
-                        start=('cudgel', 'leather'), skills=('smite', 'mend', 'hallow', 'beacon'), kinds=('mace',),
-                        paths=('shepherd', 'zealot'),
-                        about='A lantern against the dark. Near him wounds close, his own too, and the dead burn.'),
-    'runecarver': dict(name='Runecarver', ch='@', col=(120, 220, 220), hp=48, mana=45, hp_lvl=7, mana_lvl=5, acc=80, res='mana',
-                       start=('staff', 'robe'), skills=('rune', 'kindle', 'ward', 'recall'), kinds=('staff', 'mace'),
-                       paths=('fireward', 'stoneward'),
-                       about='Reads the runes of the dead dwarves. Carves them in the ground, and they burn whoever steps on them.'),
-    'cutthroat': dict(name='Cutthroat', ch='@', col=(200, 160, 200), hp=50, mana=34, hp_lvl=7, mana_lvl=3, acc=90, res='mana',
-                      start=('knife', 'leather'), skills=('shadowstep', 'fan', 'smoke', 'garrote'), kinds=('dagger',),
-                      paths=('duelist', 'poisoner'),
-                      about='Quick and hard to hit. Strikes at openings: a foe that is busy, stunned, frozen or spent takes a bleeding critical blow.'),
+# The classless hero (plan.md section 1): a weapon, the fighting styles it grows by use, and an element.
+# weapon kind: name, style, the base it starts as, its own skill on [1], reach of [f] (0: none), its trait
+WEAPONS = {
+    'dagger': ('Dagger', 'melee', 'knife', 'garrote', 0, 'openings: a busy foe takes a bleeding critical blow; foes hit you less'),
+    'sword': ('Sword', 'melee', 'sword', 'charge', 0, 'parry: now and then you turn a blow aside and strike back'),
+    'axe': ('Axe', 'melee', 'handaxe', 'cleave', 0, 'each blow also bites a second foe beside you'),
+    'mace': ('Mace', 'melee', 'cudgel', 'smite', 0, 'heavy: a blow may stun'),
+    'bow': ('Bow', 'ranged', 'bow', 'pierce', 9, 'focus: each arrow loosed without moving hits harder'),
+    'crossbow': ('Crossbow', 'ranged', 'crossbow', 'pin', 9, 'a bolt goes through every foe in a line; then a turn to wind it'),
+    'thrown': ('Throwing knives', 'ranged', 'knives', 'fan', 5, 'short reach; a throw right after a step hits harder'),
+    'spear': ('Spear', 'ranged', 'spear', 'hurl', 2, 'reach: [f] stabs a foe 2 away'),
+    'staff': ('Staff', 'magic', 'staff', 'firebolt', 6, 'spell power; [f] a small bolt'),
+    'chisel': ('Rune chisel', 'magic', 'chisel', 'kindle', 0, '[f] carves a rune that bursts under a foe'),
+    'lantern': ('Lantern', 'magic', 'lantern', 'beacon', 0, 'light: near you wounds close, and the dead burn'),
+    'wand': ('Wand', 'magic', 'wand', 'scatter', 7, 'quick small bolts with [f]; now and then a second one'),
 }
-CLASS_ORDER = ('warrior', 'ranger', 'adept', 'lamplighter', 'runecarver', 'cutthroat')
-SKILL_LEVELS = (1, 1, 3, 6)
-PATH_LEVEL = 5
+# style: name, pool its skills use, life and mana at the start and per step of power, accuracy, colour, skills by rank
+STYLES = {
+    'melee': dict(name='Melee', res='fury', hp=64, hp_lvl=10, mana=20, mana_lvl=1, acc=80, col=(230, 200, 150),
+                  skills=('warcry', 'shadowstep', 'standfast', 'whirlwind')),
+    'ranged': dict(name='Ranged', res='mana', hp=46, hp_lvl=7, mana=30, mana_lvl=3, acc=85, col=(150, 220, 140),
+                   skills=('volley', 'tumble', 'ward', 'smoke')),
+    'magic': dict(name='Magic', res='mana', hp=36, hp_lvl=5, mana=55, mana_lvl=6, acc=80, col=(160, 170, 255),
+                  skills=('nova', 'blink', 'mend', 'emberwall', 'hallow')),
+}
+STYLE_ORDER = ('melee', 'ranged', 'magic')
+STYLE_RANKS = (1, 3, 6, 10, 15, 20)   # a style's skills come at these ranks
+MASTERY_MAX = 5
+# style + element: the hero's name in the world (plan.md section 1, Combo titles), in elements order
+TITLES = {
+    'melee': ('Forgeborn', 'Rimeguard', 'Cinderguard', 'Blightreaver', 'Bloodsworn'),
+    'ranged': ('Kindler', 'Coldeye', 'Smokestalker', 'Plaguehunter', 'Bloodhunter'),
+    'magic': ('Pyrebinder', 'Rimecaller', 'Ashseer', 'Rotspeaker', 'Bloodbinder'),
+}
 SKILLS = {
     'cleave': dict(name='Cleave', mana=2, target=False, about='strike every foe next to you'),
     'warcry': dict(name='War Cry', mana=3, target=False, about='stun foes within 2'),
@@ -500,22 +505,25 @@ SKILLS = {
     'pierce': dict(name='Piercing Shot', mana=5, target=True, about='an arrow through every foe in a line'),
     'tumble': dict(name='Tumble', mana=4, target=False, about='roll 2 back from the nearest foe and shoot it, keeping your focus'),
     'pin': dict(name='Pinning Shot', mana=6, target=True, about='an arrow that holds a foe in place; a great foe it stuns'),
-    'firebolt': dict(name='Firebolt', mana=4, target=True, about='a bolt of fire'),
-    'nova': dict(name='Frost Nova', mana=10, target=False, about='frost bursts around you and freezes foes'),
+    'firebolt': dict(name='Spellbolt', mana=4, target=True, about='a bolt of power at a foe; it sets the ground alight'),
+    'nova': dict(name='Nova', mana=10, target=False, about='a burst around you that freezes foes in place'),
     'blink': dict(name='Blink', mana=5, target=False, about='vanish and stand up to 5 away, far from your foes'),
-    'emberwall': dict(name='Ember Wall', mana=8, target=True, about='a wall of fire across the way to a foe; foes will not cross it'),
+    'emberwall': dict(name='Barrier', mana=8, target=True, about='a burning wall across the way to a foe; foes will not cross it'),
     'smite': dict(name='Smite', mana=3, target=False, about='a holy blow at a foe next to you; the dead take far more'),
     'mend': dict(name='Mend', mana=6, target=False, about='heal yourself and every friend within 3'),
     'hallow': dict(name='Hallow', mana=7, target=False, about='the ground around you burns foes for 5 turns'),
     'beacon': dict(name='Beacon', mana=9, target=False, about='your lantern flares: foes within 4 are stunned, the dead burn'),
     'rune': dict(name='Carve Rune', mana=2, target=False, about='a rune where you stand that bursts into fire when a foe steps on it'),
     'kindle': dict(name='Kindle', mana=4, target=False, about='all your runes burst at once'),
-    'ward': dict(name='Rune of Binding', mana=6, target=True, about='a rune under a foe that binds it; a great foe it stuns'),
+    'ward': dict(name='Snare', mana=6, target=True, about='a snare under a foe that holds it; a great foe it stuns'),
     'recall': dict(name='Rune of Return', mana=6, target=False, about='step to your oldest rune; a rune bursts where you stood'),
     'shadowstep': dict(name='Shadowstep', mana=3, target=True, about='appear behind a foe up to 4 away; it is caught off guard'),
     'fan': dict(name='Fan of Knives', mana=5, target=False, about='knives at every foe within 2'),
     'smoke': dict(name='Smoke', mana=7, target=False, about='foes within 3 lose you for 2 turns'),
-    'garrote': dict(name='Garrote', mana=6, target=False, about='choke the foe next to you: it cannot act for 2 turns, and bleeds'),
+    'garrote': dict(name='Garrote', mana=5, target=False, about='choke the foe next to you: it cannot act for 2 turns, and bleeds'),
+    'hurl': dict(name='Hurl Spear', mana=4, target=True, about='throw your spear at a foe up to 6 away; it comes back to your hand'),
+    'scatter': dict(name='Scatter', mana=5, target=False, about='a bolt at each of the 3 nearest foes'),
+    'whirlwind': dict(name='Whirlwind', mana=5, target=False, about='spin and strike every foe within 2'),
 }
 PERKS = {   # key: (name, text, max ranks, class or None, path it needs or None; '*' is a path itself)
     'tough': ('Toughness', '+15 life', 3, None, None),
@@ -524,41 +532,8 @@ PERKS = {   # key: (name, text, max ranks, class or None, path it needs or None;
     'hide': ('Thick Hide', '+3 armour', 3, None, None),
     'well': ('Deep Well', '+15 mana, faster mana', 3, None, None),
     'blood': ('Bloodlust', 'heal 3 life on each kill', 2, None, None),
-    'ward': ('Warding', '+20% resist fire, cold and poison', 2, None, None),
+    'ward': ('Warding', '+20% to every resistance', 2, None, None),
     'second': ('Second Wind', 'potions heal 40% more', 1, None, None),
-    # warrior
-    'berserker': ('Berserker', 'each point of fury: +3% damage', 1, 'warrior', '*'),
-    'guardian': ('Guardian', '+4 armour; blows you take fill twice the fury', 1, 'warrior', '*'),
-    'whirl': ('Whirling Steel', 'Cleave hits 25% harder and heals 2 life for each foe', 2, 'warrior', 'berserker'),
-    'frenzy': ('Frenzy', 'Charge costs no fury', 1, 'warrior', 'berserker'),
-    'iron': ('Iron Will', 'War Cry also shields you: half harm for 3 turns', 1, 'warrior', 'guardian'),
-    'bulwark': ('Bulwark', 'Stand Fast lasts 3 turns longer', 1, 'warrior', 'guardian'),
-    # ranger
-    'sharpshooter': ('Sharpshooter', 'focus builds to 5, and +10% critical with bows', 1, 'ranger', '*'),
-    'skirmisher': ('Skirmisher', 'a step only loses one point of focus', 1, 'ranger', '*'),
-    'sniper': ('Deadeye', '+10% critical with bows', 2, 'ranger', 'sharpshooter'),
-    'multi': ('Multishot', 'Volley shoots one more arrow', 2, 'ranger', 'skirmisher'),
-    'quick': ('Light Feet', 'Tumble costs 2 less mana', 1, 'ranger', 'skirmisher'),
-    # adept
-    'pyromancer': ('Pyromancer', 'fire spells burn 30% hotter', 1, 'adept', '*'),
-    'frostbinder': ('Frostbinder', 'frozen foes take 25% more from everything', 1, 'adept', '*'),
-    'blast': ('Fireball', 'Firebolt bursts on impact', 1, 'adept', 'pyromancer'),
-    'deepfrost': ('Deep Frost', 'Frost Nova reaches further and freezes longer', 2, 'adept', 'frostbinder'),
-    # lamplighter
-    'shepherd': ('Shepherd', 'your light reaches 3, and Mend heals half again as much', 1, 'lamplighter', '*'),
-    'zealot': ('Zealot', 'Smite strikes 40% harder and leaps to a second foe', 1, 'lamplighter', '*'),
-    'warmth': ('Warmth', 'your light heals 1 more each turn', 2, 'lamplighter', 'shepherd'),
-    'pyre': ('Holy Fire', 'Hallow burns twice as hot', 1, 'lamplighter', 'zealot'),
-    # runecarver
-    'fireward': ('Fireward', 'runes burst wider and 30% hotter', 1, 'runecarver', '*'),
-    'stoneward': ('Stoneward', 'runes also hold foes fast, and you may keep 5', 1, 'runecarver', '*'),
-    'deeprunes': ('Deep Runes', 'Kindle costs nothing', 1, 'runecarver', 'fireward'),
-    'heavyrunes': ('Heavy Runes', 'a held foe takes 25% more from your runes', 1, 'runecarver', 'stoneward'),
-    # cutthroat
-    'duelist': ('Duelist', 'each blow in a row at the same foe: +12% harm, up to 5', 1, 'cutthroat', '*'),
-    'poisoner': ('Poisoner', 'your bleeding becomes poison: twice the harm, longer', 1, 'cutthroat', '*'),
-    'riposte': ('Riposte', 'a foe that misses you is open to you', 1, 'cutthroat', 'duelist'),
-    'venom': ('Black Venom', 'Fan of Knives poisons every foe it hits', 1, 'cutthroat', 'poisoner'),
 }
 
 # ------------------------------------------------------------------ items
@@ -569,16 +544,18 @@ BASES = {
     'blade': ('Broad Blade', 'weapon', 'sword', 2, (5, 11)),
     'falchion': ('Falchion', 'weapon', 'sword', 3, (8, 15)),
     'greatsword': ('Greatsword', 'weapon', 'sword', 4, (11, 21)),
-    'handaxe': ('Hand Axe', 'weapon', 'axe', 1, (2, 9)),
+    'handaxe': ('Hand Axe', 'weapon', 'axe', 1, (3, 9)),
     'waraxe': ('War Axe', 'weapon', 'axe', 2, (4, 14)),
+    'broadaxe': ('Broad Axe', 'weapon', 'axe', 3, (6, 20)),
     'cleaver': ('Headsman\'s Axe', 'weapon', 'axe', 4, (8, 26)),
     'mace': ('Mace', 'weapon', 'mace', 2, (6, 10)),
     'maul': ('Maul', 'weapon', 'mace', 3, (10, 16)),
+    'hammer': ('Great Hammer', 'weapon', 'mace', 4, (14, 22)),
     'bow': ('Short Bow', 'weapon', 'bow', 1, (2, 6)),
     'longbow': ('Longbow', 'weapon', 'bow', 2, (4, 10)),
     'warbow': ('War Bow', 'weapon', 'bow', 3, (6, 14)),
     'greatbow': ('Great Bow', 'weapon', 'bow', 4, (9, 19)),
-    'cudgel': ('Cudgel', 'weapon', 'mace', 1, (3, 6)),
+    'cudgel': ('Cudgel', 'weapon', 'mace', 1, (4, 7)),
     'knife': ('Knife', 'weapon', 'dagger', 1, (3, 6)),
     'dirk': ('Dirk', 'weapon', 'dagger', 2, (4, 8)),
     'kris': ('Kris', 'weapon', 'dagger', 3, (6, 12)),
@@ -587,6 +564,30 @@ BASES = {
     'rodstaff': ('Rune Staff', 'weapon', 'staff', 2, (3, 7)),
     'gnarl': ('Gnarled Staff', 'weapon', 'staff', 3, (4, 9)),
     'starstaff': ('Star Staff', 'weapon', 'staff', 4, (6, 12)),
+    'crossbow': ('Light Crossbow', 'weapon', 'crossbow', 1, (3, 8)),
+    'arbalest': ('Crossbow', 'weapon', 'crossbow', 2, (5, 12)),
+    'heavyxbow': ('Arbalest', 'weapon', 'crossbow', 3, (8, 17)),
+    'siegexbow': ('Siege Crossbow', 'weapon', 'crossbow', 4, (11, 24)),
+    'knives': ('Throwing Knives', 'weapon', 'thrown', 1, (3, 7)),
+    'taxes': ('Throwing Axes', 'weapon', 'thrown', 2, (4, 9)),
+    'darts': ('Dwarven Darts', 'weapon', 'thrown', 3, (6, 12)),
+    'starblades': ('Star Blades', 'weapon', 'thrown', 4, (9, 17)),
+    'spear': ('Spear', 'weapon', 'spear', 1, (3, 8)),
+    'pike': ('Pike', 'weapon', 'spear', 2, (5, 11)),
+    'glaive': ('Glaive', 'weapon', 'spear', 3, (7, 15)),
+    'warspear': ('War Spear', 'weapon', 'spear', 4, (10, 20)),
+    'chisel': ('Rune Chisel', 'weapon', 'chisel', 1, (2, 5)),
+    'masonchisel': ('Mason\'s Chisel', 'weapon', 'chisel', 2, (3, 7)),
+    'deepchisel': ('Deep Chisel', 'weapon', 'chisel', 3, (4, 9)),
+    'starchisel': ('Star Chisel', 'weapon', 'chisel', 4, (6, 12)),
+    'lantern': ('Lantern', 'weapon', 'lantern', 1, (3, 6)),
+    'stormlantern': ('Storm Lantern', 'weapon', 'lantern', 2, (5, 9)),
+    'cathedrallamp': ('Cathedral Lamp', 'weapon', 'lantern', 3, (7, 12)),
+    'sunlantern': ('Sun Lantern', 'weapon', 'lantern', 4, (9, 15)),
+    'wand': ('Wand', 'weapon', 'wand', 1, (2, 4)),
+    'bonewand': ('Bone Wand', 'weapon', 'wand', 2, (3, 6)),
+    'glasswand': ('Glass Wand', 'weapon', 'wand', 3, (4, 8)),
+    'starwand': ('Star Wand', 'weapon', 'wand', 4, (5, 10)),
     'robe': ('Robe', 'body', 'cloth', 1, 1),
     'leather': ('Leather Coat', 'body', 'light', 1, 3),
     'studded': ('Studded Leather', 'body', 'light', 2, 6),
@@ -603,7 +604,9 @@ BASES = {
     'ring': ('Ring', 'ring', 'ring', 1, 0),
     'amulet': ('Amulet', 'amulet', 'amulet', 2, 0),
 }
-STAFF_SPELL = {'staff': 0, 'rodstaff': 15, 'gnarl': 30, 'starstaff': 50}     # % spell power of a staff base
+STAFF_SPELL = {'staff': 0, 'rodstaff': 15, 'gnarl': 30, 'starstaff': 50,     # % spell power of a magic weapon's base
+               'chisel': 0, 'masonchisel': 15, 'deepchisel': 30, 'starchisel': 50, 'lantern': 0, 'stormlantern': 10,
+               'cathedrallamp': 20, 'sunlantern': 35, 'wand': 5, 'bonewand': 20, 'glasswand': 35, 'starwand': 55}
 # affix: (stat, (lo, hi) at tier 1, grows by tier, slots it can roll on or None for all)
 PREFIXES = {
     'Sharp': ('dmg', (1, 3), 1.6, ('weapon',)),
