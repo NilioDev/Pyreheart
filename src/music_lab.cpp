@@ -344,9 +344,9 @@ class Composer {
     float k = 1 / rate_;
     float th = want_threat_.load(std::memory_order_relaxed);
     if (fight_) th = std::max(th, .85f);
-    threat_ += (th - threat_) * k / (th > threat_ ? 1.5f : 6.f);  // it comes in quickly, and ebbs away slowly
+    threat_ += (th - threat_) * k / (th > threat_ ? 1.f : 6.f);  // it comes in quickly, and ebbs away slowly
     float life = want_life_.load(std::memory_order_relaxed);
-    float danger = std::clamp((.35f - life) / .3f, 0.f, 1.f);
+    float danger = std::clamp((.4f - life) / .2f, 0.f, 1.f);  // from 40% life, full at 20%
     danger_ += (danger - danger_) * k / (danger > danger_ ? .8f : 2.5f);
     cold_ += (want_cold_.load(std::memory_order_relaxed) - cold_) * k / 8;
     ghost_amt_ += ((want_ghost_.load(std::memory_order_relaxed) ? 1.f : 0.f) - ghost_amt_) * k / 2;
@@ -378,6 +378,7 @@ class Composer {
   float tape_ = 1, tape_pos_ = 0, prev_l_ = 0, prev_r_ = 0, cur_l_ = 0, cur_r_ = 0;
   Bell toll_, far_;
   Filter ghost_l_, ghost_r_;
+  float muff_l_ = 0, muff_r_ = 0;
   float crackle_ = 0, crack_lp_ = 0, rumble_ = 0, wind_ = 0, wind_lp_ = 0, wind_lp2_ = 0;
   // a jingle: its notes, each on an eighth from now
   struct JNote { int at; int kind; int deg; int oct; float amp; };  // kind 0 harp, 1 bell, 2 flute
@@ -478,7 +479,7 @@ class Composer {
     int s = step_ % 8;
     if (s == 0) {  // at the bar line (lab): the build-up, the threat's tempo, a planned silence
       build_ = want_build_.load(std::memory_order_relaxed);
-      step_len_ = int(base_len_ / (1 + .14f * threat_));
+      step_len_ = int(base_len_ / (1 + .25f * threat_));
       if (bar_ % 8 == 7 && silence_left_ == 0 && sil_since_ > 120 && threat_ < .08f && danger_ < .1f && !dead_ &&
           mood_ != TITLE && r_.chance(.4f)) {
         silence_left_ = int(15 * rate_);
@@ -584,10 +585,11 @@ class Composer {
         next_drum_ = (next_drum_ + 1) % int(drums_.size());
       };
       // the threat brings drums in, step by step, and they ebb away again
-      if (threat_ > .3f && s == 4) hit(120, 55, 4.5f, .5f, .35f + .4f * threat_);
-      if (threat_ > .6f && (s == 2 || s == 6)) hit(150, 70, 7, .6f, .25f * threat_);
+      if (threat_ > .15f && (s == 0 || s == 4)) hit(95, 42, 4, .5f, .5f + .6f * threat_);   // a war drum on every beat
+      if (threat_ > .45f && (s == 2 || s == 6)) hit(150, 70, 7, .6f, .45f * threat_);
+      if (threat_ > .75f && (s == 3 || s == 7) && r_.chance(.6f)) hit(190, 90, 10, .8f, .3f * threat_);
       // near death a heart underneath, an echo of the Deep; the ember bearer's beats fast and tense
-      if (danger_ > .05f) { if (s == 0) beat(70, 38, 5, .3f, .9f * danger_); if (s == 1) beat(65, 36, 6, .3f, .6f * danger_); }
+      if (danger_ > .05f) { if (s == 0 || s == 4) beat(70, 38, 5, .3f, 1.5f * danger_); if (s == 1 || s == 5) beat(65, 36, 6, .3f, 1.f * danger_); }
       if (carrier_ && (s == 0 || s == 1 || s == 4 || s == 5)) beat(s % 4 ? 66 : 72, 36, 6, .3f, s % 4 ? .35f : .5f);
       int kind = m_->drum_kind;
       if (fight_ && kind == 0) kind = 1;
@@ -716,16 +718,19 @@ class Composer {
     if ((step_ & 63) == 0) drone_f_.set(260 + 120 * std::sin(TAU * .05f * lfo_), .9f, rate);
     float drone = (drone_a_.tick(droot, rate) + .7f * drone_b_.tick(droot * 1.003f, rate) + .5f * drone_c_.tick(second, rate));
     drone = drone_f_.tick(drone) * (.8f + .2f * std::sin(TAU * .11f * lfo_)) * .22f * m_->drone;
+    // the threat makes the drone throb on the eighths, and swell
+    float throb = 1 - .55f * threat_ * (float(step_left_) / float(std::max(1, step_len_)));
+    drone *= throb * (1 + .6f * threat_);
 
     // the lab's layers: near death the music thins out; in a planned silence all but the drone rests
-    float thin = 1 - .7f * danger_, sil = sil_amt_;
+    float thin = 1 - .85f * danger_, sil = sil_amt_;
     float pad = 0;
     for (auto& p : pad_) pad += p.tick(rate, 0);
-    pad *= m_->pad * thin * sil;
+    pad *= m_->pad * thin * sil * (1 + .4f * threat_);
     float harp = 0;
     for (auto& h : harp_) harp += h.tick();
-    harp *= (1 - .6f * danger_) * sil;
-    float fl = flute_.tick(rate, r_) * m_->flute * (1 - .8f * danger_) * sil;
+    harp *= (1 - .9f * danger_) * sil;
+    float fl = flute_.tick(rate, r_) * m_->flute * (1 - .95f * danger_) * sil;
     float bell = 0;
     for (auto& b : bells_) bell += b.tick(rate);
     float zb = 0;
@@ -763,6 +768,12 @@ class Composer {
     float wet = m_->room * (1 + .6f * ghost_amt_);
     outl = dry * .8f + wl * wet + harp * .1f;
     outr = dry * .8f + wr * wet - harp * .1f;
+    // near death the world goes muffled, as if the ears ring; the heart stays clear underneath
+    if (danger_ > .001f) {
+      float c = 1 - .93f * danger_;
+      muff_l_ += c * (outl - muff_l_); muff_r_ += c * (outr - muff_r_);
+      outl = muff_l_ + drum * .5f * danger_; outr = muff_r_ + drum * .5f * danger_;
+    } else { muff_l_ = outl; muff_r_ = outr; }
     // a ghost hears it all from far away, through stone
     if (ghost_amt_ > .001f) {
       float ml = ghost_l_.tick(outl), mr = ghost_r_.tick(outr), g = ghost_amt_;
