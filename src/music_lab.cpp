@@ -209,6 +209,91 @@ struct Room {
   }
 };
 
+// each zone's own instrument (lab, plan.md section 4): one voice that can be ten instruments, all made here
+enum SigKind { S_NONE, S_HUM, S_GLASS, S_METAL, S_WATER, S_DULCIMER, S_MUSICBOX, S_HORN, S_CELLO, S_ORGAN, S_THROAT };
+struct Sig {
+  int kind = S_NONE;
+  float t = 1e9f, dur = 0, freq = 0, amp = 0, att = .1f, rel = .5f, ph[6] = {}, vib_ph = 0, drift = 0, nlp = 0, sweep = 0;
+  Saw saw;
+  Filter f;
+  bool live() const { return t < dur + 6 * rel; }
+  void start(int k, float fr, float d, float a, Rand& r) {
+    kind = k; freq = fr; dur = d; amp = a; t = 0; drift = 0; sweep = r.uni();
+    for (auto& p : ph) p = r.uni();
+    switch (k) {
+      case S_HUM: att = .5f; rel = .9f; break;
+      case S_GLASS: att = .35f; rel = 1.2f; break;
+      case S_METAL: att = .9f; rel = 1.6f; break;
+      case S_WATER: att = .7f; rel = 1.f; break;
+      case S_HORN: att = .18f; rel = .6f; break;
+      case S_CELLO: att = .4f; rel = .7f; break;
+      case S_ORGAN: att = .06f; rel = .35f; break;
+      case S_THROAT: att = 1.2f; rel = 2.f; break;
+      default: att = .003f; rel = 1.f; break;  // the struck ones ring down by themselves
+    }
+  }
+  float tick(float rate, Rand& r) {
+    if (!live()) return 0;
+    t += 1 / rate;
+    float env = t < att ? t / att : t < dur ? 1.f : std::exp(-(t - dur) / rel);
+    auto osc = [&](int i, float fr) { ph[i] += fr / rate; ph[i] -= std::floor(ph[i]); return std::sin(TAU * ph[i]); };
+    float x = 0;
+    switch (kind) {
+      case S_HUM: {  // the crypt: a low male voice humming behind closed lips
+        float v = 1 + .005f * std::sin(TAU * 4.6f * t) * std::min(1.f, t);
+        f.set(420, 1.6f, rate);
+        x = f.tick(saw.tick(freq * v, rate)) * .9f + .25f * osc(0, freq * v);
+      } break;
+      case S_GLASS: {  // the caves: wet glass rims, thin and high, trembling
+        float trem = 1 + .25f * std::sin(TAU * 5.5f * t);
+        x = (osc(0, freq) + .35f * osc(1, freq * 2.005f) + .12f * osc(2, freq * 3.01f)) * trem * .6f;
+      } break;
+      case S_METAL: {  // the forge: a bow drawn over iron, partials that are no octaves
+        nlp += .05f * (r.bi() - nlp);
+        x = .6f * osc(0, freq) + .35f * osc(1, freq * 2.76f) + .2f * osc(2, freq * 5.40f) + .1f * osc(3, freq * 8.93f);
+        x = x * (1 + .4f * nlp) * .7f;
+      } break;
+      case S_WATER: {  // the cistern: an organ breathed by water, its pitch welling and bubbling
+        drift += .0008f * (r.bi() - drift * .02f);
+        float w = 1 + .006f * std::sin(TAU * .7f * t + ph[5] * 6) + .4f * drift * .01f;
+        x = (osc(0, freq * w) + .5f * osc(1, freq * 2 * w) + .2f * osc(2, freq * 4 * w)) * (.85f + .15f * std::sin(TAU * 2.1f * t)) * .55f;
+      } break;
+      case S_DULCIMER: {  // the city: two strings struck by a little hammer
+        float e = std::exp(-t * 2.2f);
+        x = 0;
+        for (int i = 0; i < 4; ++i) x += (osc(i, freq * (i + 1) * (i % 2 ? 1.003f : 1.f)) + .7f * std::sin(TAU * ph[i] * 1.004f)) / float(1 + i * i) * std::exp(-t * 2.f * i);
+        x *= e * .55f;
+        env = 1;
+      } break;
+      case S_MUSICBOX: {  // the vaults: a comb of steel tines, a little flat, ringing out
+        x = (osc(0, freq) + .3f * osc(1, freq * 4.02f) * std::exp(-t * 9)) * std::exp(-t * 1.8f) * .6f;
+        env = 1;
+      } break;
+      case S_HORN: {  // the barracks: a dwarven horn, its brass opening as it blows
+        float v = 1 + .006f * std::sin(TAU * 5 * t) * std::min(1.f, std::max(0.f, t - .4f));
+        f.set(250 + 1700 * env * (.7f + .3f * amp), 1.2f, rate);
+        x = f.tick(saw.tick(freq * v, rate)) * 1.1f;
+      } break;
+      case S_CELLO: {  // the prison: a cello out of tune, bowed slow and wide
+        float v = .986f * (1 + .012f * std::sin(TAU * 5.4f * t) * std::min(1.f, t * 1.5f));
+        nlp += .1f * (r.bi() - nlp);
+        f.set(1300, .9f, rate);
+        x = f.tick(saw.tick(freq * v, rate) + .15f * nlp) * .8f;
+      } break;
+      case S_ORGAN: {  // the sanctum: pipes, steady and full
+        x = (.6f * osc(0, freq * .5f) + osc(1, freq) + .6f * osc(2, freq * 2) + .4f * osc(3, freq * 3) + .3f * osc(4, freq * 4) + .15f * osc(5, freq * 6)) * .32f;
+      } break;
+      case S_THROAT: {  // the deep: a low voice, and a whistling overtone wandering above it
+        float h = 6 + 5 * (.5f + .5f * std::sin(TAU * (.06f + .04f * sweep) * t + sweep * 6));
+        f.set(freq * h, 9, rate);
+        float body = saw.tick(freq, rate);
+        x = body * .35f + f.tick(body) * .9f;
+      } break;
+    }
+    return x * env * amp;
+  }
+};
+
 // ------------------------------------------------------------------ the moods
 struct MoodDef {
   int scale[7];
@@ -268,6 +353,12 @@ const MoodDef MOODS_DEF[MOODS] = {
 struct Motif { int at[5], deg[5], len[5]; };
 const Motif PYRE = {{0, 4, 6, 8, 12}, {0, 4, 3, 2, 4}, {4, 2, 2, 4, 4}};
 const Motif KING = {{0, 3, 6, 10, 12}, {0, 1, 0, -2, -3}, {3, 3, 4, 2, 4}};
+
+// each mood's own instrument, its octave and its loudness (title, waystation and Charnfen keep none)
+// TITLE, CRYPT, CAVES, FORGE, DEEP, REST, CISTERN, CITY, VAULTS, BARRACKS, PRISON, SANCTUM, CHARNFEN
+const int SIG_KIND[MOODS] = {S_NONE, S_HUM, S_GLASS, S_METAL, S_THROAT, S_NONE, S_WATER, S_DULCIMER, S_MUSICBOX, S_HORN, S_CELLO, S_ORGAN, S_NONE};
+const int SIG_OCT[MOODS] = {0, 1, 3, 2, -1, 0, 1, 2, 4, 1, 1, 1, 0};
+const float SIG_AMP[MOODS] = {0, .11f, .09f, .13f, .12f, 0, .12f, .18f, .16f, .14f, .12f, .13f, 0};
 
 // arpeggio patterns over one bar of eight steps: 0..2 the chord's notes, 3 the root an octave up, -1 rest
 const std::vector<std::array<int, 8>> ARPS = {
@@ -344,9 +435,9 @@ class Composer {
     float k = 1 / rate_;
     float th = want_threat_.load(std::memory_order_relaxed);
     if (fight_) th = std::max(th, .85f);
-    threat_ += (th - threat_) * k / (th > threat_ ? 1.5f : 6.f);  // it comes in quickly, and ebbs away slowly
+    threat_ += (th - threat_) * k / (th > threat_ ? 1.f : 6.f);  // it comes in quickly, and ebbs away slowly
     float life = want_life_.load(std::memory_order_relaxed);
-    float danger = std::clamp((.35f - life) / .3f, 0.f, 1.f);
+    float danger = std::clamp((.4f - life) / .2f, 0.f, 1.f);  // from 40% life, full at 20%
     danger_ += (danger - danger_) * k / (danger > danger_ ? .8f : 2.5f);
     cold_ += (want_cold_.load(std::memory_order_relaxed) - cold_) * k / 8;
     ghost_amt_ += ((want_ghost_.load(std::memory_order_relaxed) ? 1.f : 0.f) - ghost_amt_) * k / 2;
@@ -378,6 +469,7 @@ class Composer {
   float tape_ = 1, tape_pos_ = 0, prev_l_ = 0, prev_r_ = 0, cur_l_ = 0, cur_r_ = 0;
   Bell toll_, far_;
   Filter ghost_l_, ghost_r_;
+  float muff_l_ = 0, muff_r_ = 0;
   float crackle_ = 0, crack_lp_ = 0, rumble_ = 0, wind_ = 0, wind_lp_ = 0, wind_lp2_ = 0;
   // a jingle: its notes, each on an eighth from now
   struct JNote { int at; int kind; int deg; int oct; float amp; };  // kind 0 harp, 1 bell, 2 flute
@@ -407,6 +499,13 @@ class Composer {
   int next_zbell_ = 0, rattle_ = 0, wheel_ = 0;
   std::array<Drum, 4> drums_;
   int next_drum_ = 0, far_left_ = 0;
+  std::array<Sig, 6> sig_;
+  int next_sig_ = 0;
+  bool use_sig_ = true;
+  bool sig_live() const { for (auto& v : sig_) if (v.t < v.dur) return true; return false; }
+  int jsig_at_ = 0, jsig_note_ = 0;
+  float jsig_len_ = 0;
+  Sig horn_[2];  // the war horn, the same in every zone
   Room room_;
 
   int note(int deg, int octave) const {
@@ -434,6 +533,8 @@ class Composer {
     use_pad_ = true; use_harp_ = m_->harp > 0; use_flute_ = r_.chance(.6f); use_drums_ = true;
     for (auto& p : pad_) p.env.on = false;
     flute_.stop();
+    for (auto& v : sig_) v.t = 1e9f;
+    use_sig_ = true; jsig_at_ = 0;
   }
   void new_progression() {
     auto& pool = m_->progressions;
@@ -478,7 +579,7 @@ class Composer {
     int s = step_ % 8;
     if (s == 0) {  // at the bar line (lab): the build-up, the threat's tempo, a planned silence
       build_ = want_build_.load(std::memory_order_relaxed);
-      step_len_ = int(base_len_ / (1 + .14f * threat_));
+      step_len_ = int(base_len_ / (1 + .25f * threat_));
       if (bar_ % 8 == 7 && silence_left_ == 0 && sil_since_ > 120 && threat_ < .08f && danger_ < .1f && !dead_ &&
           mood_ != TITLE && r_.chance(.4f)) {
         silence_left_ = int(15 * rate_);
@@ -500,6 +601,7 @@ class Composer {
         if (r_.chance(.4f)) new_melody();
         if (r_.chance(.3f)) new_arpeggio();
         if (r_.chance(.35f)) use_flute_ = !use_flute_;
+        if (r_.chance(.25f)) use_sig_ = !use_sig_;
         if (build_ == 0 && use_flute_ && r_.chance(.4f)) use_flute_ = false;  // the first map: calmer
         if (m_->harp > 0 && r_.chance(.2f)) use_harp_ = !use_harp_;
         if (r_.chance(.15f)) use_pad_ = !use_pad_;
@@ -572,6 +674,36 @@ class Composer {
       bells_[next_bell_].start(mtof(float(note(r_.below(7), 5))), 3.5f, .7f, 1.4f, .035f);
       next_bell_ = (next_bell_ + 1) % int(bells_.size());
     }
+    // the zone's own instrument: it sings in the bars between the flute's call and answer
+    if (int kind = SIG_KIND[mood_]; kind != S_NONE && use_sig_ && !dead_) {
+      int ph = bar_ % 8, oct = SIG_OCT[mood_];
+      float a = SIG_AMP[mood_] * (build_ == 0 ? .8f : build_ == 2 ? 1.15f : 1.f), bar_s = 8.f * step_len_ / rate_;
+      auto play = [&](int n, float secs, float g) {
+        sig_[next_sig_].start(kind, mtof(float(n)), secs, a * g, r_);
+        next_sig_ = (next_sig_ + 1) % int(sig_.size());
+      };
+      bool gap = ph == 2 || ph == 3 || ph == 6 || ph == 7;
+      if (kind == S_DULCIMER || kind == S_MUSICBOX) {  // the struck ones: a few notes of the chord
+        float p = kind == S_MUSICBOX ? .45f : .35f;
+        if (gap && r_.chance(p) && !(kind == S_MUSICBOX && r_.chance(.1f)))  // the music box sticks now and then
+          play(note(ch[r_.below(3)] + (r_.chance(.2f) ? 7 : 0), oct), 0, kind == S_MUSICBOX ? .8f + .4f * r_.uni() : 1);
+      } else if (kind == S_THROAT) {  // the deep: one long low note under it all
+        if (s == 0 && bar_ % 4 == 0 && r_.chance(.6f)) play(note(0, oct), 3.5f * bar_s, 1);
+      } else if (s == 0 && gap && jsig_at_ == 0 && !sig_live() && r_.chance(.7f)) {  // the held ones: a slow line of two notes
+        int d = ch[r_.below(3)];
+        play(note(d, oct), 1.8f * bar_s, 1);
+        int d2 = d + (r_.chance(.5f) ? 1 : -1);
+        jsig_at_ = 8 + r_.below(2) * 4; jsig_note_ = note(d2, oct); jsig_len_ = 1.f * bar_s;
+      }
+      if (jsig_at_ > 0 && --jsig_at_ == 0) play(jsig_note_, jsig_len_, .85f);
+    }
+    // the war horn, the same in every zone: it calls when the foes are many
+    if (s == 0 && bar_ % 4 == 0 && threat_ > .7f && !dead_ && r_.chance(.75f)) {
+      float bar_s = 8.f * step_len_ / rate_;
+      horn_[0].start(S_HORN, mtof(float(note(0, 0))), 1.4f * bar_s, .22f * threat_, r_);
+      horn_[1].start(S_HORN, mtof(float(note(4, 0))), 1.4f * bar_s, .13f * threat_, r_);
+    }
+
     // the drums
     if (use_drums_) {
       float bg = build_ == 0 ? .65f : build_ == 2 ? 1.2f : 1.f;
@@ -584,10 +716,11 @@ class Composer {
         next_drum_ = (next_drum_ + 1) % int(drums_.size());
       };
       // the threat brings drums in, step by step, and they ebb away again
-      if (threat_ > .3f && s == 4) hit(120, 55, 4.5f, .5f, .35f + .4f * threat_);
-      if (threat_ > .6f && (s == 2 || s == 6)) hit(150, 70, 7, .6f, .25f * threat_);
+      if (threat_ > .15f && (s == 0 || s == 4)) hit(95, 42, 4, .5f, .5f + .6f * threat_);   // a war drum on every beat
+      if (threat_ > .45f && (s == 2 || s == 6)) hit(150, 70, 7, .6f, .45f * threat_);
+      if (threat_ > .75f && (s == 3 || s == 7) && r_.chance(.6f)) hit(190, 90, 10, .8f, .3f * threat_);
       // near death a heart underneath, an echo of the Deep; the ember bearer's beats fast and tense
-      if (danger_ > .05f) { if (s == 0) beat(70, 38, 5, .3f, .9f * danger_); if (s == 1) beat(65, 36, 6, .3f, .6f * danger_); }
+      if (danger_ > .05f) { if (s == 0 || s == 4) beat(110, 52, 5, .6f, 2.6f * danger_); if (s == 1 || s == 5) beat(100, 48, 6, .6f, 1.8f * danger_); }  // pitched up so small speakers carry it
       if (carrier_ && (s == 0 || s == 1 || s == 4 || s == 5)) beat(s % 4 ? 66 : 72, 36, 6, .3f, s % 4 ? .35f : .5f);
       int kind = m_->drum_kind;
       if (fight_ && kind == 0) kind = 1;
@@ -716,16 +849,19 @@ class Composer {
     if ((step_ & 63) == 0) drone_f_.set(260 + 120 * std::sin(TAU * .05f * lfo_), .9f, rate);
     float drone = (drone_a_.tick(droot, rate) + .7f * drone_b_.tick(droot * 1.003f, rate) + .5f * drone_c_.tick(second, rate));
     drone = drone_f_.tick(drone) * (.8f + .2f * std::sin(TAU * .11f * lfo_)) * .22f * m_->drone;
+    // the threat makes the drone throb on the eighths, and swell
+    float throb = 1 - .55f * threat_ * (float(step_left_) / float(std::max(1, step_len_)));
+    drone *= throb * (1 + .6f * threat_);
 
     // the lab's layers: near death the music thins out; in a planned silence all but the drone rests
-    float thin = 1 - .7f * danger_, sil = sil_amt_;
+    float thin = 1 - .85f * danger_, sil = sil_amt_;
     float pad = 0;
     for (auto& p : pad_) pad += p.tick(rate, 0);
-    pad *= m_->pad * thin * sil;
+    pad *= m_->pad * thin * sil * (1 + .4f * threat_);
     float harp = 0;
     for (auto& h : harp_) harp += h.tick();
-    harp *= (1 - .6f * danger_) * sil;
-    float fl = flute_.tick(rate, r_) * m_->flute * (1 - .8f * danger_) * sil;
+    harp *= (1 - .9f * danger_) * sil;
+    float fl = flute_.tick(rate, r_) * m_->flute * (1 - .95f * danger_) * sil;
     float bell = 0;
     for (auto& b : bells_) bell += b.tick(rate);
     float zb = 0;
@@ -757,12 +893,22 @@ class Composer {
       fire += wind_lp2_ * (1.2f + 1.5f * gust);
     }
 
-    float dry = drone + pad + harp + fl + bell + drum + fire;
+    float sg = 0;
+    for (auto& v : sig_) sg += v.tick(rate, r_);
+    sg *= (1 - .85f * danger_) * sil;
+    float horn = horn_[0].tick(rate, r_) + horn_[1].tick(rate, r_);
+    float dry = drone + pad + harp + fl + bell + drum + fire + sg + horn;
     float wl, wr;
-    room_.tick(pad + harp * 1.2f + fl * 1.3f + bell * 1.5f + drum * .6f + drone * .3f, wl, wr);
+    room_.tick(pad + harp * 1.2f + fl * 1.3f + bell * 1.5f + drum * .6f + drone * .3f + sg * 1.2f + horn * .9f, wl, wr);
     float wet = m_->room * (1 + .6f * ghost_amt_);
     outl = dry * .8f + wl * wet + harp * .1f;
     outr = dry * .8f + wr * wet - harp * .1f;
+    // near death the world goes muffled, as if the ears ring; the heart stays clear underneath
+    if (danger_ > .001f) {
+      float c = 1 - .93f * danger_;
+      muff_l_ += c * (outl - muff_l_); muff_r_ += c * (outr - muff_r_);
+      outl = muff_l_ + drum * .9f * danger_; outr = muff_r_ + drum * .9f * danger_;
+    } else { muff_l_ = outl; muff_r_ = outr; }
     // a ghost hears it all from far away, through stone
     if (ghost_amt_ > .001f) {
       float ml = ghost_l_.tick(outl), mr = ghost_r_.tick(outr), g = ghost_amt_;
