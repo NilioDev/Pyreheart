@@ -46,9 +46,9 @@ std::vector<std::string> Client::test_items() const {
       "Controls: keyboard (move, look, shoot, skills, pack)",
       "Controls: touch on the phone (tap, hold to walk, buttons)",
       "Pack: equip, drop, compare marks on items",
-      "Shop: buy, sell, potions",
+      "Camp: the trader buys and sells, Ysolde heals and sells potions, Brann turns a resistance",
       "Perks: choosing a perk on level up",
-      "Waystation: rest, route choice to the next zone",
+      "Camp: the fire, and old Ebb opening the way to the next zone",
       "Music: each zone its own, boss music, music off",
       "Music lab: the new music ideas (switch in Options or here)",
       "Save and continue a dive later",
@@ -127,12 +127,12 @@ std::string Client::bug_context() const {
   const json& s = snap_;
   const json& me = s["me"];
   std::ostringstream o;
-  bool town = s.value("town", false), rest = s.value("rest", false);
+  bool town = s.value("town", false), rest = s.value("camp", false);
   int zf = s.value("zfloor", 0), zfs = s.value("zfloors", 3);
   std::string zone = s.value("zname", "?");
   o << "Build: " << PYREHEART_BUILD << "\n";
   if (town) o << "Where: Charnfen (the surface)";
-  else if (rest) o << "Where: the waystation after " << zone << " map " << zf + 1;
+  else if (rest) o << "Where: the camp in the boss room of " << zone << ", map " << zf + 1;
   else o << "Where: " << zone << ", map " << zf + 1 << " of " << zfs << (zf == zfs - 1 ? " (boss map)" : "");
   o << ", depth " << s.value("depth", 0) << ", turn " << s.value("turn", 0) << "\n";
   int hx = me.value("x", 0), hy = me.value("y", 0);

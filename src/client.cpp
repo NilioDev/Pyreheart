@@ -19,7 +19,7 @@ const ListenPlace LISTEN[] = {
     {"Charnfen", music::TITLE, false},       {"The Crypt", music::CRYPT, true},   {"The Caves", music::CAVES, true},
     {"The Cistern", music::CISTERN, true},   {"The Forge", music::FORGE, true},   {"The City", music::CITY, true},
     {"The Vaults", music::VAULTS, true},     {"The Barracks", music::BARRACKS, true}, {"The Prison", music::PRISON, true},
-    {"The Sanctum", music::SANCTUM, true},   {"The Deep", music::DEEP, true},     {"A waystation", music::REST, false},
+    {"The Sanctum", music::SANCTUM, true},   {"The Deep", music::DEEP, true},     {"A camp", music::REST, false},
 };
 const int LISTEN_N = int(std::size(LISTEN)), LISTEN_ROWS = (LISTEN_N + 1) / 2;
 bool listen_foe(int i) { return LISTEN[std::clamp(i, 0, LISTEN_N - 1)].foe; }
@@ -325,6 +325,7 @@ void Client::apply(const json& s) {
   for (auto& f : s["fx"]) fx_.push_back({f, t});
   if (s["turn"].get<int>() != sent_turn_) { waiting_ = false; ready_.clear(); }
   bool was_shopping = snap_.is_object() && snap_["me"].value("shopping", false);
+  std::string was_talking = snap_.is_object() ? snap_["me"].value("talking", std::string()) : std::string();
   bool town = s.value("town", false);
   if (fl != epi_floor_ && (town || !s.value("rest", false)) && layout_ != Layout::Watch && !SDL_getenv("PYREHEART_WHOLE")) {
     // the first map of a zone opens with one of its book fragments; the dive opens in Charnfen with Charnfen's
@@ -343,6 +344,9 @@ void Client::apply(const json& s) {
   bool shopping = s["me"].value("shopping", false);
   if (shopping && !was_shopping) { over_ = Over::Shop; sel_ = 0; }
   if (!shopping && over_ == Over::Shop) over_ = Over::None;
+  std::string talking = s["me"].value("talking", std::string());  // a helper's window: Ysolde, Brann or old Ebb
+  if (!talking.empty() && talking != was_talking) { over_ = Over::Talk; talk_sel_ = 0; talk_el_ = -1; }
+  if (talking.empty() && over_ == Over::Talk) over_ = Over::None;
   if (s["me"].value("dead", false) && over_ == Over::Target) over_ = Over::None;
   if (layout_ == Layout::Watch && !s["fx"].empty()) {
     for (auto& f : s["fx"])  // a short buzz when you are hurt
@@ -359,7 +363,7 @@ void Client::apply(const json& s) {
 void Client::send(const json& a) {
   if (!link_ || !snap_.is_object()) return;
   std::string t = a.value("t", "");
-  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel" || t == "talents";
+  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel" || t == "talents" || t == "talk";
   if (!free) {
     if (waiting_) return;
     waiting_ = true;
@@ -567,6 +571,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
     case Over::Fire: fire_key(k); return;
     case Over::Grave: graves_key(k); return;
     case Over::Pyre: pyre_key(k); return;
+    case Over::Talk: talk_key(k); return;
     case Over::Hero:
       if (k == SDLK_ESCAPE || k == SDLK_C || enter) over_ = Over::None;
       return;
@@ -599,8 +604,6 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       int n = np + ns;
       if (k == SDLK_ESCAPE || k == SDLK_I) { if (over_ == Over::Shop) send({{"t", "close"}}); over_ = Over::None; return; }
       if (dy && n) { sel_ = (sel_ + dy + n) % n; return; }
-      if (over_ == Over::Shop && k == SDLK_H) { send({{"t", "buyp"}, {"k", "heal"}}); return; }
-      if (over_ == Over::Shop && k == SDLK_M) { send({{"t", "buyp"}, {"k", "mana"}}); return; }
       if (!n) return;
       sel_ = std::clamp(sel_, 0, n - 1);
       if (sel_ < ns) { if (enter) send({{"t", "buy"}, {"i", sel_}}); return; }
@@ -634,7 +637,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
         std::abs(snap_["pyre"][1].get<int>() - me["y"].get<int>() - dy) <= 1) {
       over_ = Over::Pyre; pyre_sel_ = 0; talents_open_ = talents_; return;
     }
-    // a step into a waystation's fire opens THE FIRE
+    // a step into a camp fire opens THE FIRE
     if (snap_.contains("fire") && snap_["fire"][0].get<int>() == me["x"].get<int>() + dx && snap_["fire"][1].get<int>() == me["y"].get<int>() + dy) {
       over_ = Over::Fire; fire_sel_ = 0; fire_mark_ = -1; return;
     }
@@ -752,6 +755,7 @@ void Client::click(int x, int y, bool down) {
       else if (b.action.rfind("menu:", 0) == 0) { if (menu_sel_ == arg) menu_do(arg); else menu_sel_ = arg; }
       else if (b.action.rfind("opt:", 0) == 0) { if (opt_sel_ == arg) options_key(SDLK_RETURN); else opt_sel_ = arg; }
       else if (b.action.rfind("rack:", 0) == 0) { if (rack_sel_ == arg) rack_key(SDLK_RETURN); else rack_sel_ = arg; }
+      else if (b.action.rfind("talksel:", 0) == 0) { if (talk_sel_ == arg) talk_key(SDLK_RETURN); else { talk_sel_ = arg; talk_el_ = -1; } }
       else if (b.action.rfind("grave:", 0) == 0) grave_sel_ = arg;
       else if (b.action.rfind("gtab:", 0) == 0) { graves_tab_ = arg; grave_sel_ = 0; }
       else if (b.action.rfind("fire:", 0) == 0) { if (fire_sel_ == arg) fire_key(SDLK_RETURN); else fire_sel_ = arg; }
@@ -763,7 +767,7 @@ void Client::click(int x, int y, bool down) {
     }
   if (over_ == Over::Book || over_ == Over::Menu || over_ == Over::Hero || over_ == Over::Options) { over_ = Over::None; return; }
   if (over_ == Over::Epigraph) { key(SDLK_SPACE, SDL_KMOD_NONE); return; }
-  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal || over_ == Over::Rack || over_ == Over::Fire) return;
+  if (over_ == Over::Pack || over_ == Over::Shop || over_ == Over::Perk || over_ == Over::Coal || over_ == Over::Rack || over_ == Over::Fire || over_ == Over::Talk) return;
   if (over_ == Over::Grave) return;
   // a tap on the map
   int mx = x - vx_ + camx_, my = y - vy_ + camy_;
@@ -914,7 +918,7 @@ void Client::follow_lab() {
   lab->scene(sc);
 }
 
-// the music follows where you are: the title, an act, a waystation; a great foe awake makes it heavier
+// the music follows where you are: the title, an act, a camp; a great foe awake makes it heavier
 void Client::update_music() {
   if (screen_ == Screen::Listen) {
     music_.mood(LISTEN[std::clamp(menu_, 0, LISTEN_N - 1)].mood, listen_fight_ && listen_foe(menu_));
@@ -925,7 +929,7 @@ void Client::update_music() {
   apply_volume();
   follow_lab();
   if (screen_ != Screen::Game || !snap_.is_object()) { music_.mood(music::TITLE); return; }
-  if (snap_.value("rest", false)) { music_.mood(music::REST); return; }
+  if (snap_.value("rest", false) || snap_.value("camp", false)) { music_.mood(music::REST); return; }
   if (snap_.value("town", false) && music_.lab()) { music_.mood(music::TITLE, false, music_lab::CHARNFEN); return; }  // the lab's Charnfen theme
   // each zone its own mood, in the order of ACTS
   namespace m = music;
@@ -1105,6 +1109,7 @@ void Client::draw_game() {
       else if (w == "fire") over_ = Over::Fire;
       else if (w == "grave") { over_ = Over::Grave; grave_at_ = 0; }
       else if (w == "pyre") { over_ = Over::Pyre; talents_open_ = talents_; }
+      else if (w == "healer" || w == "smith" || w == "guide") send({{"t", "debug"}, {"w", "talk " + w}});
     }
   }
   int cw = con_.get_width(), chh = con_.get_height();
@@ -1186,12 +1191,12 @@ void Client::draw_game() {
     case Over::Fire: dim_all(.3); draw_fire_window(); break;
     case Over::Pyre: con_.clear(); buttons_.clear(); draw_pyre(); break;
     case Over::Grave: dim_all(.3); draw_grave(); break;
+    case Over::Talk: dim_all(.3); draw_talk(); break;
     case Over::Ring: draw_ring(); break;
     case Over::Epigraph: draw_epigraph(); break;
     default: break;
   }
   if (over_ == Over::Debug) draw_debug();
-  if (over_ == Over::None && snap_.value("rest", false) && !snap_.value("town", false) && layout_ != Layout::Watch) draw_route();
   if (snap_.value("state", "play") != "play") draw_end();
 }
 
@@ -1258,30 +1263,29 @@ void Client::draw_epigraph() {
   if (done) text(x0 + w - 3 - 7, y0 + h - 1, " [key] ", 0x5A4A3A, 0x0C0A0A);
 }
 
-// In a waystation, a chart of the zones: the way taken so far in gold, the zones the stairs here lead to in white.
-void Client::draw_route() {
+// A chart of the zones, in old Ebb's window: the way taken so far in gold, the zones to choose from in white, the way
+// opened marked. Returns the rows it took.
+int Client::route_chart(int x0, int y0, int w, int bg, const std::vector<int>& choosable) {
   static const std::vector<std::vector<int>> rows = {{0}, {1, 4}, {2, 5, 6}, {7, 8}, {9}, {3}};
   std::vector<int> route;
   if (snap_.contains("route")) for (auto& z : snap_["route"]) route.push_back(z.get<int>());
-  std::vector<int> next;
-  if (snap_.contains("exits")) for (auto& e : snap_["exits"]) next.push_back(e[2].get<int>());
-  int w = std::min(vw_ - 2, 50), h = int(rows.size()) * 2 + 3;
-  int x0 = vx_ + (vw_ - w) / 2, y0 = vy_ + std::max(1, vh_ / 2 - 4 - h - 1);
-  box(x0, y0, w, h, "The way down");
+  std::vector<int> open;
+  if (snap_.contains("exits")) for (auto& e : snap_["exits"]) open.push_back(e[2].get<int>());
   for (size_t j = 0; j < rows.size(); ++j) {
     int n = int(rows[j].size());
     for (int i = 0; i < n; ++i) {
       int z = rows[j][i];
       std::string name = data::ACTS[z].name.substr(4);  // without "The "
       bool been = std::find(route.begin(), route.end(), z) != route.end();
-      bool open = std::find(next.begin(), next.end(), z) != next.end();
-      int col = been ? GOLD : open ? 0xF0F0F0 : 0x5A5A5A;
+      bool can = std::find(choosable.begin(), choosable.end(), z) != choosable.end();
+      bool is_open = std::find(open.begin(), open.end(), z) != open.end();
+      int col = been ? GOLD : is_open || can ? 0xF0F0F0 : 0x5A5A5A;
       int cx = x0 + w * (2 * i + 1) / (2 * n);
-      int y = y0 + 2 + int(j) * 2;
-      if (open) name = "> " + name + " <";
-      text(cx - int(name.size()) / 2, y, name, col);
+      if (is_open) name = "> " + name + " <";
+      text(cx - int(name.size()) / 2, y0 + int(j) * 2, name, col, bg);
     }
   }
+  return int(rows.size()) * 2 - 1;
 }
 
 void Client::draw_map() {
@@ -1437,7 +1441,7 @@ void Client::draw_status_tall(int y) {
   int cw = con_.get_width();
   bar(0, y, cw / 2 - 1, me["hp"], me["maxhp"], RED, std::to_string(me["hp"].get<int>()) + "/" + std::to_string(me["maxhp"].get<int>()));
   bar(cw / 2, y, cw - cw / 2, me["mana"], me["maxmana"], me.value("pool", "mana") == "fury" ? 0xC05020 : BLUE, std::to_string(me["mana"].get<int>()) + "/" + std::to_string(me["maxmana"].get<int>()));
-  std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("rest", false) ? "Waystation" : "Depth " + std::to_string(snap_["depth"].get<int>());
+  std::string where = snap_.value("town", false) ? "Charnfen" : snap_.value("camp", false) ? "Camp" : "Depth " + std::to_string(snap_["depth"].get<int>());
   text(0, y + 1, where + "  lvl " + std::to_string(me["lvl"].get<int>()) + "  " + std::to_string(me["gold"].get<int>()) + "g", GOLD);
 }
 
@@ -1555,10 +1559,7 @@ void Client::draw_shop() {
   window(x, y, w, h, "The trader's stall", Mat::Wood);
   int r = y + 1;
   text(x + 2, r++, "Your gold: " + std::to_string(me["gold"].get<int>()), 0xFFD700);
-  text(x + 2, r, "[h]", KEY); text(x + 6, r++, "healing potion, " + std::to_string(shop["potion"].get<int>()) + " gold (you have " + std::to_string(me["heal"].get<int>()) + ")", 0xFF7070);
-  text(x + 2, r, "[m]", KEY); text(x + 6, r++, "mana potion, " + std::to_string(shop["potion"].get<int>()) + " gold (you have " + std::to_string(me["manap"].get<int>()) + ")", 0x7090FF);
-  buttons_.push_back({x + 2, r - 2, w - 4, 1, "", "key:" + std::to_string(SDLK_H)});
-  buttons_.push_back({x + 2, r - 1, w - 4, 1, "", "key:" + std::to_string(SDLK_M)});
+  text(x + 2, r++, "Potions are Ysolde's; the trader keeps to gear.", GREY);
   ++r;
   auto& items = shop["items"];
   auto& pack = me["pack"];

@@ -119,7 +119,7 @@ BOSS_WAKE = {
     'ashenking': "On a throne of black stone the Ashen King stands up. Behind his ribs the Pyreheart beats, faster.",
 }
 BOSS_DIES = {
-    'gravewarden': "The Gravewarden falls apart into old bones and older dust. The way down opens.",
+    'gravewarden': "The Gravewarden falls apart into old bones and older dust.",
     'webmother': "The Webmother curls up and is still. The webs go slack across the cave.",
     'furnace': "The Furnace Lord cools to black iron and cracks. The anvils of the dwarves fall silent again.",
     'sluicekeeper': "The Sluice-Keeper sinks back into the sludge, and the great wheel finally stops.",
@@ -130,7 +130,39 @@ BOSS_DIES = {
     'prelate': "The High Prelate drops onto the altar and breaks like glass. Cold air sighs up out of the hole behind it.",
     'ashenking': "The Ashen King breaks like a coal under a hammer. You tear the Pyreheart from his chest, and it beats in your hands.",
 }
-WAYSTATION = "A dwarven waystation, empty for an age. A fountain still runs clear here, and someone from Charnfen has set up shop."
+# The helpers from Charnfen (plan.md section 6): they follow the heroes down and make camp where a zone's boss fell.
+CAMP = "Footsteps on the way behind you: the helpers from Charnfen come down, and make camp where it fell. Old Ebb knows the ways on."
+# what old Ebb says of each zone as a way on, in the order of ACTS (the Crypt is never a way on)
+EBB_WAYS = [
+    "",
+    "The old mines. Blind beasts, and rats grown fat on the heat. Mind the webs: something big spins them.",
+    "The forges of the dwarves. Iron walks there, and someone has lit the fires again.",
+    "The Deep. Rivers of molten rock, and at the bottom the King, with our heart in his chest.",
+    "The cisterns. Black sludge where clean water ran, and what drowned there does not stay down.",
+    "Their city. Streets of ash, and the dead still keep house there.",
+    "The treasuries. Gold enough to buy Charnfen a hundred times, and guards that never sleep.",
+    "The barracks. Their army still drills down there, dead in rank and file.",
+    "Their prison. Thieves and oath-breakers, chained up and forgotten. Not all of them stay chained.",
+    "The Sanctum, where they kept the Pyreheart. Their priests still pray there, to the wrong god.",
+]
+# how the way on opens in each zone's boss room, in the order of ACTS
+WAY_OPENS = [
+    "Ebb lifts a slab beside a bier. Worn steps lead down into the dark.",
+    "Ebb pulls the dead web aside. Behind it a tunnel runs on, down.",
+    "Ebb works an old lever. A grate in the floor grinds open over a stair.",
+    "",
+    "Ebb turns a rusted wheel. The sludge drains away from a stair going down.",
+    "Ebb pushes at a carved panel. It swings in on a stair.",
+    "Ebb finds a key in the gold. A vault door opens on a stair.",
+    "Ebb heaves a weapon rack aside. A stair goes down behind it.",
+    "Ebb tries the Head-Gaoler's keys. A grate over a stair swings open.",
+    "Ebb sweeps the ash from the floor. A stair leads down, and the air coming up is hot.",
+]
+YSOLDE = ["Sit. You bleed on my bandages.", "Drink, and do not argue with me.", "Hold still. This will sting, and then it will not."]
+BRANN = ["Show me what you wear. Dwarf-work bends, if you know where to hit it.",
+         "Cold coming? Then we turn the steel against it."]
+EBB = ["I have buried better than you. Let us keep you out of my book.", "Every way down is a grave for someone. Choose well."]
+EBB_TOWN = "When you go down, the others and I follow. Somebody has to write down who fell."
 VICTORY = [
     "With a final, bone-shattering blow, the Ashen King collapses onto the jagged steps of his obsidian throne. Reaching "
     "into the scorching ruin of his hollowed chest, you wrap your blistered hands around the Pyreheart and tear the molten "

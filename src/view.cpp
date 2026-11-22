@@ -1,5 +1,6 @@
 // What one player is shown after a step, as JSON: the same for a player on this device and one across the internet.
 #include "game.hpp"
+#include "lore.hpp"
 
 namespace view {
 
@@ -71,6 +72,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["depth"] = g.depth;
   out["act"] = f.act;
   out["rest"] = f.rest;
+  out["camp"] = f.camp;
   out["town"] = f.depth == 0;
   out["floor"] = f.id;
   out["mw"] = f.w;
@@ -240,7 +242,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["me"] = {{"pid", h.pid}, {"st", stacks(h.stk)}, {"el", h.el}, {"el2", h.el2}, {"smother", h.smother}, {"warn", warn}, {"eres", res}, {"name", h.name}, {"cls", h.cls->key}, {"clsname", h.cls->name}, {"x", h.x}, {"y", h.y},
                {"hp", h.hp}, {"maxhp", st.maxhp}, {"mana", h.mana}, {"maxmana", st.maxmana}, {"lvl", h.lvl}, {"xp", h.xp},
                {"next", g.need(h.lvl)}, {"prev", h.lvl > 1 ? g.need(h.lvl - 1) : 0}, {"gold", h.gold}, {"heal", h.heal},
-               {"manap", h.mana_pots}, {"scars", h.scars}, {"dead", h.dead}, {"gone", h.gone}, {"shopping", h.shopping}, {"poison", h.poison > 0},
+               {"manap", h.mana_pots}, {"scars", h.scars}, {"dead", h.dead}, {"gone", h.gone}, {"shopping", h.shopping}, {"talking", h.talking}, {"poison", h.poison > 0},
                {"numb", h.numb > 0}, {"shield", h.shield > 0}, {"held", h.held > 0}, {"latched", h.latched > 0},
                {"bleeding", h.bleed > 0}, {"branded", h.brand > 0}, {"sundered", h.sunder > 0}, {"dazed", h.dazed > 0}, {"dmg", dmg}, {"armour", st.armour}, {"acc", st.acc},
                {"crit", st.crit}, {"res", {st.res_f, st.res_c, st.res_p}}, {"equip", equip}, {"pack", pack}, {"perks", perks},
@@ -253,6 +255,29 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     json sell = json::array();
     for (auto& it : h.pack) sell.push_back({it->id, std::max(1, it->value / 3)});
     out["shop"] = {{"items", shop}, {"potion", 25 + 5 * g.lvl}, {"sell", sell}};
+  }
+  if (!h.talking.empty()) {
+    // the helper's window: Ysolde's potions, Brann's retuning, old Ebb's ways
+    json t = {{"who", h.talking}, {"potion", g.potion_price()}, {"retune", g.retune_price()}, {"healed", h.drank}, {"line", h.talk_line}};
+    if (h.talking == "smith") {  // each resistance on worn gear, one row each
+      static const char* RES[elem::N] = {"res_fire", "res_cold", "res_ash", "res_poison", "res_blood"};
+      json rows = json::array();
+      for (auto& sl : data::SLOTS) {
+        auto it = h.equip.find(sl);
+        if (it == h.equip.end()) continue;
+        for (auto& [k, v] : it->second->stats)
+          for (int e = 0; e < elem::N; ++e)
+            if (k == RES[e]) rows.push_back({{"id", it->second->id}, {"name", it->second->shortname()}, {"rarity", it->second->rarity}, {"from", k}, {"el", e}, {"v", v}});
+      }
+      t["gear"] = rows;
+    }
+    if (h.talking == "guide" && f.camp) {
+      json ways = json::array();
+      for (int z : data::ACTS[f.act].next) ways.push_back({{"z", z}, {"key", data::ACTS[z].key}, {"name", data::ACTS[z].name}, {"text", lore::EBB_WAYS[z]}});
+      t["ways"] = ways;
+      t["open"] = !f.exits.empty();
+    }
+    out["talk"] = t;
   }
   if (f.boss && f.boss_woke && f.boss->hp > 0) {
     auto& b = *f.boss;
@@ -267,7 +292,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["fx"] = g.fx;
   out["frost"] = g.frost;
   out["slain"] = g.slain;  // the zones whose boss fell: Sparks for the players' Pyre
-  if (h.tal("forged") && !h.forged && f.rest) out["forge"] = true;
+  if (h.tal("forged") && !h.forged && f.camp) out["forge"] = true;
   json wait = json::array();
   for (auto* o : g.active()) wait.push_back(o->pid);
   out["wait"] = wait;

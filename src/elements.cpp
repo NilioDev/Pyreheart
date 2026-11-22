@@ -226,7 +226,7 @@ void Game::take_coal(Hero& h, int e) {
     h.say(std::string("You take a coal from the great fire. It glows ") + NAME[e] + " in your hand, and its warmth runs into your arms.", COL[e]);
     tip(h, "coal", std::string("Your blows now lay ") + NAME[e] + " on your foes; your heavy skills (marked ☼) set it all off at once.");
     add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", COL[e]}});
-  } else if (h.el2 < 0 && e != h.el && floor->rest && floor->depth > 0) {
+  } else if (h.el2 < 0 && e != h.el && floor->camp) {
     h.el2 = e;
     h.say(std::string("You take a second coal. ") + NAME[e] + " glows beside your " + NAME[h.el] + ".", COL[e]);
   }

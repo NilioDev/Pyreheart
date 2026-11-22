@@ -16,6 +16,7 @@ int mix(int a, int b, double f) {
   auto m = [&](int s) { int x = (a >> s) & 255, y = (b >> s) & 255; return std::clamp(int(x + (y - x) * f), 0, 255) << s; };
   return m(16) | m(8) | m(0);
 }
+std::string clip(const std::string& s, int n) { return int(s.size()) <= n ? s : s.substr(0, std::max(0, n - 1)) + "\u2026"; }
 int ulen(const std::string& s) { int n = 0; for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++n; return n; }
 const int LEATHER = 0x7A4E2C, LEATHER_BG = 0x1C130C, STITCH = 0xC8A070, WOOD = 0x8A6438, WOOD_BG = 0x18110B;
 const int STONE_EDGE = 0x8A8478, STONE_BG = 0x2A2826, CAP_BG = 0xE0B050, CAP_FG = 0x1A1208;
@@ -344,7 +345,7 @@ void Client::options_key(SDL_Keycode k) {
 }
 
 // ------------------------------------------------------------------ the Delver's Handbook
-// It opens at the page that fits: a tip just given, a fight, the fire of a waystation, Charnfen; else the page read last.
+// It opens at the page that fits: a tip just given, a fight, a camp, Charnfen; else the page read last.
 void Client::open_book() {
   int ch = book_last_;
   book_why_.clear();
@@ -352,7 +353,7 @@ void Client::open_book() {
   if (in_game && tip_ch_ >= 0 && now() - tip_t_ < 30) { ch = tip_ch_; book_why_ = "for the tip you were just given."; }
   else if (in_game && !foes().empty()) { ch = book::index_of("fighting"); book_why_ = "you are in a fight."; }
   else if (in_game && snap_.value("town", false)) { ch = book::index_of("first"); book_why_ = "you are in Charnfen."; }
-  else if (in_game && snap_.value("rest", false)) { ch = book::index_of("rest"); book_why_ = "you are at a waystation."; }
+  else if (in_game && snap_.value("camp", false)) { ch = book::index_of("rest"); book_why_ = "you are at a camp."; }
   else if (!in_game && book_last_ == 0) book_why_ = "it is the beginning.";
   book_ch_ = ch;
   book_scroll_ = 0;
@@ -580,7 +581,7 @@ void Client::rack_key(SDL_Keycode k) {
   }
 }
 
-// ------------------------------------------------------------------ a waystation's fire
+// ------------------------------------------------------------------ a camp fire
 
 // The rows to pick from: the keys [2]-[5], then the known skills not on a key, then a second coal while there is none.
 int Client::fire_rows() {
@@ -866,4 +867,140 @@ void Client::draw_grave() {
     line(std::to_string(g.value("kills", 0)) + " foes went before" + (rk ? ", rekindled " + std::to_string(rk) + (rk == 1 ? " time" : " times") : std::string()), 0xA8A090);
   }
   rich(x + 3, y + h - 2, "[↑↓] grave   [Tab] alone / together   [Esc] leave", INK, bg);
+}
+
+// ------------------------------------------------------------------ the helpers (plan.md section 6)
+
+// Walk into a helper and their window opens: a line in their voice, and their keys. Ysolde heals and sells the potions,
+// Brann turns a resistance on worn gear into another element, old Ebb shows the way taken and opens the way on.
+void Client::draw_talk() {
+  if (!snap_.contains("talk")) return;
+  auto& t = snap_["talk"];
+  auto& me = snap_["me"];
+  std::string who = t.value("who", "");
+  int cw = con_.get_width(), chh = con_.get_height();
+  bool guide = who == "guide", smith = who == "smith";
+  int w = std::min(cw, guide ? 72 : 62);
+  int rows = smith ? std::max(1, int(t.value("gear", json::array()).size())) : 0;
+  int h = std::min(chh, guide ? (t.contains("ways") ? 34 : 10) : smith ? 14 + rows : 14);
+  int x = (cw - w) / 2, y = (chh - h) / 2;
+  const char* title = who == "healer" ? "Ysolde, the healer" : smith ? "Brann, the smith" : "Old Ebb";
+  int col = who == "healer" ? 0xAADCAA : smith ? 0xC8966E : 0x9696AA;
+  window(x, y, w, h, title);
+  int r = y + 2;
+  r += rich_wrap(x + 3, r, w - 6, "\"" + t.value("line", std::string()) + "\"", col, PAPER) + 1;
+  int gold = me.value("gold", 0);
+  if (who == "healer") {
+    bool healed = t.value("healed", false);
+    int price = t.value("potion", 0);
+    rich(x + 3, r, "[h]", INK, PAPER); text(x + 7, r, "heal me", healed ? DIM : ASH, PAPER);
+    text(x + 30, r, healed ? "once a camp" : "free", DIM, PAPER);
+    buttons_.push_back({x + 2, r++, w - 4, 1, "", "key:" + std::to_string(SDLK_H)});
+    rich(x + 3, r, "[p]", INK, PAPER); text(x + 7, r, "healing potion (" + std::to_string(me.value("heal", 0)) + ")", 0xFF7070, PAPER);
+    text(x + 30, r, std::to_string(price) + "g", 0xFFD700, PAPER);
+    buttons_.push_back({x + 2, r++, w - 4, 1, "", "key:" + std::to_string(SDLK_P)});
+    rich(x + 3, r, "[m]", INK, PAPER); text(x + 7, r, "mana potion (" + std::to_string(me.value("manap", 0)) + ")", 0x7090FF, PAPER);
+    text(x + 30, r, std::to_string(price) + "g", 0xFFD700, PAPER);
+    buttons_.push_back({x + 2, r++, w - 4, 1, "", "key:" + std::to_string(SDLK_M)});
+    ++r;
+    if (me.value("scars", 0) > 0) text(x + 3, r, "Scars she cannot mend: " + std::to_string(me.value("scars", 0)) + ".", DIM, PAPER);
+  } else if (smith) {
+    auto gear = t.value("gear", json::array());
+    int n = int(gear.size());
+    if (!n) {
+      rich_wrap(x + 3, r, w - 6, "Nothing you wear turns an element. Bring me gear with a resistance on it.", DIM, PAPER);
+    } else {
+      talk_sel_ = std::clamp(talk_sel_, 0, n - 1);
+      for (int i = 0; i < n; ++i, ++r) {
+        auto& g = gear[i];
+        bool on = i == talk_sel_;
+        int bg = on ? SEL : PAPER;
+        for (int k = x + 2; k < x + w - 2; ++k) put(k, r, ' ', INK, bg);
+        int e = g.value("el", 0);
+        text(x + 3, r, on ? ">" : " ", GOLD, bg);
+        text(x + 5, r, clip(g.value("name", std::string()), w - 34), data::rarity_col(g.value("rarity", std::string("normal"))), bg);
+        std::string from = "+" + std::to_string(g.value("v", 0)) + "% " + elem::NAME[e];
+        int fx = x + w - 27;
+        text(fx, r, from, elem::COL[e], bg);
+        if (on) {
+          int to = talk_el_ < 0 || talk_el_ == e ? (e + 1) % elem::N : talk_el_;
+          talk_el_ = to;
+          text(fx + ulen(from) + 1, r, "► " + std::string(elem::NAME[to]), elem::COL[to], bg);
+        }
+        buttons_.push_back({x + 2, r, w - 4, 1, "", "talksel:" + std::to_string(i)});
+      }
+      ++r;
+      rich(x + 3, r++, "Costs " + std::to_string(t.value("retune", 0)) + " gold. Your gold: " + std::to_string(gold) + ".", ASH, PAPER);
+    }
+    rich(x + 3, y + h - 2, "[↑↓] gear  [◄►] element  [Enter] retune  [Esc] leave", INK, PAPER);
+    return;
+  } else if (guide) {
+    if (!t.contains("ways")) {
+      rich(x + 3, y + h - 2, "[Esc] leave", INK, PAPER);
+      return;
+    }
+    auto& ways = t["ways"];
+    std::vector<int> can;
+    for (auto& wy : ways) can.push_back(wy.value("z", 0));
+    text(x + 3, r++, "THE WAY DOWN", GOLD, PAPER);
+    r += route_chart(x + 3, r + 1, w - 6, PAPER, t.value("open", false) ? std::vector<int>{} : can) + 2;
+    for (int k = x + 2; k < x + w - 2; ++k) put(k, r, 0x2500, 0x5A4028, PAPER);
+    r += 2;
+    bool open = t.value("open", false);
+    int n = int(ways.size());
+    talk_sel_ = std::clamp(talk_sel_, 0, std::max(0, n - 1));
+    for (int i = 0; i < n && !open; ++i) {
+      auto& wy = ways[i];
+      bool on = i == talk_sel_;
+      int bg = on ? SEL : PAPER;
+      int top = r;
+      for (int k = x + 2; k < x + w - 2; ++k) put(k, r, ' ', INK, bg);
+      rich(x + 3, r, "[" + std::to_string(i + 1) + "]", INK, bg);
+      text(x + 7, r++, wy.value("name", std::string()), on ? GOLD : ASH, bg);
+      r += rich_wrap(x + 7, r, w - 10, wy.value("text", std::string()), on ? INK : DIM, PAPER) + 1;
+      buttons_.push_back({x + 2, top, w - 4, r - top - 1, "", "key:" + std::to_string(SDLK_1 + i)});
+    }
+    if (open) rich_wrap(x + 3, r, w - 6, "The way on is open. Ebb has written it in his book.", DIM, PAPER);
+    rich(x + 3, y + h - 2, open ? "[Esc] leave" : "[↑↓] choose  [Enter] open the way  [Esc] leave", INK, PAPER);
+    return;
+  }
+  rich(x + 3, y + h - 2, "[Esc] leave", INK, PAPER);
+}
+
+void Client::talk_key(SDL_Keycode k) {
+  auto close = [&] { send({{"t", "talk"}, {"k", "close"}}); over_ = Over::None; };
+  if (k == SDLK_ESCAPE) { close(); return; }
+  if (!snap_.contains("talk")) return;
+  auto& t = snap_["talk"];
+  std::string who = t.value("who", "");
+  bool up = k == SDLK_UP || k == SDLK_KP_8, down = k == SDLK_DOWN || k == SDLK_KP_2;
+  bool enter = k == SDLK_RETURN || k == SDLK_KP_ENTER;
+  if (who == "healer") {
+    if (k == SDLK_H) send({{"t", "talk"}, {"k", "heal"}});
+    else if (k == SDLK_P) send({{"t", "talk"}, {"k", "potion"}, {"p", "heal"}});
+    else if (k == SDLK_M) send({{"t", "talk"}, {"k", "potion"}, {"p", "mana"}});
+  } else if (who == "smith") {
+    auto gear = t.value("gear", json::array());
+    int n = int(gear.size());
+    if (!n) return;
+    if (up || down) { talk_sel_ = (talk_sel_ + (up ? n - 1 : 1)) % n; talk_el_ = -1; return; }
+    int e = gear[std::clamp(talk_sel_, 0, n - 1)].value("el", 0);
+    if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_KP_4 || k == SDLK_KP_6) {
+      int d = k == SDLK_LEFT || k == SDLK_KP_4 ? elem::N - 1 : 1;
+      int to = talk_el_ < 0 ? e : talk_el_;
+      do to = (to + d) % elem::N; while (to == e);
+      talk_el_ = to;
+    } else if (enter && talk_el_ >= 0 && talk_el_ != e) {
+      auto& g = gear[std::clamp(talk_sel_, 0, n - 1)];
+      send({{"t", "talk"}, {"k", "retune"}, {"id", g["id"]}, {"from", g["from"]}, {"e", talk_el_}});
+      talk_el_ = -1;
+    }
+  } else if (who == "guide" && t.contains("ways") && !t.value("open", false)) {
+    auto& ways = t["ways"];
+    int n = int(ways.size());
+    if (!n) return;
+    if (up || down) { talk_sel_ = (talk_sel_ + (up ? n - 1 : 1)) % n; return; }
+    int pick = k >= SDLK_1 && k < SDLK_1 + n ? int(k - SDLK_1) : enter ? talk_sel_ : -1;
+    if (pick >= 0) send({{"t", "talk"}, {"k", "way"}, {"z", ways[pick]["z"]}});
+  }
 }

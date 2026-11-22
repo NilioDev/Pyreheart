@@ -148,7 +148,7 @@ void Client::draw_frame_wide(int px, int ly) {
   std::string where;
   int frost = snap_.value("frost", 0);
   if (snap_.value("town", false)) where = "CHARNFEN";
-  else if (snap_.value("rest", false)) where = "A WAYSTATION · DEPTH " + std::to_string(snap_.value("depth", 0));
+  else if (snap_.value("camp", false)) where = "THE CAMP · " + upper(snap_.value("zname", std::string("the deep"))) + " · DEPTH " + std::to_string(snap_.value("depth", 0));
   else where = upper(snap_.value("zname", std::string("the deep"))) + " · DEPTH " + std::to_string(snap_.value("depth", 0));
   if (frost > 0) where += " · FROST " + std::to_string(frost);
   header(0, px, ly, where, 0x2550, 0x2563);
