@@ -78,7 +78,7 @@ static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
   if (h.el < 0) return {{"t", "coal"}, {"e", bot_force_elem >= 0 ? bot_force_elem : std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
-  if (g.floor->rest && g.depth > 0) {  // at a waystation's fire: a path where one is due, and a second coal for keys [2]-[3]
+  if (g.floor->camp) {  // at a camp fire: a path where one is due, and a second coal for keys [2]-[3]
     for (int s = 0; s < 3; ++s) if (h.srank[s] >= data::PATH_RANK && h.path[s] < 0) g.free_action(h, {{"t", "path"}, {"s", s}, {"c", (h.pid + s) % 2}});
     if (h.el2 < 0 && !std::getenv("BOTONECOAL")) {
       g.free_action(h, {{"t", "slotel"}, {"k", 2}});
@@ -103,14 +103,30 @@ static json choose(Game& g, Hero& h) {
     auto a = toward(g, h, at.x, at.y);
     if (!still(a)) return a;
   }
-  if (!h.carry.empty() && f.rest && f.fire.x >= 0 && cheb(h.x, h.y, f.fire.x, f.fire.y) > 1)
+  if (!h.carry.empty() && f.camp && f.fire.x >= 0 && cheb(h.x, h.y, f.fire.x, f.fire.y) > 1)
     for (int dy = -1; dy <= 1; ++dy)
       for (int dx = -1; dx <= 1; ++dx)
         if ((dx || dy) && f.walk(f.fire.x + dx, f.fire.y + dy)) {
           auto a = toward(g, h, f.fire.x + dx, f.fire.y + dy);
           if (!still(a)) return a;
         }
-  if (h.shopping) g.free_action(h, {{"t", "buyp"}, {"k", "heal"}});
+  if (f.camp) {  // Ysolde: healed once a camp, and the belt filled while the gold lasts
+    static std::set<std::pair<int, int>> visited;
+    if (visited.insert({f.id, h.pid}).second) {
+      h.talking = "healer";
+      g.free_action(h, {{"t", "talk"}, {"k", "heal"}});
+      for (int i = 0; i < 6; ++i) g.free_action(h, {{"t", "talk"}, {"k", "potion"}, {"p", "heal"}});
+      h.talking.clear();
+    }
+    if (f.exits.empty()) {  // old Ebb opens the way on: the dives spread over the routes
+      const auto& next = data::ACTS[g.route.back()].next;
+      if (!next.empty()) {
+        h.talking = "guide";
+        g.free_action(h, {{"t", "talk"}, {"k", "way"}, {"z", next[(g.depth + int(g.heroes.begin()->second->cls->key.size())) % next.size()]}});
+        h.talking.clear();
+      }
+    }
+  }
   // the keys the skills sit on now: [1] the weapon's, [2]-[5] the styles'
   auto slot = [&](const char* key) { for (size_t i = 0; i < h.cls->skills.size(); ++i) if (h.cls->skills[i] == key) return int(i) + 1; return 0; };
   // Shadowstep answers a blow by stepping behind the one who swings it
@@ -248,7 +264,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
   int steps = 0, last_depth = -1;
   std::string pace;  // the first hero's level as each new depth is reached (BOTPACE=1 prints it)
   while (g.state == "play" && steps < 20000) {
-    if (g.depth != last_depth) { last_depth = g.depth; pace += std::to_string(g.heroes.begin()->second->lvl) + (g.floor->rest ? "r " : " "); }
+    if (g.depth != last_depth) { last_depth = g.depth; pace += std::to_string(g.heroes.begin()->second->lvl) + (g.floor->camp ? "c " : " "); }
     std::map<int, json> acts;
     for (auto& [id, h] : g.heroes) if (h->present()) acts[id] = choose(g, *h);
     if (std::getenv("BOTACT")) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; std::printf("%5d %d,%d hp%d mp%d %s\n", g.turn + 1, h.x, h.y, h.hp, h.mana, a.dump().c_str()); }
@@ -279,7 +295,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
   for (auto& [id, h] : g.heroes) els += (els.empty() ? "" : "+") + std::string(h->el >= 0 ? elem::NAME[h->el] : "-");
   names += "/" + els;
   std::printf("%-22s seed %2llu: %-4s depth %2d%s turn %5d lvl %s kills %3d gold %4d | %s | %s\n", names.c_str(), (unsigned long long)seed,
-              g.state.c_str(), g.depth, g.floor->rest ? " (rest)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
+              g.state.c_str(), g.depth, g.floor->camp ? " (camp)" : "", g.turn, lvls.c_str(), kills, g.heroes.begin()->second->gold, way.c_str(),
               gear.c_str());
   if (std::getenv("BOTPACE")) std::printf("   pace (level at each depth): %s\n", pace.c_str());
   dive_depth = g.depth;

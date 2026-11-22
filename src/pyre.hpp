@@ -40,8 +40,8 @@ inline const Talent TALENTS[] = {
     {"sense", 2, 2, 2, "Treasure Sense", "On each new floor you know where the chests are (rank 1) and the shrines (rank 2)."},
     {"credit", 2, 2, 1, "Charnfen Credit", "Start each dive with 2 more healing potions."},
     {"goodeye", 2, 3, 3, "Good Eye", "Each rank: a 3% chance that a drop comes one rarity better."},
-    {"friend", 2, 4, 1, "Waystation Friend", "The waystation merchant has one more thing, and asks 10% less."},
-    {"forged", 2, 5, 1, "Spark-Forged", "Once a dive, at a waystation fire: roll your weapon's magic again. [f] by the fire."},
+    {"friend", 2, 4, 1, "Trader's Friend", "The trader in the camp has one more thing, and asks 10% less."},
+    {"forged", 2, 5, 1, "Spark-Forged", "Once a dive, at a camp fire: roll your weapon's magic again. [f] by the fire."},
 };
 inline constexpr int N = int(sizeof(TALENTS) / sizeof(TALENTS[0]));
 

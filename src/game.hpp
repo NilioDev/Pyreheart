@@ -86,6 +86,7 @@ struct Hero {
   std::map<std::string, int> perks;
   std::vector<std::vector<std::string>> perk_choices;
   bool dead = false, gone = false, away = false, drank = false, shopping = false;
+  std::string talking, talk_line;  // the helper the hero is talking to: healer (Ysolde), smith (Brann) or guide (old Ebb)
   bool god = false;  // the debug menu's: takes no harm
   int shield = 0, poison = 0, poison_dmg = 0, numb = 0, kills = 0;
   int focus = 0, standfast = 0, combo_id = 0, combo = 0;  // ranger's focus, warrior's Stand Fast, duelist's run of blows
@@ -97,7 +98,7 @@ struct Hero {
   // the elements: the coals taken (the first from Charnfen's great fire, -1 none yet), the stacks carried, the turns
   // the skills stay smothered by Ash, and the foes' discharges already warned of
   int el = -1, el2 = -1, smother = 0;
-  // at a waystation's fire: the path taken in each style at rank 5 (-1 none yet), and which coal each key [1]-[5] lays
+  // at a camp fire: the path taken in each style at rank 5 (-1 none yet), and which coal each key [1]-[5] lays
   // (0 the first, 1 the second)
   int path[3] = {-1, -1, -1};
   std::string killer;  // what slew it, for its grave
@@ -179,6 +180,8 @@ struct Floor {
   int depth = 1, act = 0, id = 0, version = 0;
   int w = 76, h = 42;  // the part of the map in use
   bool rest = false, deep = false;
+  bool camp = false;  // the helpers' camp in a boss room, after its boss fell: the waystation of the zone
+  bool resting() const { return rest || camp; }  // the fire, the coals and the rekindling work here
   std::vector<int> t = std::vector<int>(W * H, data::WALL);
   std::map<int, std::string> writings;
   std::vector<FloorItem> items;
@@ -200,9 +203,10 @@ struct Floor {
   std::vector<Sleeper> sleepers;
   std::vector<std::pair<P, int>> coals;  // Charnfen: the coals at the edge of the great fire, and their elements
   P rack{-1, -1};                        // Charnfen: the gatekeeper's rack of first weapons
-  P fire{-1, -1};                        // a waystation: the fire to rest by (paths, keys, a second coal)
+  P fire{-1, -1};                        // the camp: the fire to rest by (paths, keys, a second coal)
+  P camp_at{-1, -1};                     // the camp: where the boss fell and the fire burns
   std::vector<std::pair<P, int>> embers; // co-op: where a fallen hero's ember lies, and whose
-  std::map<int, int> exits;  // in a waystation: the stairs down (cell index) and the zone each leads to
+  std::map<int, int> exits;  // in a camp: the ways down Ebb opened (cell index) and the zone each leads to
   bool burning(int x, int y) const { for (auto& g : ground) if ((g.kind == G_EMBER || g.kind == G_FIRE) && g.p == P{x, y}) return true; return false; }
   const Ground* ground_at(int x, int y) const { for (auto& g : ground) if (g.p == P{x, y}) return &g; return nullptr; }
   int tile(int x, int y) const { return x >= 0 && x < W && y >= 0 && y < H ? t[y * W + x] : data::WALL; }
@@ -235,6 +239,8 @@ const SkillDef& skill_def(const std::string& key);
 
 class Game {
  public:
+  int retune_price() const { return 40 + 8 * lvl; }
+  int potion_price() const { return 25 + 5 * lvl; }
   explicit Game(uint64_t seed, int frost = 0);
   uint64_t seed = 0;  // the dive's seed: each map is made from it, its zone and which of the zone's maps it is
   int frost = 0;                  // the Frost level: 0 the game as it is, each one up harder foes and better loot
@@ -287,18 +293,21 @@ class Game {
   double scaled_ = 1.0;
   std::vector<int> dist_;
 
-  std::unique_ptr<Floor> make_floor(int depth, bool rest);
-  std::unique_ptr<Floor> make_floor_from(int d, bool rest);
+  std::unique_ptr<Floor> make_floor(int depth);
+  std::unique_ptr<Floor> make_floor_from(int d);
   std::unique_ptr<Floor> make_town(const std::vector<std::string>& rows);
   void debug(Hero& h, const std::string& what);
-  void build_waystation(Floor& f);
+  void make_camp(Floor& f, P at);
+  void open_way(Hero& h, int zone);
+  void talk(Hero& h, const json& a);
+  void retune(Hero& h, int id, const std::string& from, int to);
   void build_rooms(Floor& fl, int d, bool boss_floor);
   void furnish(Floor& fl, const std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>> treasure);
   void zone_foes(Floor& fl);  // zones.cpp
   bool build_zone(Floor& fl, bool boss_floor, std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>>& treasure);  // zones.cpp
   bool build_deep(Floor& fl, char entry, bool last, char& exit_side);  // deep.cpp
   char deep_exit_ = 'N';
-  int chosen_ = -1;      // the zone the party took the stairs to, from a waystation
+  int chosen_ = -1;      // the zone the party took the stairs to, from a camp
   void set_level();
   void dress(Floor& fl, const k5::Plan& plan);  // dress.cpp
   void dress_deep(Floor& fl, std::vector<std::vector<P>> plates);
@@ -378,7 +387,7 @@ class Game {
   bool credit_weapon_ = false;  // and whether it was dealt with the weapon in hand
   void learn(Mon& m);           // a kill teaches each hero who hurt it, by what did the work
   void fire_action(Hero& h, const std::string& t, const json& a);
-  void embers_tick();  // co-op: ghosts follow, embers are picked up and carried to a waystation's fire
+  void embers_tick();  // co-op: ghosts follow, embers are picked up and carried to a camp fire
   void ember_out(Hero& o, const std::string& why);
   void take_weapon(Hero& h, const std::string& kind);
   void offer_perk(Hero& h);

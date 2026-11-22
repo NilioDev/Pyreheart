@@ -95,7 +95,18 @@ Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, 99)), rnd(st
     if (rows.empty()) rows.assign(town::MAP, town::MAP + town::ROWS);
     floor = make_town(rows);
     depth = 0;
-  } else floor = make_floor(depth, std::getenv("PYREHEART_REST") != nullptr);  // PYREHEART_REST=1: the waystation after it
+  } else {
+    floor = make_floor(depth);
+    // PYREHEART_REST=1: the boss map with its boss already fallen and the helpers' camp up
+    if (std::getenv("PYREHEART_REST") && floor->boss) {
+      P at = floor->boss->x >= 0 ? P{floor->boss->x, floor->boss->y} : floor->down;
+      floor->mons.erase(std::remove(floor->mons.begin(), floor->mons.end(), floor->boss), floor->mons.end());
+      floor->boss = nullptr;
+      floor->mons.erase(std::remove_if(floor->mons.begin(), floor->mons.end(), [](const MonP& m) { return !m->dormant; }), floor->mons.end());
+      make_camp(*floor, at);
+      std::fprintf(stderr, "CAMP %d %d\n", floor->fire.x, floor->fire.y);  // for screenshot tools
+    }
+  }
 }
 
 // Charnfen, from its hand-drawn rows
@@ -256,6 +267,7 @@ void Game::place(Hero& h) {
     h.seen.assign(W * H, 1);
     return;
   }
+  if (std::getenv("PYREHEART_REST") && floor->camp && free_near(floor->fire.x, floor->fire.y + 2, 4, s)) { h.x = s.x; h.y = s.y; return; }
   if (std::getenv("PYREHEART_BOSS") && floor->boss) {
     auto& b = *floor->boss;
     if (free_near(b.x, b.y, 8, s, [&](int x, int y) { return floor->walk(x, y) && cheb(x, y, b.x, b.y) >= 4; })) { h.x = s.x; h.y = s.y; return; }
@@ -412,26 +424,25 @@ void Game::rescale() {
 // ------------------------------------------------------------------ the floors
 // Each map is made from its own seed: the dive's seed, the zone and which of the zone's maps it is. So a map someone
 // reports can be made again exactly (PYREHEART_SEED, PYREHEART_ZONE, PYREHEART_ZFLOOR), whatever happened before it.
-std::unique_ptr<Floor> Game::make_floor(int d, bool rest) {
-  uint64_t fs = seed ^ (uint64_t(route.back() + 1) * 0x9E3779B97F4A7C15ull) ^ (uint64_t(zfloor + 1) * 0xC2B2AE3D27D4EB4Full) ^ (rest ? 0x165667B19E3779F9ull : 0);
+std::unique_ptr<Floor> Game::make_floor(int d) {
+  uint64_t fs = seed ^ (uint64_t(route.back() + 1) * 0x9E3779B97F4A7C15ull) ^ (uint64_t(zfloor + 1) * 0xC2B2AE3D27D4EB4Full);
   fs ^= fs >> 31; fs *= 0xBF58476D1CE4E5B9ull; fs ^= fs >> 29;
   Rng keep = rnd;
   rnd = Rng(fs);
-  auto out = make_floor_from(d, rest);
+  auto out = make_floor_from(d);
   rnd = keep;
   rnd.g.discard(1);
   return out;
 }
 
-std::unique_ptr<Floor> Game::make_floor_from(int d, bool rest) {
+std::unique_ptr<Floor> Game::make_floor_from(int d) {
   auto f = std::make_unique<Floor>();
-  f->depth = d; f->act = route.back(); f->rest = rest; f->id = floor_ids_++;
+  f->depth = d; f->act = route.back(); f->id = floor_ids_++;
   Floor* old = floor.release();
   floor.reset(f.release());
   delete old;
   Floor& fl = *floor;
   set_level();
-  if (rest) { build_waystation(fl); return std::move(floor); }
   int act = fl.act;
   const ActDef& zone = ACTS[act];
   bool boss_floor = zfloor == zone.floors - 1;
@@ -636,39 +647,155 @@ void Game::furnish(Floor& fl, const std::vector<std::vector<P>>& rooms, std::vec
   }
 }
 
-void Game::build_waystation(Floor& f) {
-  // one stair down for each way on from the zone behind you; '1' and '2' are the stairs to the first and second
-  const auto& next = ACTS[route.back()].next;
-  std::vector<std::string> art = {
-      "##########################",
-      "#...........M............#",
-      "#..{....................1#",
-      "#........................#",
-      "#<..........F............#",
-      "#........................#",
-      "#.......................2#",
-      "##########################"};
-  if (next.size() < 2) { art[2][24] = '.'; art[6][24] = '.'; art[4][24] = '1'; }
-  int ox = (W - int(art[0].size())) / 2, oy = (H - int(art.size())) / 2;
-  f.w = W; f.h = H;
-  for (int j = 0; j < int(art.size()); ++j)
-    for (int i = 0; i < int(art[j].size()); ++i) {
-      int x = ox + i, y = oy + j;
-      char ch = art[j][i];
-      f.t[y * W + x] = ch == '#' ? WALL : ch == 'F' ? CAMPFIRE : ch == '{' ? FOUNTAIN : ch == '<' ? UPSTAIRS : (ch == '1' || ch == '2') ? STAIRS : FLOOR;
-      if (ch == '<') f.up = {x, y};
-      if (ch == 'F') f.fire = {x, y};
-      if (ch == '1' || ch == '2') {
-        int k = ch - '1';
-        if (k < int(next.size())) f.exits[y * W + x] = next[k];
-        if (k == 0) f.down = {x, y};
+// The helpers' camp (plan.md section 6): when a zone's boss falls, the helpers from Charnfen come down behind the heroes
+// and make camp where it stood: the fire, a ring of stones and bedrolls, and round it Ysolde, Brann, the trader and old
+// Ebb with their things. The boss room is the zone's waystation now; the ways on open when Ebb is asked.
+void Game::make_camp(Floor& f, P at) {
+  std::vector<char> used(W * H, 0);
+  for (auto& fi : f.items) used[fi.y * W + fi.x] = 1;
+  for (auto& [p, pid] : f.embers) used[p.y * W + p.x] = 1;
+  for (auto& [id, h] : heroes) if (h->x >= 0) used[h->y * W + h->x] = 1;
+  for (auto& m : f.mons) if (m->hp > 0) used[m->y * W + m->x] = 1;
+  auto open_ground = [&](int x, int y) {
+    int t = f.tile(x, y);
+    return f.walk(x, y) && !way_down(t) && t != UPSTAIRS && t != GRATE && !used[y * W + x];
+  };
+  // a thing that stands in the way only goes where all round it is open, so no passage is ever shut
+  auto roomy = [&](int x, int y) {
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx)
+        if ((dx || dy) && (!f.walk(x + dx, y + dy) || way_down(f.tile(x + dx, y + dy)))) return false;
+    return true;
+  };
+  auto place = [&](int dx, int dy, int tile) -> P {
+    int best = -1, bd = 1 << 30;
+    bool block = tile >= 0 && blocks(tile);
+    for (int y = 1; y < H - 1; ++y)
+      for (int x = 1; x < W - 1; ++x) {
+        if (!open_ground(x, y) || (block && !roomy(x, y))) continue;
+        int d = (x - at.x - dx) * (x - at.x - dx) + (y - at.y - dy) * (y - at.y - dy);
+        if (d < bd) { bd = d; best = y * W + x; }
       }
-      if (ch == 'M') { f.merchant = {x, y}; f.has_merchant = true; }
-    }
+    if (best < 0 || bd > 64) return {-1, -1};  // too far from the fire to belong to the camp
+    used[best] = 1;
+    if (tile >= 0) f.set(best % W, best / W, tile);
+    return {best % W, best / W};
+  };
+  // a cramped room (the Webmother's nest) draws the camp in closer round the fire
+  int room = 0;
+  for (int y = at.y - 6; y <= at.y + 6; ++y)
+    for (int x = at.x - 12; x <= at.x + 12; ++x) if (f.walk(x, y)) ++room;
+  int hx = room > 180 ? 9 : 5, hy = room > 180 ? 4 : 3;
+  P fire = place(0, 0, CAMPFIRE);
+  if (fire.x < 0) return;
+  at = fire;
+  f.fire = fire;
+  f.camp_at = fire;
+  for (int dy = -1; dy <= 1; ++dy)
+    for (int dx = -1; dx <= 1; ++dx)
+      if ((dx || dy) && open_ground(at.x + dx, at.y + dy)) { f.set(at.x + dx, at.y + dy, STONES); used[(at.y + dy) * W + at.x + dx] = 1; }
+  for (auto [dx, dy] : std::vector<P>{{-3, 1}, {3, 1}, {-2, -3}, {2, -3}, {-1, 3}, {2, 3}}) place(dx, dy, HIDE);
+  // Ysolde with her kettle, herbs and bandages
+  place(-hx, -hy, HEALER); place(-hx - 1, -hy, BANDAGE); place(-hx - 2, -hy, HIDE); place(-hx + 1, -hy - 1, CANDLE);
+  // Brann at his anvil, his brazier and tongs
+  place(hx, -hy, SMITH); place(hx + 1, -hy - 1, ANVIL); place(hx + 2, -hy, BRAZIER); place(hx + 2, -hy + 1, TONGS);
+  // the trader at his cart and crates
+  P m = place(-hx, hy, -1);
+  if (m.x >= 0) { f.has_merchant = true; f.merchant = m; }
+  place(-hx - 1, hy, CART); place(-hx + 1, hy - 1, CRATE); place(-hx + 1, hy + 1, CRATE); place(-hx - 1, hy + 1, KEG);
+  // old Ebb with his book of the dead, candles and spade
+  place(hx, hy, DIGGER); place(hx + 1, hy, LEDGER); place(hx + 2, hy, CANDLE); place(hx + 1, hy + 1, SHOVEL);
+  f.camp = true;
+  f.shop.clear();
   auto kinds = party_kinds();
   int wares = 5;
   for (auto& [id, h] : heroes) if (h->tal("friend")) wares = 6;
   for (int i = 0; i < wares; ++i) f.shop.push_back(roll_loot(lvl + 1, kinds, "", "magic"));
+  add_fx({{"k", "rise"}, {"x", at.x}, {"y", at.y}, {"col", 0xFFB040}});
+  say_all(lore::CAMP, 0xD2B48C);
+  for (auto* h : living()) {
+    h->drank = false;
+    if (h->tal("forged") && !h->forged) h->say("The Spark in you could reforge your weapon's magic at the camp fire, once this dive: [r].", 0xFFB040);
+    bool due = false;
+    for (int s = 0; s < 3; ++s) if (h->srank[s] >= PATH_RANK && h->path[s] < 0) due = true;
+    if (due) h->say("A path waits for you at the fire. Walk into it.", 0xFFE680);
+    else if (h->known.size() > 4) h->say("More skills wait than your keys hold. Walk into the fire to choose.", 0xFFE680);
+    else tip(*h, "fire", "Rest by the fire: walk into it to set your keys, choose a path, or take a second coal.");
+    tip(*h, "camp", "Walk into a helper to talk: Ysolde heals, Brann works your gear, the trader buys and sells, and old Ebb opens the way on.");
+  }
+}
+
+// Old Ebb opens the way to the zone the hero chose: a stair near the camp, each zone its own way of opening.
+void Game::open_way(Hero& h, int zone) {
+  Floor& f = *floor;
+  const auto& next = ACTS[route.back()].next;
+  if (!f.camp || std::find(next.begin(), next.end(), zone) == next.end()) return;
+  for (auto [i, z] : f.exits) { h.say("Ebb taps the book. \"The way to " + ACTS[z].name + " is open. One way a camp.\"", 0x9696AA); return; }
+  P c = f.camp_at;
+  int best = -1, bd = 1 << 30;
+  for (int y = 1; y < H - 1; ++y)
+    for (int x = 1; x < W - 1; ++x) {
+      int t = f.tile(x, y);
+      if (!f.walk(x, y) || way_down(t) || t == UPSTAIRS || hero_at(x, y) || mon_at(x, y)) continue;
+      bool by_stair = false;
+      for (auto [i, z] : f.exits) if (cheb(x, y, i % W, i / W) < 4) by_stair = true;
+      int d = cheb(x, y, c.x, c.y);
+      if (by_stair || d < 5) continue;  // a little way off the fire, and apart from the other way
+      int score = std::abs(d - 6) * 10 + (x < c.x ? 5 : 0);
+      if (score < bd) { bd = score; best = y * W + x; }
+    }
+  if (best < 0) return;
+  int x = best % W, y = best / W;
+  for (auto& fi : f.items) if (fi.x == x && fi.y == y) { fi.x = c.x + 1; fi.y = c.y + 2; }
+  f.set(x, y, STAIRS);
+  f.exits[best] = zone;
+  f.down = {x, y};
+  add_fx({{"k", "rise"}, {"x", x}, {"y", y}, {"col", 0xFFE678}});
+  add_fx({{"k", "quake"}, {"x", x}, {"y", y}, {"dur", 1.8}});
+  say_all(lore::WAY_OPENS[route.back()] + " The way to " + ACTS[zone].name + " is open.", 0xD2B48C);
+  h.talking.clear();
+}
+
+// A helper's window: the keys the client sends while talking (plan.md section 6).
+void Game::talk(Hero& h, const json& a) {
+  std::string k = a.value("k", "");
+  if (k == "close") { h.talking.clear(); return; }
+  if (h.talking == "healer") {
+    if (k == "heal") {
+      if (h.drank) { h.say("Ysolde shakes her head. \"Once a camp. The rest your body does itself.\"", 0xAADCAA); return; }
+      h.drank = true;
+      Stats st = stats(h);
+      h.hp = st.maxhp; h.mana = st.maxmana; h.poison = 0;
+      h.say("Ysolde binds your wounds. You feel whole again.", 0xAADCAA);
+      if (h.scars > 0) h.say("\"The scars I cannot mend. Those you carry.\"", 0xAADCAA);
+      add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", 0xAADCAA}});
+    } else if (k == "potion") buy_potion(h, a.value("p", ""));
+  } else if (h.talking == "smith" && k == "retune") {
+    retune(h, a.value("id", 0), a.value("from", ""), a.value("e", -1));
+  } else if (h.talking == "guide" && k == "way") {
+    open_way(h, a.value("z", -1));
+  }
+}
+
+// Brann turns one resistance on a worn thing into another element, for gold.
+void Game::retune(Hero& h, int id, const std::string& from, int to) {
+  static const char* RES[elem::N] = {"res_fire", "res_cold", "res_ash", "res_poison", "res_blood"};
+  if (to < 0 || to >= elem::N || from.rfind("res_", 0) != 0) return;
+  ItemP it;
+  for (auto& [slot, i] : h.equip) if (i->id == id) it = i;
+  if (!it || from == RES[to]) return;
+  auto st = std::find_if(it->stats.begin(), it->stats.end(), [&](auto& p) { return p.first == from; });
+  if (st == it->stats.end()) return;
+  int price = retune_price();
+  if (h.gold < price) { h.say("Brann grunts. \"" + std::to_string(price) + " gold, and not a coin less.\"", 0xC8966E); return; }
+  h.gold -= price;
+  int v = st->second;
+  it->stats.erase(st);
+  auto same = std::find_if(it->stats.begin(), it->stats.end(), [&](auto& p) { return p.first == RES[to]; });
+  if (same != it->stats.end()) same->second += v; else it->stats.push_back({RES[to], v});
+  refit(h);
+  h.say("Brann's hammer rings. " + it->name + " now turns " + elem::NAME[to] + " instead.", 0xC8966E);
+  add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", elem::COL[to]}});
 }
 
 MonP Game::spawn(const std::string& key, int x, int y) {
@@ -737,18 +864,17 @@ void Game::next_floor() {
     if (auto it = heroes.find(pid); it != heroes.end()) ember_out(*it->second, "it was left behind in the dark");
   floor->embers.clear();
   bool from_town = floor->depth == 0;  // down from Charnfen: the first map of the first zone
-  bool was_rest = floor->rest && !from_town;
-  const ActDef& zone = ACTS[route.back()];
-  // after a zone's boss comes a waystation, and from there the stairs the party took lead into the next zone
-  bool to_rest = !from_town && !was_rest && zfloor == zone.floors - 1;
+  bool was_camp = floor->camp && !from_town;
+  // from a camp, the way Ebb opened (the one the party took) leads into the next zone
   if (from_town) zfloor = 0;
-  else if (was_rest) {
+  else if (was_camp) {
+    const ActDef& zone = ACTS[route.back()];
     route.push_back(chosen_ >= 0 ? chosen_ : zone.next.empty() ? route.back() : zone.next[0]);
     zfloor = 0;
     chosen_ = -1;
-  } else if (!to_rest) ++zfloor;
-  if (!to_rest) ++depth;  // Charnfen is depth 0, so the Crypt's first map is depth 1
-  floor = make_floor(depth, to_rest);
+  } else ++zfloor;
+  ++depth;  // Charnfen is depth 0, so the Crypt's first map is depth 1
+  floor = make_floor(depth);
   scaled_ = 1.0;
   rescale();
   for (auto& [id, h] : heroes) {
@@ -757,37 +883,24 @@ void Game::next_floor() {
       for (int i = 0; i < W * H; ++i) if (floor->t[i] == CHEST || (r >= 2 && floor->t[i] == SHRINE)) h->seen[i] = 1;
   }
   for (auto& [id, h] : heroes) {
-    h->gone = false; h->shopping = false; h->drank = false;
+    h->gone = false; h->shopping = false; h->drank = false; h->talking.clear();
     if (!h->away && !h->lost) place(*h);  // the living, and the ghosts who walk with them
   }
-  if (to_rest) {
-    say_all(lore::WAYSTATION, 0xD2B48C);
-    for (auto* h : living())
-      if (h->tal("forged") && !h->forged) h->say("The Spark in you could reforge your weapon's magic here, once this dive: [r].", 0xFFB040);
-    for (auto* h : living()) {  // the fire: keys, paths and a second coal
-      bool due = false;
-      for (int s = 0; s < 3; ++s) if (h->srank[s] >= PATH_RANK && h->path[s] < 0) due = true;
-      if (due) h->say("A path waits for you at the fire. Walk into it.", 0xFFE680);
-      else if (h->known.size() > 4) h->say("More skills wait than your keys hold. Walk into the fire to choose.", 0xFFE680);
-      else tip(*h, "fire", "Rest by the fire: walk into it to set your keys, choose a path, or take a second coal.");
-    }
-    auto& next = ACTS[route.back()].next;
-    if (next.size() > 1)
-      say_all("Two stairs lead on: to " + ACTS[next[0]].name + " and to " + ACTS[next[1]].name + ". Look at them with [l].",
-              0xA0A0A0);
-  } else {
-    if (zfloor == 0) {
-      auto& open = lore::ACT_OPEN[floor->act];
-      say_all(open[0] + ": " + open[1], 0xFFD27F);
-    }
-    say_all("Depth " + std::to_string(depth) + ". " + ACTS[floor->act].name + ".", 0xA0A0A0);
+  if (zfloor == 0) {
+    auto& open = lore::ACT_OPEN[floor->act];
+    say_all(open[0] + ": " + open[1], 0xFFD27F);
   }
+  say_all("Depth " + std::to_string(depth) + ". " + ACTS[floor->act].name + ".", 0xA0A0A0);
   look();
 }
 
 // ------------------------------------------------------------------ the debug menu's tools, for testing
 void Game::debug(Hero& h, const std::string& w) {
-  if (w == "heal") {
+  if (w == "talk healer" || w == "talk smith" || w == "talk guide") {  // a helper's window without walking to them
+    h.talking = w.substr(5);
+    const auto& lines = h.talking == "healer" ? lore::YSOLDE : h.talking == "smith" ? lore::BRANN : lore::EBB;
+    h.talk_line = h.talking == "guide" && floor->depth == 0 ? lore::EBB_TOWN : lines[0];
+  } else if (w == "heal") {
     Stats st = stats(h);
     h.hp = st.maxhp; h.mana = st.maxmana; h.poison = 0; h.dead = false;
     h.say("[debug] Healed in full.", 0x80C0FF);
@@ -819,6 +932,7 @@ bool Game::free_action(Hero& h, const json& a) {
   if (t == "buyp") { buy_potion(h, a.value("k", "")); return true; }
   if (t == "sell") { sell(h, a.value("id", 0)); return true; }
   if (t == "close") { h.shopping = false; return true; }
+  if (t == "talk") { talk(h, a); return true; }
   if (t == "debug") { debug(h, a.value("w", "")); return true; }
   if (t == "path" || t == "slot" || t == "slotel") { fire_action(h, t, a); return true; }
   if (t == "talents") {  // the Pyre by Charnfen's great fire: the gifts change before the hero goes down
@@ -855,10 +969,16 @@ void Game::step(const std::map<int, json>& actions) {
   }
   embers_tick();
   check_stairs();
-  if (!floor->rest || floor->depth == 0) monsters();
+  if (floor->camp) {  // their master fallen, the last of the boss's kin slink off into the dark: the camp is safe ground
+    auto& ms = floor->mons;
+    size_t was = ms.size();
+    ms.erase(std::remove_if(ms.begin(), ms.end(), [&](const MonP& m) { return m != floor->boss && !m->dormant; }), ms.end());
+    if (ms.size() != was) say_all("With their master fallen, the last of them slink off into the dark.", 0xA0A0A0);
+  }
+  if (!floor->resting() || floor->depth == 0) monsters();
   tick();
   look();
-  if (!floor->rest) { wake_dead(); look(); }
+  if (!floor->resting()) { wake_dead(); look(); }
   if (living().empty() && !heroes.empty() && state == "play") {
     state = "over";
     say_all("The dark takes the last of you. Charnfen waits in vain.", 0xFF6060);
@@ -876,7 +996,7 @@ void Game::act(Hero& h, const json& a) {
     h.say("Rime stiffens your legs; the step comes slow.", elem::COL[elem::RIME]);
     return;
   }
-  if (t == "coal") { if (floor->depth == 0 || floor->rest) take_coal(h, a.value("e", -1)); return; }
+  if (t == "coal") { if (floor->depth == 0 || floor->resting()) take_coal(h, a.value("e", -1)); return; }
   if (t == "rack") { if (floor->depth == 0) take_weapon(h, a.value("w", "")); return; }
   if (t == "move") move(h, std::clamp(a.value("dx", 0), -1, 1), std::clamp(a.value("dy", 0), -1, 1));
   else if (t == "skill") skill(h, a.value("n", 0), a.value("x", 0), a.value("y", 0));
@@ -894,11 +1014,18 @@ void Game::move(Hero& h, int dx, int dy) {
   if (!dx && !dy) return;
   int nx = h.x + dx, ny = h.y + dy;
   h.shopping = false;
+  h.talking.clear();
   if (auto m = mon_at(nx, ny)) { melee(h, *m); return; }
   if (hero_at(nx, ny)) return;
   if (floor->has_merchant && floor->merchant == P{nx, ny}) {
     h.shopping = true;
     h.say("The trader nods. 'Dwarf gold spends the same as any.'", 0xD2B48C);
+    return;
+  }
+  if (int ht = floor->tile(nx, ny); ht == HEALER || ht == SMITH || ht == DIGGER) {  // the helpers: a word and their window
+    const auto& lines = ht == HEALER ? lore::YSOLDE : ht == SMITH ? lore::BRANN : lore::EBB;
+    h.talking = ht == HEALER ? "healer" : ht == SMITH ? "smith" : "guide";
+    h.talk_line = ht == DIGGER && floor->depth == 0 ? lore::EBB_TOWN : lines[rnd.below(int(lines.size()))];
     return;
   }
   switch (floor->tile(nx, ny)) {
@@ -1016,8 +1143,8 @@ void Game::check_stairs() {
     }
     return;
   }
-  if (floor->exits.size() > 1) {
-    // two ways down: the party goes together, the way most of them stand on (the first hero's if it is even)
+  if (!floor->exits.empty()) {
+    // the ways Ebb opened: the party goes together, the way most of them stand on (the first hero's if it is even)
     std::map<int, int> votes;
     for (auto* h : alive) ++votes[floor->exits.count(h->y * W + h->x) ? floor->exits[h->y * W + h->x] : -1];
     int way = floor->exits.count(alive[0]->y * W + alive[0]->x) ? floor->exits[alive[0]->y * W + alive[0]->x] : -1;
@@ -1410,7 +1537,7 @@ void Game::kill(Mon& m, Hero* by) {
     if (final_floor()) {
       state = "won";
       for (auto& l : lore::VICTORY) say_all(l, 0xFFD27F);
-    } else floor->set(floor->down.x, floor->down.y, STAIRS);
+    } else make_camp(*floor, {m.x, m.y});
   }
 }
 
@@ -2135,8 +2262,8 @@ void Game::buy(Hero& h, int i) {
 }
 
 void Game::buy_potion(Hero& h, const std::string& k) {
-  if (!h.shopping) return;
-  int price = 25 + 5 * lvl;
+  if (h.talking != "healer") return;  // only Ysolde sells potions
+  int price = potion_price();
   if (h.gold < price) { h.say("You cannot pay " + std::to_string(price) + " gold.", 0x909090); return; }
   if (k == "heal" && h.heal < belt(h)) { ++h.heal; h.gold -= price; }
   else if (k == "mana" && h.mana_pots < BELT_MAX) { ++h.mana_pots; h.gold -= price; }
@@ -2399,8 +2526,8 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
     if (!living().empty()) {  // co-op: the ember drops where the hero fell, and the hero walks on as a ghost
       floor->embers.push_back({{h.x, h.y}, h.pid});
       add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", elem::COL[elem::EMBER]}});
-      say_all(h.name + "'s ember lies where they fell. Carry it to a waystation's fire to rekindle them.", 0xFFA040);
-      h.say("You walk on as a ghost. Your friends can carry your ember to a waystation's fire.", 0xA0A0A0);
+      say_all(h.name + "'s ember lies where they fell. Carry it to the fire of the next camp to rekindle them.", 0xFFA040);
+      h.say("You walk on as a ghost. Your friends can carry your ember to the fire of the next camp.", 0xA0A0A0);
       for (auto* o : living()) tip(*o, "ember", "Walk over a fallen friend's ember to carry it. It glows: foes see you from further off, and every third turn its weight holds you back.");
     }
     check_stairs();
@@ -2587,10 +2714,10 @@ ItemP Game::roll_loot(int d, const std::vector<std::string>& kinds, const std::s
   return it;
 }
 
-// Spark-Forged: once a dive, at a waystation, the weapon's magic is rolled again (the same kind of weapon, as good)
+// Spark-Forged: once a dive, at a camp fire, the weapon's magic is rolled again (the same kind of weapon, as good)
 void Game::forge(Hero& h) {
   if (!h.tal("forged")) return;
-  if (!floor->rest) { h.say("Only at a waystation's fire.", 0x909090); return; }
+  if (!floor->camp) { h.say("Only at a camp's fire.", 0x909090); return; }
   if (h.forged) { h.say("The Spark has already reforged once this dive.", 0x909090); return; }
   auto wi = h.equip.find("weapon");
   if (wi == h.equip.end() || wi->second->rarity == "normal" || wi->second->rarity == "unique") {
