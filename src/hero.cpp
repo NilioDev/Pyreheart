@@ -126,8 +126,8 @@ void Game::learn(Mon& m) {
         h.say("Your " + sd.name + " grows: rank " + std::to_string(h.srank[s]) + ".", sd.col);
         if (h.srank[s] % 2 == 0) offer_perk(h);
         if (h.srank[s] == PATH_RANK && h.path[s] < 0) {
-          h.say(sd.name + " rank " + std::to_string(PATH_RANK) + ": two paths open. Choose one at a waystation's fire.", 0xFFE680);
-          tip(h, "path", "A path is chosen at the fire of a waystation, after a zone's great foe. Walk into the fire.");
+          h.say(sd.name + " rank " + std::to_string(PATH_RANK) + ": two paths open. Choose one at a camp fire.", 0xFFE680);
+          tip(h, "path", "A path is chosen at the camp fire, after a zone's great foe. Walk into the fire.");
         }
         for (size_t i = 0; i < sd.skills.size(); ++i)
           if (STYLE_RANKS[i] == h.srank[s] && std::find(h.known.begin(), h.known.end(), sd.skills[i]) == h.known.end()) {
@@ -135,7 +135,7 @@ void Game::learn(Mon& m) {
             int slot = int(h.known.size()) + 1;
             const SkillDef& sk = skill_def(sd.skills[i]);
             if (slot <= 5) h.say("You learn " + sk.name + ": [" + std::to_string(slot) + "]. " + sk.about + ".", 0xFFE680);
-            else h.say("You learn " + sk.name + ". Your keys are full; it waits for the fire at a waystation.", 0xFFE680);
+            else h.say("You learn " + sk.name + ". Your keys are full; it waits for the camp fire.", 0xFFE680);
             add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", sd.col}});
           }
       }
@@ -166,10 +166,10 @@ void Game::learn(Mon& m) {
   }
 }
 
-// At a waystation's fire: take a path where a style reached rank 5, put a known skill on a key, or set a key to the
+// At a camp fire: take a path where a style reached rank 5, put a known skill on a key, or set a key to the
 // second coal. All free: the fire waits.
 void Game::fire_action(Hero& h, const std::string& t, const json& a) {
-  if (!floor->rest || floor->depth == 0) { h.say("Only at a waystation's fire.", 0x909090); return; }
+  if (!floor->camp) { h.say("Only at a camp's fire.", 0x909090); return; }
   if (t == "path") {
     int s = a.value("s", -1), c = a.value("c", -1);
     if (s < 0 || s > 2 || c < 0 || c > 1 || h.path[s] >= 0 || h.srank[s] < PATH_RANK) return;
@@ -259,7 +259,7 @@ void Game::ember_out(Hero& o, const std::string& why) {
 }
 
 // Each turn: a ghost drifts after the nearest living friend; a living hero who steps on an ember takes it up; a carrier
-// who reaches a waystation's fire rekindles the friend, who wakes there scarred.
+// who reaches a camp fire rekindles the friend, who wakes there scarred.
 void Game::embers_tick() {
   auto alive = living();
   if (alive.empty()) return;
@@ -284,7 +284,7 @@ void Game::embers_tick() {
       std::string who = it == heroes.end() ? "a friend" : it->second->name;
       say_all(h->name + " takes up " + who + "'s ember. It glows in their hands.", 0xFFA040);
     }
-  if (floor->rest && floor->fire.x >= 0)
+  if (floor->camp && floor->fire.x >= 0)
     for (auto* h : alive) {
       if (h->carry.empty() || cheb(h->x, h->y, floor->fire.x, floor->fire.y) > 1) continue;
       for (int pid : h->carry) {

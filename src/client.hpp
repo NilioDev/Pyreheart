@@ -26,7 +26,7 @@ class Client {
 
  private:
   enum class Screen { Intro, Title, Name, Class, Join, Finding, Listen, Pyre, Game };
-  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal, Rack, Fire, Grave, Pyre };
+  enum class Over { None, Pack, Perk, Shop, Book, Target, Menu, Ring, Epigraph, Debug, Hero, Options, Coal, Rack, Fire, Grave, Pyre, Talk };
   tcod::Context& ctx_;
   tcod::Console con_;
   Layout layout_ = Layout::Wide;
@@ -150,7 +150,7 @@ class Client {
   int rack_sel_ = 0;
   void draw_rack_window();
   void rack_key(SDL_Keycode k);
-  int fire_sel_ = 0, fire_mark_ = -1, fire_coal_ = 0;  // the waystation fire: the row chosen, the key marked to swap, a second coal
+  int fire_sel_ = 0, fire_mark_ = -1, fire_coal_ = 0;  // the camp fire: the row chosen, the key marked to swap, a second coal
   int fire_rows();
   void draw_fire_window();
   void fire_key(SDL_Keycode k);
@@ -240,7 +240,10 @@ class Client {
   void pyre_key(SDL_Keycode k);
   void queue_epigraph(const std::string& zone);
   void draw_epigraph();
-  void draw_route();
+  int route_chart(int x0, int y0, int w, int bg, const std::vector<int>& choosable);  // the zones, the way taken in gold
+  void draw_talk();
+  void talk_key(SDL_Keycode k);
+  int talk_sel_ = 0, talk_el_ = -1;
   void put(int x, int y, int ch, int fg, int bg = -1);
   void text(int x, int y, const std::string& s, int fg, int bg = -1);
   int wrap(int x, int y, int w, const std::string& s, int fg, int max_lines = 99);
