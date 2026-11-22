@@ -589,7 +589,7 @@ class Composer {
       if (threat_ > .45f && (s == 2 || s == 6)) hit(150, 70, 7, .6f, .45f * threat_);
       if (threat_ > .75f && (s == 3 || s == 7) && r_.chance(.6f)) hit(190, 90, 10, .8f, .3f * threat_);
       // near death a heart underneath, an echo of the Deep; the ember bearer's beats fast and tense
-      if (danger_ > .05f) { if (s == 0 || s == 4) beat(70, 38, 5, .3f, 1.5f * danger_); if (s == 1 || s == 5) beat(65, 36, 6, .3f, 1.f * danger_); }
+      if (danger_ > .05f) { if (s == 0 || s == 4) beat(110, 52, 5, .6f, 2.6f * danger_); if (s == 1 || s == 5) beat(100, 48, 6, .6f, 1.8f * danger_); }  // pitched up so small speakers carry it
       if (carrier_ && (s == 0 || s == 1 || s == 4 || s == 5)) beat(s % 4 ? 66 : 72, 36, 6, .3f, s % 4 ? .35f : .5f);
       int kind = m_->drum_kind;
       if (fight_ && kind == 0) kind = 1;
@@ -772,7 +772,7 @@ class Composer {
     if (danger_ > .001f) {
       float c = 1 - .93f * danger_;
       muff_l_ += c * (outl - muff_l_); muff_r_ += c * (outr - muff_r_);
-      outl = muff_l_ + drum * .5f * danger_; outr = muff_r_ + drum * .5f * danger_;
+      outl = muff_l_ + drum * .9f * danger_; outr = muff_r_ + drum * .9f * danger_;
     } else { muff_l_ = outl; muff_r_ = outr; }
     // a ghost hears it all from far away, through stone
     if (ghost_amt_ > .001f) {
