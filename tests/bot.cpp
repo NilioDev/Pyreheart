@@ -365,8 +365,9 @@ int main() {
     if (keep && from > 0) { std::ifstream in(path(from - 1)); if (in) in >> kept; }
     for (int f = from; f < std::atoi(l); ++f) {
       json prev = kept;
-      kept = run({w}, 100 + f, f, prev);
-      if (kept.is_null() && dive_stalled) kept = run({w}, 1100 + f, f, prev);
+      int s0 = std::getenv("BOTSEED0") ? std::atoi(std::getenv("BOTSEED0")) : 100;  // another set of maps for a second sample
+      kept = run({w}, s0 + f, f, prev);
+      if (kept.is_null() && dive_stalled) kept = run({w}, s0 + 1000 + f, f, prev);
       if (kept.is_null()) break;
       if (keep) { std::ofstream out(path(f)); out << kept.dump(); }
     }
