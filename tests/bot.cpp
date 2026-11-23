@@ -201,7 +201,7 @@ static json choose(Game& g, Hero& h) {
       if (M >= 4 && d <= 9) return skill(1, seen);
       if (d > 1 && d <= 6) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
     } else if (k == "wand") {
-      if (M >= 5 && visible >= 2) return skill(1);
+      if (M >= 5 && visible >= 2 && d <= 7) return skill(1);  // Scatter only reaches 7
       if (d > 1 && d <= 7) return {{"t", "shoot"}, {"x", seen->x}, {"y", seen->y}};
     } else if (k == "lantern") {
       if (M >= 9 && (near >= 2 || (purple && cheb(h.x, h.y, purple->x, purple->y) <= 4))) return skill(1);
