@@ -2106,14 +2106,14 @@ void Game::skill(Hero& h, int n, int x, int y) {
     if (hit.empty()) return;
     MonP m = hit[0];
     ignite({m->x, m->y});
-    int dmg = rnd_i((rnd.range(4, 9) + 1.3 * power(h)) * sp * (h.perk("pyromancer") ? 1.3 : 1.0));
+    int dmg = rnd_i((rnd.range(4, 9) + 1.15 * power(h)) * sp * (h.perk("pyromancer") ? 1.3 : 1.0));
     if (m->def->fire) dmg /= 2;
     if (m->frozen > 0) {
-      dmg *= 3;
+      dmg = dmg * 5 / 2;
       m->frozen = 0;
       add_fx({{"k", "burst"}, {"x", m->x}, {"y", m->y}, {"r", 1}, {"col", 0xC8E6FF}, {"delay", .1}});
       h.say("The frost on " + the(*m) + " shatters (" + std::to_string(dmg) + ")!", 0xC8E6FF);
-      tip(h, "shatter", "Fire on a frozen foe shatters it for three times the harm.");
+      tip(h, "shatter", "Fire on a frozen foe shatters it for two and a half times the harm.");
     } else h.say("Your firebolt hits " + the(*m) + " (" + std::to_string(dmg) + ").", 0xFF8C28);
     int mx = m->x, my = m->y;
     hurt(*m, dmg, &h);
@@ -2128,7 +2128,7 @@ void Game::skill(Hero& h, int n, int x, int y) {
     auto ms = floor->mons;
     for (auto& m : ms)
       if (m->hp > 0 && cheb(m->x, m->y, h.x, h.y) <= r && h.sees(m->x, m->y)) {
-        int dmg = rnd_i((rnd.range(3, 6) + .8 * power(h)) * sp);
+        int dmg = rnd_i((rnd.range(3, 6) + .7 * power(h)) * sp);
         m->frozen = m->rank == "boss" ? 1 : 2 + h.perk("deepfrost");
         hurt(*m, m->def->cold ? dmg / 2 : dmg, &h);
       }
@@ -2247,7 +2247,7 @@ void Game::classes_tick() {
       int r = h->perk("shepherd") ? 3 : 2;
       for (auto* o : active()) {
         if (cheb(o->x, o->y, h->x, h->y) > r) continue;
-        o->hp = std::min(stats(*o).maxhp, o->hp + heal_amt(*o, (1 + h->perk("warmth") + power(*h) / 6) * (h->leg("drowned") ? 2 : 1)));
+        o->hp = std::min(stats(*o).maxhp, o->hp + heal_amt(*o, (1 + h->perk("warmth") + power(*h) / 12) * (h->leg("drowned") ? 2 : 1)));
       }
       auto ms = floor->mons;
       for (auto& m : ms)

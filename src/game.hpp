@@ -285,8 +285,8 @@ class Game {
   // plan.md section 7, the curve: foes grow +25% life and +15% blows per Frost level up to Frost 4, +40% and +20% after,
   // there are 5% more of them on each level, and the cold takes 10% from each resistance, at most 50%
   // up to Frost 4 the foes grow by steps; from Frost 5 each level multiplies them, so the wall stands around Frost 10
-  double frost_life() const { return (1 + .25 * std::min(frost, 4)) * std::pow(1.35, std::max(0, frost - 4)); }
-  double frost_blow() const { return (1 + .15 * std::min(frost, 4)) * std::pow(1.20, std::max(0, frost - 4)); }
+  double frost_life() const { return (1 + .25 * std::min(frost, 4)) * std::pow(1.25, std::max(0, frost - 4)); }
+  double frost_blow() const { return (1 + .15 * std::min(frost, 4)) * std::pow(1.15, std::max(0, frost - 4)); }
   int frost_res_cut() const { return 10 * std::min(frost, 5); }
   int frost_band() const { return frost <= 0 ? 0 : std::min(3, (frost + 2) / 3); }  // Rimesteel 1-3, Deepforged 4-6, Pyre-forged 7+
   std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)

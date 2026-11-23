@@ -161,7 +161,9 @@ static json choose(Game& g, Hero& h) {
     bool caster = g.main_style(h) != 0;
     if (caster && M < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
     // the style skills, wherever they sit
-    if (int n = slot("warcry"); n && F >= 3 && ((purple && cheb(h.x, h.y, purple->x, purple->y) <= 2) || near >= 3)) return skill(n);
+    int reeling = 0;  // a roar on foes that already reel only loses the turn (Bloodprice makes it free, so it never ends)
+    for (auto& m : f.mons) if (cheb(h.x, h.y, m->x, m->y) <= 2 && m->stun > 0) ++reeling;
+    if (int n = slot("warcry"); n && F >= 3 && reeling == 0 && ((purple && cheb(h.x, h.y, purple->x, purple->y) <= 2) || near >= 3)) return skill(n);
     if (int n = slot("standfast"); n && F >= 4 && h.standfast == 0 && h.hp < st.maxhp * .6 && near >= 1) return skill(n);
     if (int n = slot("whirlwind"); n && F >= 5 && within2 >= 2) return skill(n);
     if (int n = slot("ward"); n && purple && M >= 6 && cheb(h.x, h.y, purple->x, purple->y) <= 7) return skill(n, purple);
@@ -363,8 +365,9 @@ int main() {
     if (keep && from > 0) { std::ifstream in(path(from - 1)); if (in) in >> kept; }
     for (int f = from; f < std::atoi(l); ++f) {
       json prev = kept;
-      kept = run({w}, 100 + f, f, prev);
-      if (kept.is_null() && dive_stalled) kept = run({w}, 1100 + f, f, prev);
+      int s0 = std::getenv("BOTSEED0") ? std::atoi(std::getenv("BOTSEED0")) : 100;  // another set of maps for a second sample
+      kept = run({w}, s0 + f, f, prev);
+      if (kept.is_null() && dive_stalled) kept = run({w}, s0 + 1000 + f, f, prev);
       if (kept.is_null()) break;
       if (keep) { std::ofstream out(path(f)); out << kept.dump(); }
     }

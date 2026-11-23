@@ -339,7 +339,7 @@ inline const std::vector<WeaponDef> WEAPONS = {
 inline const std::vector<StyleDef> STYLES = {
     {"melee", "Melee", "fury", 72, 12, 20, 1, 80, 0xE6C896, {"warcry", "shadowstep", "standfast", "whirlwind"}},
     {"ranged", "Ranged", "mana", 52, 8, 30, 3, 85, 0x96DC8C, {"volley", "tumble", "ward", "smoke"}},
-    {"magic", "Magic", "mana", 36, 5, 55, 6, 80, 0xA0AAFF, {"nova", "blink", "mend", "emberwall", "hallow"}},
+    {"magic", "Magic", "mana", 36, 4, 55, 6, 80, 0xA0AAFF, {"nova", "blink", "mend", "emberwall", "hallow"}},
 };
 inline const int STYLE_RANKS[] = {1, 3, 6, 10, 15, 20};
 constexpr int MASTERY_MAX = 5;
