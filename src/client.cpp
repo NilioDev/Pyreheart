@@ -10,6 +10,7 @@
 #include "data.hpp"
 #include "fx.hpp"
 #include "lore.hpp"
+#include "names.hpp"
 #include "pyre.hpp"
 
 namespace {
@@ -83,6 +84,20 @@ static std::string pref_file() {
   SDL_free(p);
   return s;
 }
+// every new hero gets a fresh name from the list, never one that already lies in the graves
+void Client::roll_name() {
+  static std::mt19937 rng{std::random_device{}()};
+  std::set<std::string> taken;
+  for (auto& g : graves_) if (g.is_object()) taken.insert(g.value("name", std::string()));
+  name_ = names::roll(taken, rng, name_);
+  name_rolled_ = true;
+}
+void Client::open_name_screen() {
+  screen_ = Screen::Name;
+  roll_name();
+  SDL_StartTextInput(ctx_.get_sdl_window());
+}
+
 void Client::load_settings() {
   std::ifstream f(pref_file());
   std::string line;
@@ -447,6 +462,7 @@ void Client::event(SDL_Event& ev) {
   }
   if (ev.type == SDL_EVENT_TEXT_INPUT) {
     std::string t = ev.text.text;
+    if (screen_ == Screen::Name && name_rolled_) { name_.clear(); name_rolled_ = false; }  // typing replaces the rolled name
     if (screen_ == Screen::Name && name_.size() < 16) name_ += t;
     if (screen_ == Screen::Join && addr_.size() < 60) addr_ += t;
     if (over_ == Over::Debug && typing_ && note_.size() < 600 && !dbg_skip_) note_ += t;
@@ -484,11 +500,14 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
   bool shift = mod & SDL_KMOD_SHIFT;
   if (screen_ == Screen::Name || screen_ == Screen::Join) {
     std::string& s = screen_ == Screen::Name ? name_ : addr_;
-    if (k == SDLK_BACKSPACE && !s.empty()) s.pop_back();
+    if (screen_ == Screen::Name && k == SDLK_TAB) { roll_name(); return; }
+    if (k == SDLK_BACKSPACE && screen_ == Screen::Name && name_rolled_) { name_.clear(); name_rolled_ = false; }
+    else if (k == SDLK_BACKSPACE && !s.empty()) s.pop_back();
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       SDL_StopTextInput(ctx_.get_sdl_window());
       if (screen_ == Screen::Name) {  // no class to choose: the hero takes a weapon from the gatekeeper's rack in Charnfen
-        if (name_.empty()) name_ = "Hero";
+        if (name_.empty()) roll_name();
+        name_rolled_ = false;
         save_settings();
         if (!hero_.is_object()) { hero_ = {{"name", name_}}; frost_ = 0; save_hero(); }  // a new hero: one life
         over_ = Over::None;
@@ -708,7 +727,7 @@ void Client::click(int x, int y, bool down) {
       if (it == "Go on with the dive") start(true, false, true);
       else if (it.rfind("Go down again", 0) == 0) start(true, false);
       else if (hero_.is_object() && it == "Host a game for friends") start(true, true);
-      else if (it == "Dive alone" || it == "Host a game for friends") { hosting_ = it != "Dive alone"; screen_ = Screen::Name; SDL_StartTextInput(ctx_.get_sdl_window()); }
+      else if (it == "Dive alone" || it == "Host a game for friends") { hosting_ = it != "Dive alone"; open_name_screen(); }
       else if (it == "Join a game") { found_ = discover(700); screen_ = Screen::Finding; menu_ = 0; }
       else if (it == "How to play") { screen_ = Screen::Title; open_book(); }
       else if (it == "Listen to the music") { screen_ = Screen::Listen; menu_ = 0; }
@@ -725,8 +744,7 @@ void Client::click(int x, int y, bool down) {
       if (choice < int(found_.size())) {
         addr_ = found_[choice].substr(found_[choice].find('|') + 1);
         pending_join_ = true;
-        screen_ = Screen::Name;
-        SDL_StartTextInput(ctx_.get_sdl_window());
+        open_name_screen();
       } else { pending_join_ = true; screen_ = Screen::Join; SDL_StartTextInput(ctx_.get_sdl_window()); }
       menu_ = 0;
     } else if (screen_ == Screen::Name) {
@@ -1055,7 +1073,7 @@ void Client::draw_title() {
   } else if (screen_ == Screen::Name) {
     title = "Your name:";
     centre(top, name_ + "_", WHITE);
-    centre(top + 2, "[Enter]", KEY);
+    centre(top + 2, "[Enter] take it   [Tab] another name", KEY);
   } else if (screen_ == Screen::Join) {
     title = "Address of the host (as they see it on their screen):";
     centre(top, addr_ + "_", WHITE);
