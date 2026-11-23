@@ -117,6 +117,10 @@ struct Hero {
   std::map<std::string, int> talents;  // the Pyre's gifts this player brought (pyre.hpp)
   int heat_floor = -1, fury_floor = -1, fury_t = 0;  // Heat of Battle and Heart's Fury: once a floor
   bool unquenched = false, forged = false;           // Unquenched and Spark-Forged: once a dive
+  // the deep perks (plan.md section 7): Last Ember's map, the Frost level an offer was last rolled again on, and a
+  // Skirmisher's next shot made stronger by a blow in close
+  int ember_floor = -1, reroll_frost = -1;
+  bool skirm = false;
   int tal(const std::string& k) const { auto it = talents.find(k); return it == talents.end() ? 0 : it->second; }
   int perk(const std::string& k) const { auto it = perks.find(k); return it == perks.end() ? 0 : it->second; }
   bool present() const { return !dead && !gone && !away; }
@@ -251,8 +255,9 @@ class Game {
   int frost_res_cut() const { return 10 * std::min(frost, 5); }
   std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)
   bool landing_ = false;           // a blow seen coming is landing (for Mantle)
-  int belt(const Hero& h) const { return data::BELT_MAX + h.tal("banked"); }
-  int price(const Hero& h, const Item& it) const { return h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2; }
+  int pack_max(const Hero& h) const { return data::PACK_MAX + 4 * h.perk("packmule"); }
+  int belt(const Hero& h) const { return data::BELT_MAX + h.tal("banked") + h.perk("beltmaker") + 2 * h.perk("packmule"); }
+  int price(const Hero& h, const Item& it) const { int p = h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2; return h.perk("haggler") ? p * 4 / 5 : p; }
   ItemP roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
   void forge(Hero& h);
   Rng rnd;
@@ -395,7 +400,13 @@ class Game {
   void embers_tick();  // co-op: ghosts follow, embers are picked up and carried to a camp fire
   void ember_out(Hero& o, const std::string& why);
   void take_weapon(Hero& h, const std::string& kind);
-  void offer_perk(Hero& h);
+  void offer_perk(Hero& h, bool level = false);
+  std::vector<std::string> perk_offer(const Hero& h, bool keystone);  // three deep perks, or two keystones and Neither
+  bool owns(const Hero& h, const std::string& need) const;            // whether a deep perk fits (or a duo is open to) a hero
+  void reroll_perks(Hero& h);                                          // once a Frost level, at a camp fire
+  double perk_harm(Hero& h, Mon& m);
+  Hero* stacks_by(const Mon& m, int e) { auto it = heroes.find(m.stk.by[e]); return it == heroes.end() ? nullptr : it->second.get(); }                                   // what the hero's perks do to the harm it deals
+  bool full_mana_ = false;                                             // Overchannel: the skill was begun at full mana
   void shoot_with(Hero& h, int x, int y);
 
   void act(Hero& h, const json& a);

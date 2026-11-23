@@ -32,7 +32,7 @@ struct WeaponDef { std::string key, name, style, start, sig; int reach; std::str
 struct StyleDef { std::string key, name, res; int hp, hp_lvl, mana, mana_lvl, acc, col; std::vector<std::string> skills; };
 struct PathDef { const char* key; const char* name; const char* about; };
 struct SkillDef { std::string key, name; int mana; bool target; std::string about; };
-struct PerkDef { std::string key, name, text; int max; std::string cls, path; };  // path "*": a path itself
+struct PerkDef { std::string key, name, text; int max; std::string cls, path, kind, need; };  // path "*": a path itself; kind deep, duo, key (plan.md section 7)
 struct BaseDef { std::string key, name, slot, kind; int tier, lo, hi, ar, spell; };
 struct AffixDef { std::string name, stat; int lo, hi; double grow; std::vector<std::string> slots; };
 struct UniqueDef { std::string name, base; std::vector<std::pair<std::string, int>> stats; };

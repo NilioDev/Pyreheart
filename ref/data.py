@@ -555,6 +555,91 @@ PERKS = {   # key: (name, text, max ranks, class or None, path it needs or None;
     'second': ('Second Wind', 'potions heal 40% more', 1, None, None),
 }
 
+# Deep perks and keystones (plan.md section 7, "Levels that mean something"): from hero level 15 (or Frost 1) a level
+# offers 3 deep perks, every 5th level 2 keystones. key: (name, text, kind, need)
+# kind: deep, duo or key. need: what makes it fit a hero (an element, a style, both halves of a duo), or '' for any.
+DEEP_PERKS = {
+    # the elements
+    'kindling': ('Kindling', 'your Ember on a foe burns two turns longer', 'deep', 'ember'),
+    'wildfire': ('Wildfire', 'a burning foe that dies sets its neighbours alight', 'deep', 'ember'),
+    'banked': ('Banked Coals', 'Ember on a foe beside you does not fade', 'deep', 'ember'),
+    'hoarfrost': ('Hoarfrost', 'a slowed foe takes a second Rime stack from your blows', 'deep', 'rime'),
+    'brittle': ('Brittle', 'frozen foes take a quarter more from everything', 'deep', 'rime'),
+    'coldhands': ('Cold Hands', 'Rime on you never slows your step', 'deep', 'rime'),
+    'choking': ('Choking Cloud', 'an Ash discharge lays Ash on the foes beside it too', 'deep', 'ash'),
+    'blindrage': ('Blind Rage', '+10% harm for each Ash stack on the foe you strike', 'deep', 'ash'),
+    'clearlungs': ('Clear Lungs', 'Ash on you never chokes your skills', 'deep', 'ash'),
+    'festering': ('Festering', 'each Rot stack on a foe takes 1 from its armour', 'deep', 'rot'),
+    'carrion': ('Carrion', 'a rotting foe that dies heals you 3', 'deep', 'rot'),
+    'rotproof': ('Rotproof', 'Rot on you takes at most a quarter of your healing', 'deep', 'rot'),
+    'haemophage': ('Haemophage', 'each bleeding foe in sight gives you 1 life a turn', 'deep', 'blood'),
+    'openveins': ('Open Veins', 'a Blood discharge does a fifth more to a foe under half life', 'deep', 'blood'),
+    'thickblood': ('Thick Blood', 'Blood on you bleeds you half as much', 'deep', 'blood'),
+    # the styles
+    'secondbreath': ('Second Breath', 'your fury drains half as fast', 'deep', 'melee'),
+    'crowdbreaker': ('Crowd-breaker', '+3 armour for each foe beside you, up to three', 'deep', 'melee'),
+    'sweeping': ('Sweeping Blows', 'a plain blow in close also cuts one more foe beside you, at half harm', 'deep', 'melee'),
+    'steadyaim': ('Steady Aim', 'focus builds twice as fast', 'deep', 'ranged'),
+    'pointblank': ('Point Blank', 'shots at a foe beside you do a quarter more', 'deep', 'ranged'),
+    'quiver': ('Quiver-maker', 'a ranged kill gives 2 mana', 'deep', 'ranged'),
+    'deepwell2': ('Deep Well', 'a kill gives back a tenth of your mana', 'deep', 'magic'),
+    'overchannel': ('Overchannel', 'at full mana your skills do half again as much', 'deep', 'magic'),
+    'willward': ('Ward of Will', 'above half mana you take 15% less harm', 'deep', 'magic'),
+    # for anyone
+    'giantslayer': ('Giant-slayer', '+10% harm to great foes, champions and uniques', 'deep', ''),
+    'stillhand': ('Still Hand', 'your discharges do a fifth more when you did not move last turn', 'deep', ''),
+    'opener': ('Opener', 'your first blow on an unhurt foe always lands', 'deep', ''),
+    'finisher': ('Finisher', '+25% harm to foes under a quarter of their life', 'deep', ''),
+    'sixthsense': ('Sixth Sense', 'heavy blows aimed at you are seen one turn earlier', 'deep', ''),
+    'stackthief': ('Stack Thief', 'each kill takes one stack off you', 'deep', ''),
+    'lastember': ('Last Ember', 'once a map, a killing blow leaves you at 1 life', 'deep', ''),
+    'beltmaker': ('Belt-maker', 'your belt holds one more potion of each kind', 'deep', ''),
+    'slowbleeder': ('Slow Bleeder', 'poison and bleeding hurt you a quarter less', 'deep', ''),
+    'grounded': ('Grounded', "a foe's discharge does a quarter less to you", 'deep', ''),
+    'quenchborn': ('Quench-born', 'standing in water heals you 2 a turn', 'deep', ''),
+    'hearthkin': ('Hearth-kin', '+15% harm while you stand next to a fire', 'deep', ''),
+    'draughtwalker': ('Draught-walker', 'in a doorway foes miss you more often', 'deep', ''),
+    'shadowstep': ('Shadow-step', 'sleeping foes are a quarter less likely to wake as you pass', 'deep', ''),
+    'treasurenose': ('Treasure-nose', 'chests give magic things or better more often', 'deep', ''),
+    # the helpers, and friends (never needed alone)
+    'haggler': ('Haggler', 'the trader asks a fifth less', 'deep', 'helper'),
+    'brannsfriend': ("Brann's Friend", "Brann's work costs half", 'deep', 'helper'),
+    'emberbearer': ('Ember-bearer', "a friend's ember weighs nothing in your hands", 'deep', 'coop'),
+    'shoulder': ('Shoulder to Shoulder', '+10% harm while a friend stands beside you', 'deep', 'coop'),
+    # duo perks: only offered once the hero owns both halves
+    'thermalshock': ('Thermal Shock', 'Ember on a frozen foe shatters it for triple harm', 'duo', 'ember+rime'),
+    'cinderstorm': ('Cinderstorm', 'your Ember spreads Ash to the foes beside it', 'duo', 'ember+ash'),
+    'fever': ('Fever', 'a foe with your Ember and Rot burns half again as fast', 'duo', 'ember+rot'),
+    'boilingblood': ('Boiling Blood', 'a foe with your Blood on it also burns each turn', 'duo', 'ember+blood'),
+    'whiteout': ('Whiteout', 'foes with Rime on them also miss more', 'duo', 'rime+ash'),
+    'coldstorage': ('Cold Storage', 'Rot on a frozen foe does not fade', 'duo', 'rime+rot'),
+    'frozenveins': ('Frozen Veins', 'your Blood discharges freeze the foe for a turn', 'duo', 'rime+blood'),
+    'gravedust': ('Grave Dust', 'a smothered foe takes Rot twice as fast', 'duo', 'ash+rot'),
+    'blindbleeding': ('Blind Bleeding', 'a foe that misses you starts to bleed', 'duo', 'ash+blood'),
+    'septic': ('Septic', 'your Blood on a foe cuts its healing like Rot', 'duo', 'rot+blood'),
+    'skirmrhythm': ("Skirmisher's Rhythm", 'after a blow in close, your next shot does 30% more', 'duo', 'melee+ranged'),
+    'spellblade': ('Spellblade', 'a skill paid in mana gives 2 fury; a kill in close gives a tenth of your mana', 'duo', 'melee+magic'),
+    'fletching': ('Arcane Fletching', 'your shots often lay a second stack', 'duo', 'ranged+magic'),
+    # keystones: every 5th level from 15, a choice of two (or neither); each has a price
+    'glasspyre': ('Glass Pyre', '+30% harm, but 20% less life', 'key', ''),
+    'ironoath': ('Iron Oath', 'each kill heals 5% of your life, but you can drink no healing potion', 'key', ''),
+    'coldblood': ('Cold Blood', 'Rime cannot touch you, but Ember burns you twice as hard', 'key', ''),
+    'slowfire': ('Slow Fire', 'your stacks on foes never fade, but you lay a third fewer', 'key', ''),
+    'berserkheart': ('Berserk Heart', 'full fury adds 25% harm, but all fury is gone the moment no foe is in sight', 'key', ''),
+    'hermit': ('Hermit', 'alone you deal 20% more and take 20% less, but with friends you deal 10% less', 'key', ''),
+    'lanternbound': ('Lantern-bound', 'you see 3 cells further, but foes wake 3 cells further from you too', 'key', ''),
+    'bloodprice': ('Bloodprice', 'skills cost life instead of mana or fury, half as much again', 'key', ''),
+    'onecraft': ('One Craft', 'your first element does half again as much, but you lose your second coal', 'key', ''),
+    'unyielding': ('Unyielding', 'stun and slowing Rime do not hold you, but you no longer dodge', 'key', ''),
+    'ashenpact': ('Ashen Pact', 'every foe resists 15% less, and so do you', 'key', ''),
+    'gambler': ('Gambler', 'each blow does between half and twice its harm', 'key', ''),
+    'emberheart': ('Ember Heart', 'while Ember burns on you, you heal 2 a turn; but it always burns on you', 'key', ''),
+    'packmule': ('Pack Mule', '+4 places in your pack and +2 in your belt, but 10% less harm', 'key', ''),
+    'deathwish': ('Deathwish', '+5% harm for every tenth of life you miss, but all healing is halved', 'key', ''),
+    # the way out of a keystone offer
+    'neither': ('Neither', 'keep your hero as it is', 'skip', ''),
+}
+
 # ------------------------------------------------------------------ items
 SLOTS = ('weapon', 'body', 'helm', 'gloves', 'boots', 'ring', 'amulet')
 # base: (name, slot, kind, tier, dmg (lo, hi) or armour)

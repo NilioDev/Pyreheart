@@ -47,6 +47,13 @@ static std::string describe(const Mon& m) {
   return out;
 }
 
+// the keystones a hero took, for its grave
+static json keystones(const Hero& h) {
+  json a = json::array();
+  for (auto& [k, v] : h.perks) if (v > 0 && perk_def(k).kind == "key") a.push_back(perk_def(k).name);
+  return a;
+}
+
 static json stacks(const Stacks& s) { json a = json::array(); for (int v : s.n) a.push_back(v); return a; }
 
 static json cmp(const Game& g, const Hero& h, const Item& it) {
@@ -68,7 +75,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
     out["grave"] = {{"name", h.name}, {"title", h.cls->name}, {"lvl", h.lvl}, {"frost", g.frost}, {"depth", f.depth},
                     {"zone", data::ACTS[f.act].name}, {"killer", h.killer.empty() ? "the dark" : h.killer}, {"kills", h.kills},
                     {"coop", g.heroes.size() > 1}, {"rekindled", h.rekindled}, {"el", h.el}, {"el2", h.el2},
-                    {"weapon", h.equip.count("weapon") ? h.equip.at("weapon")->kind : std::string()}};
+                    {"weapon", h.equip.count("weapon") ? h.equip.at("weapon")->kind : std::string()}, {"keystones", keystones(h)}};
   out["depth"] = g.depth;
   out["act"] = f.act;
   out["rest"] = f.rest;
@@ -190,7 +197,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   json choice = nullptr;
   if (!h.perk_choices.empty()) {
     choice = json::array();
-    for (auto& k : h.perk_choices.front()) { auto& p = perk_def(k); choice.push_back({k, p.name, p.text}); }
+    for (auto& k : h.perk_choices.front()) { auto& p = perk_def(k); choice.push_back({k, p.name, p.text, p.kind}); }
   }
   json skills = json::array();
   bool uses_fury = h.srank[0] > 0 || g.main_style(h) == 0, uses_mana = false;
@@ -248,17 +255,18 @@ json snapshot(Game& g, Hero& h, bool with_map) {
                {"crit", st.crit}, {"res", {st.res_f, st.res_c, st.res_p}}, {"equip", equip}, {"pack", pack}, {"perks", perks},
                {"choice", choice}, {"skills", skills}, {"pool", h.cls->res}, {"fury", h.fury}, {"maxfury", 10}, {"usesfury", uses_fury},
                {"usesmana", uses_mana || g.main_style(h) != 0}, {"styles", styles}, {"weapon", weapon}, {"eranks", eranks}, {"known", known}, {"slotel", h.slot_el}, {"path", h.path}, {"combo", h.el >= 0 && std::max({h.srank[0], h.srank[1], h.srank[2]}) > 0 ? g.main_style(h) * 5 + h.el : -1},
-               {"power", g.power(h)}, {"reload", h.reload}, {"focus", h.focus}, {"standfast", h.standfast}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col}};
+               {"power", g.power(h)}, {"reload", h.reload}, {"focus", h.focus}, {"standfast", h.standfast}, {"bow", st.bow}, {"kills", h.kills}, {"col", h.cls->col},
+               {"packmax", g.pack_max(h)}, {"reroll", !h.perk_choices.empty() && (f.camp || f.depth == 0) && h.reroll_frost != g.frost}};
   if (h.shopping) {
     json shop = json::array();
     for (auto& it : f.shop) { json j = it->to_json(); j["price"] = g.price(h, *it); j["cmp"] = cmp(g, h, *it); shop.push_back(j); }
     json sell = json::array();
     for (auto& it : h.pack) sell.push_back({it->id, std::max(1, it->value / 3)});
-    out["shop"] = {{"items", shop}, {"potion", 25 + 5 * g.lvl}, {"sell", sell}};
+    out["shop"] = {{"items", shop}, {"potion", h.perk("haggler") ? g.potion_price() * 4 / 5 : g.potion_price()}, {"sell", sell}};
   }
   if (!h.talking.empty()) {
     // the helper's window: Ysolde's potions, Brann's retuning, old Ebb's ways
-    json t = {{"who", h.talking}, {"potion", g.potion_price()}, {"retune", g.retune_price()}, {"healed", h.drank}, {"line", h.talk_line}};
+    json t = {{"who", h.talking}, {"potion", h.perk("haggler") ? g.potion_price() * 4 / 5 : g.potion_price()}, {"retune", h.perk("brannsfriend") ? g.retune_price() / 2 : g.retune_price()}, {"healed", h.drank}, {"line", h.talk_line}};
     if (h.talking == "smith") {  // each resistance on worn gear, one row each
       static const char* RES[elem::N] = {"res_fire", "res_cold", "res_ash", "res_poison", "res_blood"};
       json rows = json::array();

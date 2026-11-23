@@ -378,7 +378,7 @@ void Client::apply(const json& s) {
 void Client::send(const json& a) {
   if (!link_ || !snap_.is_object()) return;
   std::string t = a.value("t", "");
-  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel" || t == "talents" || t == "talk";
+  bool free = t == "perk" || t == "reroll" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel" || t == "talents" || t == "talk";
   if (!free) {
     if (waiting_) return;
     waiting_ = true;
@@ -613,6 +613,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       if (k == SDLK_ESCAPE) over_ = Over::None;
       else if (dy) sel_ = (sel_ + dy + n) % n;
       else if (k >= SDLK_1 && k < SDLK_1 + n) { send({{"t", "perk"}, {"k", ch[k - SDLK_1][0]}}); over_ = Over::None; }
+      else if (k == SDLK_R && me.value("reroll", false)) send({{"t", "reroll"}});
       else if (enter) { send({{"t", "perk"}, {"k", ch[std::clamp(sel_, 0, n - 1)][0]}}); over_ = Over::None; }
       return;
     }
@@ -1523,7 +1524,7 @@ void Client::draw_pack() {
   }
   ++r;
   auto& pack = me["pack"];
-  text(x + 2, r, "Pack (" + std::to_string(pack.size()) + "/" + std::to_string(data::PACK_MAX) + ")", GOLD);
+  text(x + 2, r, "Pack (" + std::to_string(pack.size()) + "/" + std::to_string(snap_["me"].value("packmax", data::PACK_MAX)) + ")", GOLD);
   text(x + 18, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
   int list_top = r;
   sel_ = pack.empty() ? 0 : std::clamp(sel_, 0, int(pack.size()) - 1);
@@ -1627,9 +1628,17 @@ void Client::draw_perk() {
   auto& ch = snap_["me"]["choice"];
   if (ch.is_null()) { over_ = Over::None; return; }
   int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 60), h = 4 + int(ch.size()) * 4;
+  bool key = false;
+  for (auto& c : ch) if (c.size() > 3 && c[3] == "key") key = true;
+  bool reroll = snap_["me"].value("reroll", false);
+  int w = std::min(cw, 60), h = 4 + int(ch.size()) * 4 + (reroll ? 1 : 0);
   int x = (cw - w) / 2, y = (chh - h) / 2;
-  box(x, y, w, h, "Choose a perk");
+  box(x, y, w, h, key ? "Choose a keystone, or neither" : "Choose a perk");
+  if (reroll) {  // once a Frost level, by a camp's fire
+    text(x + 2, y + h - 2, "[r]", KEY);
+    text(x + 6, y + h - 2, "weigh the offer again (once a Frost level)", 0xB4A078);
+    buttons_.push_back({x + 1, y + h - 2, w - 2, 1, "", "key:" + std::to_string(SDLK_R)});
+  }
   for (size_t i = 0; i < ch.size(); ++i) {
     int r = y + 2 + int(i) * 4;
     bool on = int(i) == sel_;
