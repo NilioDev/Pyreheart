@@ -82,7 +82,7 @@ static json choose(Game& g, Hero& h) {
   if (h.el < 0) return {{"t", "coal"}, {"e", bot_force_elem >= 0 ? bot_force_elem : std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
   if (g.floor->camp) {  // at a camp fire: a path where one is due, and a second coal for keys [2]-[3]
     for (int s = 0; s < 3; ++s) if (h.srank[s] >= data::PATH_RANK && h.path[s] < 0) g.free_action(h, {{"t", "path"}, {"s", s}, {"c", (h.pid + s) % 2}});
-    if (h.el2 < 0 && !std::getenv("BOTONECOAL")) {
+    if (h.el2 < 0 && !std::getenv("BOTONECOAL") && !h.perk("onecraft")) {
       g.free_action(h, {{"t", "slotel"}, {"k", 2}});
       return {{"t", "coal"}, {"e", (h.el + 2) % elem::N}};
     }

@@ -815,20 +815,23 @@ void Game::open_way(Hero& h, int zone) {
     for (int dy = -1; dy <= 1; ++dy)
       for (int dx = -1; dx <= 1; ++dx) {
         int nx = i % W + dx, ny = i / W + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] || !f.walk(nx, ny)) continue;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx]) continue;
+        if (!f.walk(nx, ny) && f.tile(nx, ny) != STONES) continue;  // out over the ring of stones round the fire
         near[ny * W + nx] = 1;
         todo.push_back(ny * W + nx);
       }
   }
   int best = -1, bd = 1 << 30;
-  for (int y = 1; y < H - 1; ++y)
+  for (int gap : {5, 2})  // a little way off the fire, or closer where the fire's ground is small
+    if (best < 0)
+    for (int y = 1; y < H - 1; ++y)
     for (int x = 1; x < W - 1; ++x) {
       int t = f.tile(x, y);
       if (!near[y * W + x] || !f.walk(x, y) || way_down(t) || t == UPSTAIRS || hero_at(x, y) || mon_at(x, y)) continue;
       bool by_stair = false;
       for (auto [i, z] : f.exits) if (cheb(x, y, i % W, i / W) < 4) by_stair = true;
       int d = cheb(x, y, c.x, c.y);
-      if (by_stair || d < 5) continue;  // a little way off the fire, and apart from the other way
+      if (by_stair || d < gap) continue;  // apart from the other way
       int score = std::abs(d - 6) * 10 + (x < c.x ? 5 : 0);
       if (score < bd) { bd = score; best = y * W + x; }
     }
