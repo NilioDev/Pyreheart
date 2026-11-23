@@ -59,6 +59,8 @@ Game::Game(uint64_t seed, int frost_) : frost(std::clamp(frost_, 0, 99)), rnd(st
   // for screenshots and tests: PYREHEART_ZONE=vaults starts the dive in that zone (by the first way there), and
   // PYREHEART_BOSS=1 on its boss's map, next to it; PYREHEART_ROUTE=cistern,vaults,prison picks the ways a whole dive takes
   this->seed = std::getenv("PYREHEART_SEED") ? std::strtoull(std::getenv("PYREHEART_SEED"), nullptr, 10) : seed;
+  omens = omen::draw(this->seed, frost);
+  if (const char* o = std::getenv("PYREHEART_OMEN"); o && frost > 0) omens = {std::clamp(std::atoi(o), 1, int(omen::N))};  // tests: this omen alone
   route = {0};
   auto zone_of = [](const std::string& k) { for (int i = 0; i < ZONES; ++i) if (ACTS[i].key == k) return i; return -1; };
   if (const char* z = std::getenv("PYREHEART_ZONE"); z && zone_of(z) > 0) {
@@ -209,6 +211,15 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
   }
   refit(*h);
   // for screenshots and tests: start with a full pack of things to compare
+  if (const char* l = std::getenv("PYREHEART_LEGEND"); l && !kept)  // tests: wear this legendary from the start
+    for (auto& d : data::LEGENDARIES)
+      if (d.key == l) {
+        Rng r2(1);
+        for (int i = 0; i < 200; ++i) {
+          auto it = loot::legendary(r2, {}, 0);
+          if (it->legend == d.key) { h->equip[it->slot] = it; refit(*h); break; }
+        }
+      }
   if (const char* g = std::getenv("PYREHEART_GIFTS"))
     for (int i = 0; i < std::atoi(g) && int(h->pack.size()) < PACK_MAX; ++i) h->pack.push_back(loot::roll(3, rnd, h->cls->kinds));
   if (!kept && (std::getenv("PYREHEART_BOSS") || std::getenv("PYREHEART_ZONE"))) {  // grown as far as a hero who came down to here
@@ -240,6 +251,8 @@ Hero& Game::join(int pid, const std::string& name, const std::string& cls, const
   }
   r.say("Walk with the arrow keys or the number pad. Bump a foe to fight it. Help: [?].", 0x9CC89C);
   if (floor->depth == 0 && kept) r.say("You come back up into the cold, " + r.cls->name + ". The frost bites deeper now; so will the dark.", 0xFFD27F);
+  if (floor->depth == 0 && frost > 0)  // the omens of this dive, told before the stairs (plan.md section 7)
+    for (int o : omens) r.say(std::string("An omen of Frost ") + std::to_string(frost) + ": " + omen::DEF[o].name + ". " + cap(omen::DEF[o].text) + ".", 0x9CD2FF);
   if (floor->depth == 0 && !kept) {
     r.say("By the gate north of the square stands the gatekeeper's rack: bump it and take a weapon.", 0x9CC89C);
     r.say("Then walk to the great fire on the square and take a coal: bump one of the five at its edge.", 0x9CC89C);
@@ -344,17 +357,25 @@ Stats Game::stats(const Hero& h) const {
   Stats st{};
   st.maxhp = h.cls->hp + h.cls->hp_lvl * (pw - 1) + 15 * h.perk("tough") + s("hp") + 5 * h.tal("hearthskin");
   if (h.scars) st.maxhp = std::max(10, st.maxhp * std::max(3, 10 - h.scars) / 10);  // each rekindling leaves a scar
+  if (h.perk("glasspyre")) st.maxhp = std::max(10, st.maxhp * 4 / 5);
+  if (h.leg("secondheart")) st.maxhp = std::max(10, st.maxhp * 7 / 10);            // the Second Heart: 30% less life               // Glass Pyre: a fifth less life
   st.maxmana = h.cls->mana + h.cls->mana_lvl * (pw - 1) + 15 * h.perk("well") + s("mana");
   st.lo = (w ? w->lo : 1) + s("dmg");
   st.hi = (w ? w->hi : 3) + s("dmg");
-  st.pct = s("dmg_pct") + 15 * h.perk("brute") + 4 * h.tal("kindled") + (h.fury_t > 0 ? 50 : 0) + (w ? 4 * mastery(h, w->kind) : 0);
+  st.pct = s("dmg_pct") + (h.boon > 0 ? 10 + 3 * std::min(frost, 10) : 0) + 15 * h.perk("brute") + 4 * h.tal("kindled") + (h.fury_t > 0 ? 50 : 0) + (w ? 4 * mastery(h, w->kind) : 0);
   // the style the weapon belongs to grows the weapon's blows: +4% a rank (the perks the old classes had, folded in)
-  if (wd) st.pct += 4 * h.srank[style_index(wd->style)];
+  if (wd) st.pct += 4 * (h.srank[style_index(wd->style)] + (h.leg("lastcrown") ? 2 : 0));
   if (h.hp < st.maxhp / 2) st.pct += 5 * h.tal("fevered");
   st.acc = h.cls->acc + pw + 8 * h.perk("eye") + s("acc");
   st.crit = 5 + 4 * h.perk("eye") + s("crit") + 2 * h.tal("coaleyed") + (wd && wd->style == "ranged" ? 10 * h.perk("sharpshooter") : 0);
-  st.armour = ar + s("armour") + 3 * h.perk("hide") + 4 * h.perk("guardian") + h.srank[0];  // a melee rank is a lesson in taking blows
+  st.armour = ar + s("armour") + 3 * h.perk("hide") + 4 * h.perk("guardian") + h.srank[0] + (h.leg("lastcrown") ? 2 : 0);  // a melee rank is a lesson in taking blows
+  if (h.perk("crowdbreaker") && floor) {  // Crowd-breaker: +3 armour for each foe beside it, up to three
+    int n = 0;
+    for (auto& m : floor->mons) if (m->hp > 0 && cheb(m->x, m->y, h.x, h.y) == 1) ++n;
+    st.armour += 3 * std::min(3, n);
+  }
   if (h.sunder > 0) st.armour /= 2;  // split by acid or a smith's hammer
+  if (h.leg("lastspear")) st.armour /= 2;  // the Last Dwarf's Spear: no guard but the point
   st.res_f = res("res_fire"); st.res_c = res("res_cold", 10 * h.tal("warmhands")); st.res_p = res("res_poison");
   st.leech = s("leech"); st.spell = s("spell") + 25 * h.perk("invoker"); st.fire = s("fire_dmg");
   st.regen = 1 + h.perk("well") + s("regen"); st.thorns = s("thorns");
@@ -488,7 +509,7 @@ std::unique_ptr<Floor> Game::make_floor_from(int d) {
   }
   // as many foes for the room there is: a big map holds more of them
   double room = std::max(1.0, .85 * fl.w * fl.h / double(76 * 42));
-  int budget = int((14 + lvl * 1.5) * room) - int(fl.sleepers.size());
+  int budget = int((14 + lvl * 1.5) * room * (1 + .05 * frost)) - int(fl.sleepers.size());  // 5% more on each Frost level
   auto& spawns = SPAWNS[act];
   auto pick_kind = [&]() {
     int sum = 0;
@@ -503,7 +524,7 @@ std::unique_ptr<Floor> Game::make_floor_from(int d) {
     budget -= 4;
   }
   for (int pack = 0; pack < int(room + .5); ++pack) {
-  if (lvl >= 2 && rnd.real() < .65 && !far.empty()) {
+  if (lvl >= 2 && rnd.real() < (omen(omen::MUSTER) ? .85 : .65) && !far.empty()) {
     std::string kind = pick_kind();
     std::string aff = rnd.pick(AFFIXES).first;
     P c = rnd.pick(far);
@@ -512,7 +533,9 @@ std::unique_ptr<Floor> Game::make_floor_from(int d) {
       std::string more = rnd.pick(AFFIXES).first;
       if (more != aff) mods.push_back(more);
     }
-    for (int i = 0; i < 3; ++i) if (auto m = spawn_near(kind, c)) champion(*m, mods);
+    if (omen(omen::KINGSCOLD))  // the King's own cold: one affix more
+      for (int t = 0; t < 8; ++t) { std::string more = rnd.pick(AFFIXES).first; if (std::find(mods.begin(), mods.end(), more) == mods.end()) { mods.push_back(more); break; } }
+    for (int i = 0, n = omen(omen::MUSTER) ? 4 : 3; i < n; ++i) if (auto m = spawn_near(kind, c)) champion(*m, mods);
     budget -= 4;
   }
   if (lvl >= 3 && rnd.real() < .5 && !far.empty()) {
@@ -528,11 +551,26 @@ std::unique_ptr<Floor> Game::make_floor_from(int d) {
     std::string kind = pick_kind();
     auto pk = PACKS.find(kind);
     int n = pk == PACKS.end() ? rnd.range(1, 3) : rnd.range(pk->second.first, pk->second.second);
+    int cost = n;
+    if (omen(omen::PACKS)) ++n;                          // the packs grow
+    if (omen(omen::LONEWOLVES)) n = std::max(1, n - 1);  // Lone Wolves: fewer, and stronger (spawn)
     P c = rnd.pick(far);
     for (int i = 0; i < n; ++i) spawn_near(kind, c);
-    budget -= n;
+    budget -= cost;
+  }
+  if (!boss_floor && floor->depth > 0 && !far.empty()) spawn_nemesis(fl, far);
+  if (omen(omen::CRACKED) && zfloor == 0 && !boss_floor && floor->depth > 0 && !far.empty()) {  // Cracked Seals: a hoard, and its guards
+    P c = rnd.pick(far);
+    if (fl.tile(c.x, c.y) == FLOOR || fl.tile(c.x, c.y) == CRUST) {
+      fl.set(c.x, c.y, CHEST);
+      std::string kind = pick_kind();
+      std::vector<std::string> mods{rnd.pick(AFFIXES).first};
+      for (int i = 0; i < 3; ++i) if (auto m = spawn_near(kind, c)) champion(*m, mods);
+    }
   }
   zone_foes(fl);
+  if (omen(omen::HUNGRYDARK) && fl.depth > 0)  // Hungry Dark: the torches and lamps are out
+    for (auto& t : fl.t) { if (t == TORCH) t = WALL; else if (t == LAMP || t == BRAZIER || t == CANDLE) t = PILLAR; }
   return std::move(floor);
 }
 
@@ -772,6 +810,16 @@ void Game::talk(Hero& h, const json& a) {
     } else if (k == "potion") buy_potion(h, a.value("p", ""));
   } else if (h.talking == "smith" && k == "retune") {
     retune(h, a.value("id", 0), a.value("from", ""), a.value("e", -1));
+  } else if (h.talking == "smith" && k == "temper") {
+    temper(h, a.value("id", 0));
+  } else if (h.talking == "gate" && k == "frost" && floor->depth == 0) {
+    int open = h.frost_open;
+    for (auto* o : active()) open = std::min(open, o->frost_open);
+    int f = a.value("f", -1);
+    if (f < 0 || f > open || f == frost) return;
+    set_frost(f);
+    say_all(std::string("The guard chalks it on his board: ") + (f ? "Frost " + std::to_string(f) : std::string("Normal")) + ".", 0xA8C0E0);
+    for (int o : omens) say_all(std::string("An omen: ") + omen::DEF[o].name + ". " + cap(omen::DEF[o].text) + ".", 0x9CD2FF);
   } else if (h.talking == "guide" && k == "way") {
     open_way(h, a.value("z", -1));
   }
@@ -786,7 +834,7 @@ void Game::retune(Hero& h, int id, const std::string& from, int to) {
   if (!it || from == RES[to]) return;
   auto st = std::find_if(it->stats.begin(), it->stats.end(), [&](auto& p) { return p.first == from; });
   if (st == it->stats.end()) return;
-  int price = retune_price();
+  int price = h.perk("brannsfriend") ? retune_price() / 2 : retune_price();
   if (h.gold < price) { h.say("Brann grunts. \"" + std::to_string(price) + " gold, and not a coin less.\"", 0xC8966E); return; }
   h.gold -= price;
   int v = st->second;
@@ -798,6 +846,85 @@ void Game::retune(Hero& h, int id, const std::string& from, int to) {
   add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", elem::COL[to]}});
 }
 
+// Brann tempers a worn thing one step, for gold; never past what the Frost level could give (plan.md section 7)
+void Game::temper(Hero& h, int id) {
+  ItemP it;
+  for (auto& [slot, i] : h.equip) if (i->id == id) it = i;
+  if (!it) return;
+  if (it->plus >= temper_cap()) {
+    h.say("Brann turns it over. \"No more in it. Not at this Frost. Go deeper, and I'll go further.\"", 0xC8966E);
+    return;
+  }
+  int price = temper_price(h, *it);
+  if (h.gold < price) { h.say("Brann grunts. \"" + std::to_string(price) + " gold, and not a coin less.\"", 0xC8966E); return; }
+  h.gold -= price;
+  loot::temper(*it);
+  refit(h);
+  h.say("Brann's hammer rings on and on. " + it->name + ".", 0xC8966E);
+  add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xFFB040}});
+}
+
+// ------------------------------------------------------------------ the killer comes back
+void Game::spawn_nemesis(Floor& fl, const std::vector<P>& far) {
+  if (!nemesis.is_object() || nemesis_met || nemesis.value("zone", std::string()) != ACTS[fl.act].key) return;
+  const std::string key = nemesis.value("key", std::string());
+  bool known = false;
+  for (auto& d : data::MONSTERS) if (d.key == key && !d.boss) known = true;
+  if (!known) { nemesis_met = true; return; }
+  P c = rnd.pick(far);
+  auto m = spawn(key, c.x, c.y);
+  if (!m) return;
+  nemesis_met = true;
+  unique(*m);
+  std::string aff = nemesis.value("affix", std::string("Brutal"));
+  if (std::find(m->mods.begin(), m->mods.end(), aff) == m->mods.end()) {  // the dead hero's element, in its blood now
+    auto all = m->mods;
+    m->mods = {aff};
+    apply_mods(*m);
+    all.push_back(aff);
+    m->mods = all;
+    assign_element(*m);
+  }
+  int kills = std::max(1, nemesis.value("kills", 1));  // each hero it slays makes it stronger
+  m->maxhp = rnd_i(m->maxhp * (1 + .3 * (kills - 1))); m->hp = m->maxhp;
+  m->lo = rnd_i(m->lo * (1 + .1 * (kills - 1))); m->hi = rnd_i(m->hi * (1 + .1 * (kills - 1)));
+  std::string first = nemesis.value("name", std::string());
+  if (first.empty()) first = m->name;
+  auto slew = nemesis.value("slew", json::array());
+  std::string hero = slew.empty() ? nemesis.value("hero", std::string("a hero")) : slew.back().get<std::string>();
+  m->name = first + ", Slayer of " + hero;
+  nemesis["name"] = first;
+  m->nemesis = true;
+  for (auto& it : nemesis.value("items", json::array())) if (auto i = loot::load(it)) m->carried.push_back(i);
+}
+
+std::string Game::nemesis_warning() const {
+  if (!nemesis.is_object() || nemesis_met) return "";
+  std::string what;
+  auto items = nemesis.value("items", json::array());
+  if (!items.empty()) what = " It carries " + items.back().value("name", std::string("what was theirs")) + ".";
+  return "Ebb lowers his voice. \"The thing that killed " + nemesis.value("hero", std::string("your kin")) + " walks in " +
+         nemesis.value("zname", std::string("the dark")) + " now." + what + " Be ready, or go another way.\"";
+}
+
+// ------------------------------------------------------------------ the Frost ladder: its level, its omens, its bite
+int Game::res_held(const Hero& h) const {
+  Stats st = stats(h);
+  auto s = [&](const std::string& k) { int t = 0; for (auto& [slot, it] : h.equip) t += it->stat(k); return std::min(75, t); };
+  return (st.res_f + st.res_c + st.res_p + s("res_ash") + s("res_blood")) / 5;
+}
+
+std::string Game::threshold(const Hero& h, int f) const {
+  if (f < 0) f = frost;
+  int bite = 10 * std::min(f, 5);
+  return "The cold here bites " + std::to_string(bite) + "%. You hold " + std::to_string(res_held(h)) + "%.";
+}
+
+void Game::set_frost(int f) {
+  frost = std::clamp(f, 0, 99);
+  omens = omen::draw(seed, frost);
+}
+
 MonP Game::spawn(const std::string& key, int x, int y) {
   auto m = std::make_shared<Mon>();
   const MonDef& d = mon_def(key);
@@ -806,9 +933,12 @@ MonP Game::spawn(const std::string& key, int x, int y) {
   m->xp = d.xp * 2;
   m->rank = d.boss ? "boss" : "normal";
   double k = 1 + .6 * (std::max<size_t>(1, living().size()) - 1);
-  m->maxhp = rnd_i(d.hp * k * (1 + .25 * frost)); m->hp = m->maxhp;
+  double angry = d.boss && omen(omen::ANGRY) ? 1.3 : 1.0;      // Great foes wake angry
+  double lone = !d.boss && omen(omen::LONEWOLVES) ? 1.35 : 1.0;  // Lone Wolves: every foe much stronger
+  m->maxhp = rnd_i(d.hp * k * frost_life() * angry * lone); m->hp = m->maxhp;
   if (frost > 0) {  // the deeper the frost, the harder they come; their resistances carry the rest
-    m->lo = rnd_i(m->lo * (1 + .15 * frost)); m->hi = rnd_i(m->hi * (1 + .15 * frost));
+    double b = frost_blow() * (angry > 1 ? 1.1 : 1.0) * (lone > 1 ? 1.15 : 1.0);
+    m->lo = rnd_i(m->lo * b); m->hi = rnd_i(m->hi * b);
     m->acc += 3 * frost; m->ar += frost;
     m->xp = rnd_i(m->xp * (1 + .3 * frost));
   }
@@ -850,7 +980,7 @@ void Game::unique(Mon& m) {
   std::vector<std::string> all;
   for (auto& [k, v] : AFFIXES) all.push_back(k);
   rnd.shuffle(all);
-  m.mods.assign(all.begin(), all.begin() + rnd.range(2, 3));
+  m.mods.assign(all.begin(), all.begin() + std::min<int>(all.size(), rnd.range(2, 3) + (omen(omen::KINGSCOLD) ? 1 : 0)));
   apply_mods(m);
   m.maxhp *= 4; m.hp = m.maxhp;
   m.lo = rnd_i(m.lo * 1.5); m.hi = rnd_i(m.hi * 1.5); m.acc += 12; m.ar += 2; m.xp *= 6;
@@ -917,6 +1047,11 @@ void Game::debug(Hero& h, const std::string& w) {
   } else if (w == "gold") {
     h.gold += 500;
     h.say("[debug] 500 gold.", 0x80C0FF);
+  } else if (w == "legendary") {
+    if (int(h.pack.size()) >= pack_max(h)) { h.say("[debug] Your pack is full.", 0x80C0FF); return; }
+    auto it = loot::legendary(rnd, rnd.coin() ? h.cls->kinds : std::vector<std::string>{}, frost_band());
+    h.pack.push_back(it);
+    h.say("[debug] " + it->name + " in your pack.", data::rarity_col("legendary"));
   } else if (w == "next" || w == "boss") {
     if (w == "boss" && !floor->rest) zfloor = std::max(zfloor, ACTS[route.back()].floors - 2);
     say_all("[debug] On to the next map.", 0x80C0FF);
@@ -928,6 +1063,7 @@ void Game::debug(Hero& h, const std::string& w) {
 bool Game::free_action(Hero& h, const json& a) {
   std::string t = a.value("t", "");
   if (t == "perk") { choose_perk(h, a.value("k", "")); return true; }
+  if (t == "reroll") { reroll_perks(h); return true; }
   if (t == "buy") { buy(h, a.value("i", -1)); return true; }
   if (t == "buyp") { buy_potion(h, a.value("k", "")); return true; }
   if (t == "sell") { sell(h, a.value("id", 0)); return true; }
@@ -962,8 +1098,9 @@ void Game::step(const std::map<int, json>& actions) {
     if (it == heroes.end() || !it->second->present()) continue;
     auto a = actions.find(id);
     Hero& hh = *it->second;
+    if (hh.dazed > 0 && hh.perk("unyielding")) hh.dazed = 0;  // Unyielding: nothing holds it
     if (hh.dazed > 0) { --hh.dazed; hh.say("You reel, and lose the turn.", 0xC0A0E0); continue; }
-    if (!hh.carry.empty() && turn % 3 == 0) { num(hh.x, hh.y, "ember", elem::COL[elem::EMBER]); continue; }  // its weight
+    if (!hh.carry.empty() && turn % 3 == 0 && !hh.perk("emberbearer")) { num(hh.x, hh.y, "ember", elem::COL[elem::EMBER]); continue; }  // its weight
     act(hh, a == actions.end() ? json{{"t", "wait"}} : a->second);
     if (state != "play") return;
   }
@@ -992,7 +1129,8 @@ void Game::act(Hero& h, const json& a) {
     Acting(Game& game, Hero* h) : g(game) { g.acting_ = h; g.discharging_ = -1; g.acting_el_ = -1; g.credit_ = -1; g.credit_weapon_ = false; }
     ~Acting() { g.acting_ = nullptr; g.discharging_ = -1; g.acting_el_ = -1; g.credit_ = -1; g.credit_weapon_ = false; }
   } acting(*this, &h);
-  if (t == "move" && h.stk.n[elem::RIME] > 0 && rnd.below(100) < std::min(30, 10 * h.stk.n[elem::RIME])) {
+  int rime_legs = h.leg("kingsfrost") ? std::max(2, h.stk.n[elem::RIME]) : h.stk.n[elem::RIME];  // Kingsfrost Mail weighs like 2 stacks
+  if (t == "move" && rime_legs > 0 && !h.perk("coldhands") && !h.perk("unyielding") && rnd.below(100) < std::min(30, 10 * rime_legs)) {
     h.say("Rime stiffens your legs; the step comes slow.", elem::COL[elem::RIME]);
     return;
   }
@@ -1022,10 +1160,23 @@ void Game::move(Hero& h, int dx, int dy) {
     h.say("The trader nods. 'Dwarf gold spends the same as any.'", 0xD2B48C);
     return;
   }
+  if (floor->depth == 0 && floor->tile(nx, ny) == GUARD) {  // the gate guard: which Frost to go down into (plan.md section 7)
+    if (h.frost_open <= 0) { h.say("The guard nods you past. \"Mind the dead on the way down.\"", 0xA8C0E0); return; }
+    h.talking = "gate";
+    h.talk_line = "How deep, then? The cold below has grown since you last went down.";
+    return;
+  }
   if (int ht = floor->tile(nx, ny); ht == HEALER || ht == SMITH || ht == DIGGER) {  // the helpers: a word and their window
     const auto& lines = ht == HEALER ? lore::YSOLDE : ht == SMITH ? lore::BRANN : lore::EBB;
     h.talking = ht == HEALER ? "healer" : ht == SMITH ? "smith" : "guide";
     h.talk_line = ht == DIGGER && floor->depth == 0 ? lore::EBB_TOWN : lines[rnd.below(int(lines.size()))];
+    if (ht == DIGGER && !nemesis_warning().empty()) {  // Ebb warns of the killer come back, before its zone
+      int z = -1;
+      for (int i = 0; i < ZONES; ++i) if (ACTS[i].key == nemesis.value("zone", std::string())) z = i;
+      bool ahead = floor->depth == 0 ? z == 0 : false;
+      if (floor->camp) for (int n : ACTS[floor->act].next) ahead = ahead || n == z;
+      if (ahead) h.talk_line = nemesis_warning();
+    }
     return;
   }
   switch (floor->tile(nx, ny)) {
@@ -1047,6 +1198,7 @@ void Game::move(Hero& h, int dx, int dy) {
     default: break;
   }
   if (!floor->walk(nx, ny)) return;
+  if (h.held > 0 && h.perk("unyielding")) h.held = 0;
   if (h.held > 0) { h.say("You are held fast.", 0xE0C060); return; }
   h.x = nx; h.y = ny;
   h.moved = turn;
@@ -1071,10 +1223,10 @@ void Game::arrive(Hero& h) {
     }
     else if (!fi.pot.empty()) {
       if (fi.pot == "heal" && h.heal < belt(h)) { ++h.heal; h.say("A healing potion.", 0xFF7070); }
-      else if (fi.pot == "mana" && h.mana_pots < BELT_MAX) { ++h.mana_pots; h.say("A mana potion.", 0x7090FF); }
+      else if (fi.pot == "mana" && h.mana_pots < belt(h)) { ++h.mana_pots; h.say("A mana potion.", 0x7090FF); }
       else took = false;
     } else if (fi.item) {
-      if (int(h.pack.size()) >= PACK_MAX) { h.say("Your pack is full: " + fi.item->name + " stays here.", 0x909090); took = false; }
+      if (int(h.pack.size()) >= pack_max(h)) { h.say("Your pack is full: " + fi.item->name + " stays here.", 0x909090); took = false; }
       else {
         h.pack.push_back(fi.item);
         Verdict v = compare(h, *fi.item);
@@ -1093,6 +1245,8 @@ void Game::arrive(Hero& h) {
   int t = floor->tile(h.x, h.y);
   if (t == STAIRS) h.say("Stairs lead down. Press [>] to descend.", 0xFFE680);
   if (t == EDGE) h.say("The crust runs on into the dark. Press [>] to go on.", 0xFFE680);
+  if (t == FOUNTAIN && !h.drank && omen(omen::BROKEN)) { h.drank = true; h.say("The fountain is cracked. Its water runs away into the stone.", 0x909090); }
+  if (t == FOUNTAIN && !h.drank && h.leg("ashwalker")) { h.drank = true; h.say("The water runs grey off your boots. It does nothing for you.", 0x909090); }
   if (t == FOUNTAIN && !h.drank) {
     h.drank = true;
     Stats st = stats(h);
@@ -1122,6 +1276,14 @@ void Game::descend(Hero& h) {
     if (!missing.empty()) { h.say("A guard shakes his head. \"Your group goes down together. Still missing: " + missing + ".\"", 0xD2B48C); return; }
   }
   if (!floor->embers.empty()) { h.say("A fallen friend's ember still lies on this map. Take it up first, or it goes out in the dark.", 0xFFA040); return; }
+  if (floor->depth == 0 && omen(omen::BROKEN) && !h.omen_gift) {
+    h.omen_gift = true;  // Broken Fountains: the healer sends you down with more
+    h.heal += 2; h.mana_pots += 2;
+    h.say("Ysolde presses two more of each into your belt. \"The fountains below are broken. You'll want these.\"", 0xAADCAA);
+  }
+  if (floor->depth == 0 && frost > 0) {  // the threshold, as the gate sees you go (plan.md section 7)
+    h.say(threshold(h), 0x9CD2FF);
+  }
   h.gone = true;
   if (!active().empty()) {
     h.say("You wait on the stairs for the others.", 0xA0A0A0);
@@ -1173,7 +1335,7 @@ bool Game::busy(const Mon& m, const Hero& h) {
 }
 
 void Game::focus_up(Hero& h) {
-  if (h.cls->key == "bow") h.focus = std::min(h.perk("sharpshooter") ? 5 : 3, h.focus + 1);
+  if (h.cls->key == "bow") h.focus = std::min(h.perk("sharpshooter") ? 5 : 3, h.focus + 1 + h.perk("steadyaim"));
 }
 
 void Game::bleed(Hero& h, Mon& m, int dmg) {
@@ -1187,9 +1349,12 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   Stats st = stats(h);
   bool opening = h.cls->key == "dagger" && !ranged && busy(m, h);
   bool unseen = !m.awake;
+  if (unseen) m.caught = true;  // for Long Night
   m.awake = true;
   m.open = 0;
-  int chance = std::clamp(st.acc - m.ar * 2 + 12 + (opening ? 30 : 0) - 8 * h.stk.n[elem::ASH], 25, 97);
+  int ar = h.perk("festering") ? std::max(0, m.ar - m.stk.n[elem::ROT]) : m.ar;  // Festering: the rot eats its armour
+  int chance = std::clamp(st.acc - ar * 2 + 12 + (opening ? 30 : 0) - 8 * h.stk.n[elem::ASH], 25, 97);
+  if (h.perk("opener") && m.hp >= m.maxhp) chance = 100;
   if (rnd.below(100) >= chance) { h.say("You miss " + the(m) + ".", 0x909090); num(m.x, m.y, "miss", 0x808080); return false; }
   double d = rnd.range(st.lo, st.hi) * (1 + st.pct / 100.0) * mult;
   if (h.numb > 0) d *= .75;
@@ -1203,8 +1368,8 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   }
   if (!ranged) h.fury = std::min(10, h.fury + 1);
   bool crit = opening || rnd.below(100) < st.crit;
-  if (crit) { d *= opening ? 2.5 : 2; add_fx({{"k", "crit"}, {"x", m.x}, {"y", m.y}}); }
-  int dmg = std::max(1, rnd_i(d - m.ar / 2.0));
+  if (crit) { d *= opening ? 2.5 : h.leg("silentdirk") ? 3 : 2; add_fx({{"k", "crit"}, {"x", m.x}, {"y", m.y}}); }
+  int dmg = std::max(1, rnd_i(d - ar / 2.0));
   if (ranged && m.can("wall")) { dmg = std::max(1, dmg / 2); tip(h, "wall", "A shield-bearer stops arrows and spells, for itself and whoever stands behind it. Close in."); }
   if (st.fire > 0) dmg += m.def->fire ? st.fire / 2 : st.fire;
   add_fx({{"k", "blood"}, {"x", m.x}, {"y", m.y}, {"src", xy(h.x, h.y)}});
@@ -1225,6 +1390,8 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
     m.stun = std::max(m.stun, 1);
     num(m.x, m.y, "stunned", 0xE0D080);
   }
+  if (!ranged && h.leg("kingsbane") && !m.can("stone")) { m.stun = std::max(m.stun, 1); num(m.x, m.y, "stunned", 0xE0D080); }  // Kingsbane: every blow
+  if (!ranged && h.leg("pyrehand")) lay_on_mon(h, m, 1, elem::EMBER);  // Pyrehand: the gauntlets set it alight
   crit_next = crit;
   if (ranged && &h == acting_) {  // Smokestalker and Plaguehunter lay a second stack before the blow lays its own
     if (unseen && combo(h, 1, elem::ASH) && hero_el(h) == elem::ASH) lay_on_mon(h, m, 1);
@@ -1241,19 +1408,27 @@ void Game::melee(Hero& h, Mon& m) {
   credit_weapon_ = true;
   int reach = stats(h).reach;
   int mx = m.x, my = m.y, id = m.id;
+  if (h.leg("kingsbane") && ++h.lift >= 3) {  // Kingsbane: every third swing goes into lifting it again
+    h.lift = 0;
+    h.say("You heave the great maul up again.", 0xB0A890);
+    return;
+  }
   strike(h, m, reach >= 5 ? .5 : 1.0);
-  // the axe bites a second foe beside you
+  if (h.leg("lastspear") && m.hp > 0 && h.cls->key == "spear") strike(h, m, reach >= 5 ? .5 : 1.0);  // the Last Dwarf's Spear: twice
+  if (h.perk("skirmrhythm")) h.skirm = true;  // Skirmisher's Rhythm: the next shot comes harder
+  // the axe bites a second foe beside you (and anyone's blow with Sweeping Blows)
   auto ms = floor->mons;
-  if (h.cls->key == "axe")
+  if (h.cls->key == "axe" || h.perk("sweeping"))
     for (auto& o : ms)
       if (o->hp > 0 && o->id != id && cheb(o->x, o->y, h.x, h.y) == 1 && cheb(o->x, o->y, mx, my) <= 1) {
         add_fx({{"k", "swing"}, {"src", xy(h.x, h.y)}, {"cells", json::array({xy(o->x, o->y)})}});
-        strike(h, *o, .5 + .05 * mastery(h, "axe"));
+        strike(h, *o, h.cls->key == "axe" ? .5 + .05 * mastery(h, "axe") : .5);
         break;
       }
 }
 
 void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
+  if (by && !by->perks.empty()) dmg = std::max(1, rnd_i(dmg * perk_harm(*by, m)));
   dmg = trait_hurt(m, dmg);
   if (m.spent > 0) dmg = dmg * 3 / 2;
   if (m.smothered > 0) dmg = dmg * 5 / 4;
@@ -1269,11 +1444,15 @@ void Game::hurt(Mon& m, int dmg, Hero* by, const std::string& text) {
     Hero* h = acting_;
     acting_ = nullptr;
     if (discharging_ >= 0 && m.stk.n[discharging_] > 0) discharge_mon(*h, m, discharging_);
-    else lay_on_mon(*h, m, 1);
+    else lay_on_mon(*h, m, (credit_ == 1 && h->leg("recurve") ? 2 : 1) + (omen(omen::EMBERTIDE) ? 1 : 0));  // the Webmother's Recurve: two stacks an arrow; Ember Tide
     acting_ = h;
     if (m.hp <= 0) return;
   }
   crit_next = false;
+  if (by && m.hp > 0 && by->leg("headsman") && m.hp * (m.rank == "boss" ? 10 : 5) < m.maxhp) {  // Headsman's Promise (a great foe at a tenth)
+    num(m.x, m.y, "beheaded", 0xE0B050);
+    m.hp = 0;
+  }
   m.awake = true;
   if (by && !text.empty()) by->say(text, 0xFFD25A);
   if (m.hp <= 0) { kill(m, by); return; }
@@ -1359,13 +1538,23 @@ const std::map<std::string, std::map<std::string, std::string>> BLOW_SAYS = {
     {"prelate", {{"smash", "spreads his frozen hands."}, {"line", "opens his ribs at you."}, {"sweep", "turns, and the cold spreads."},
                  {"toll", "begins a black prayer. Break it!"}, {"pyre", "opens the void in his chest. Find the gold!"}}},
     {"ashenking", {{"smash", "raises the black blade."}, {"line", "points, and the frost gathers."}, {"sweep", "draws the cold around him."},
-                   {"toll", "speaks a word of the old dwarves. Break it!"}, {"pyre", "opens his chest. The Pyreheart blazes. Find the gold!"}}},
+                   {"toll", "speaks a word of the old dwarves. Break it!"}, {"pyre", "opens his chest. The Pyreheart blazes. Find the gold!"},
+                   // what he borrows from the great foes slain on the way down (plan.md section 7, The King learns)
+                   {"flood", "spills black meltwater across the floor."}, {"chain", "flings a chain of frozen links."},
+                   {"ingot", "hurls a shard of burning heart-iron."}, {"charge", "lowers the black blade and charges."},
+                   {"ashbreath", "breathes the ash of the dead city. Break it, or the hall goes dark!"}}},
+};
+// The King learns (plan.md section 7): a new move at Frost 1, 4 and 7, and from every zone boss slain on the way down
+// he borrows its heaviest trick, so the route makes each King fight different
+const std::map<std::string, std::string> KING_BORROWS = {
+    {"crypt", "slam"}, {"caves", "spit"}, {"forge", "flame"}, {"cistern", "flood"}, {"city", "ashbreath"},
+    {"vaults", "ingot"}, {"barracks", "charge"}, {"prison", "chain"}, {"sanctum", "void"},
 };
 
 bool Game::wind_up(Mon& m, Hero& h, const std::string& name) {
   const BlowDef& bd = BLOWS.at(name);
   Blow b;
-  b.name = name; b.kind = bd.kind; b.turns = bd.turns; b.heavy = bd.heavy;
+  b.name = name; b.kind = bd.kind; b.turns = bd.turns + h.perk("sixthsense"); b.heavy = bd.heavy;
   b.dmg = rnd_i((m.lo + m.hi) / 2.0 * bd.mult);
   b.elem = m.def->fire ? "fire" : m.def->cold ? "cold" : "";
   auto add = [&](int x, int y) { if (floor->walk(x, y)) b.cells.push_back({x, y}); };
@@ -1478,16 +1667,37 @@ void Game::land(Mon& m) {
 
 void Game::boss_phase(Mon& m) {
   int ph = m.hp * 3 <= m.maxhp ? 2 : m.hp * 3 <= 2 * m.maxhp ? 1 : 0;
+  bool fourth = m.def->key == "ashenking" && frost >= 10 && m.hp * 7 <= m.maxhp;  // from Frost 10 the King has a fourth phase
+  if (fourth) ph = 3;
   if (ph <= m.phase) return;
   m.phase = ph;
   m.deck.clear();
   m.cool = 1;
+  if (ph == 3) {
+    say_all("The Ashen King tears the Pyreheart half out of his chest. Its light and its cold pour over the hall: he holds nothing back now.", 0xFF8C28);
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 4}, {"col", 0xFF8C28}, {"sign", "*"}});
+    m.spd = m.spd * 5 / 4;
+    m.stk = {};
+    Hero* h = nearest_hero(m, false);
+    if (h) boss_move(m, *h, cheb(h->x, h->y, m.x, m.y), "hollowcourt");
+    return;
+  }
   say_near(m.x, m.y, cap(the(m)) + (ph == 1 ? " staggers, and fights harder." : " is badly hurt. Now it holds nothing back."), 0xFFB060);
   Hero* h = nearest_hero(m, false);
   if (h) boss_move(m, *h, cheb(h->x, h->y, m.x, m.y), "summon");
 }
 
 void Game::kill(Mon& m, Hero* by) {
+  if (m.rank == "boss" && omen(omen::REMEMBERS) && !m.reborn) {  // the Pyre Remembers: a zone boss gets up once more
+    m.reborn = true;
+    m.hp = std::max(1, m.maxhp * 2 / 5);
+    m.phase = 1;
+    m.deck.clear();
+    m.stk = {};
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 2}, {"col", 0xFF8C28}, {"sign", "*"}});
+    say_all("The Pyre remembers " + the(m) + ". It will not fall yet: it rises, burning.", 0xFFB060);
+    return;
+  }
   m.hp = 0;
   MonP keep;
   for (auto it = floor->mons.begin(); it != floor->mons.end(); ++it)
@@ -1507,8 +1717,27 @@ void Game::kill(Mon& m, Hero* by) {
   }
   int col = m.rank == "champion" ? 0x7090FF : (m.rank == "unique" || m.rank == "boss") ? 0xE0B050 : 0xC8C8C8;
   say_near(m.x, m.y, cap(the(m)) + " dies.", col);
+  if (Hero* w = stacks_by(m, elem::EMBER); w && w->perk("wildfire") && m.stk.n[elem::EMBER] > 0)  // Wildfire
+    for (auto& o : floor->mons) if (o->hp > 0 && cheb(o->x, o->y, m.x, m.y) <= 1) { o->stk.n[elem::EMBER] = std::min(elem::MAX, o->stk.n[elem::EMBER] + 2); o->stk.idle[elem::EMBER] = 0; o->stk.by[elem::EMBER] = w->pid; }
   if (by) {
     ++by->kills;
+    Stats bst = stats(*by);
+    if (by->perk("stackthief")) {  // Stack Thief: the kill takes the heaviest stack off you
+      int e = int(std::max_element(by->stk.n, by->stk.n + elem::N) - by->stk.n);
+      if (by->stk.n[e] > 0) --by->stk.n[e];
+    }
+    int heal = 0;
+    if (by->perk("carrion") && m.stk.n[elem::ROT] > 0) heal += 3;
+    if (by->perk("ironoath")) heal += std::max(1, bst.maxhp / 20);
+    by->kill_turn = turn;
+    if (by->leg("hungering")) heal += std::max(1, bst.maxhp / 10);  // Hungering Edge: it feeds
+    if (by->perk("deathwish")) heal /= 2;
+    if (heal > 0) by->hp = std::min(bst.maxhp, by->hp + heal_amt(*by, heal));
+    int mana = 0;
+    if (by->perk("deepwell2")) mana += std::max(1, bst.maxmana / 10);
+    if (by->perk("quiver") && credit_ == 1) mana += 2;
+    if (by->perk("spellblade") && credit_ == 0) mana += std::max(1, bst.maxmana / 10);
+    if (mana > 0) by->mana = std::min(bst.maxmana, by->mana + mana);
     if (by->perk("blood")) by->hp = std::min(stats(*by).maxhp, by->hp + 3 * by->perk("blood"));
     if (by->tal("heat") && by->heat_floor != floor->id) {  // Heat of Battle
       by->heat_floor = floor->id;
@@ -1528,9 +1757,30 @@ void Game::kill(Mon& m, Hero* by) {
   }
   if (m.def->undead) add_fx({{"k", "soul"}, {"x", m.x}, {"y", m.y}, {"dur", 2.2}});  // what held it up lets go
   learn(m);
-  for (auto* h : living()) gain_xp(*h, m.xp);
+  int xp = m.caught && omen(omen::LONGNIGHT) ? m.xp * 2 : m.xp;  // Long Night: slain before it woke
+  if (!m.risen) for (auto* h : living()) gain_xp(*h, xp);
   trait_death(m);
-  drops(m);
+  if (!m.risen) drops(m);
+  if (m.nemesis) {  // the killer falls: what it took comes back
+    nemesis_beaten = true;
+    for (auto& c : m.carried) {
+      P at;
+      if (!free_near(m.x, m.y, 2, at)) at = {m.x, m.y};
+      floor->items.push_back({at.x, at.y, c, 0, "", 0});
+    }
+    say_all("The slayer of " + nemesis.value("hero", std::string("your kin")) + " falls at last. What it took lies where it fell.", 0xE0B050);
+  }
+  // the dead will not lie: one in six of the ordinary dead gets up once more, at half its life
+  if (omen(omen::RISE) && m.rank == "normal" && !m.risen && !m.summoned && !m.def->boss && rnd.below(6) == 0 && state == "play") {
+    P c;
+    if (free_near(m.x, m.y, 1, c))
+      if (auto r = spawn(m.def->key, c.x, c.y)) {
+        r->risen = true; r->awake = true; r->dormant = r->hidden = r->sleep = 0; r->xp = 0;
+        r->hp = r->maxhp = std::max(1, r->maxhp / 2);
+        r->col = 0x9AA6B8;
+        say_near(c.x, c.y, cap(the(*r)) + " will not lie: it rises again.", 0x9CD2FF);
+      }
+  }
   if (floor->boss.get() == &m) {
     slain.push_back(ACTS[floor->act].key);
     say_all(lore::BOSS_DIES.at(m.def->key), 0xFFD27F);
@@ -1557,15 +1807,25 @@ void Game::gain_xp(Hero& h, int xp) {
     h.mana = st.maxmana;
     h.say("You reach level " + std::to_string(h.lvl) + "!", 0xFFE680);
     add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", 0xFFE680}});
-    offer_perk(h);
+    offer_perk(h, true);
   }
 }
 
-// a choice of three perks the hero has not filled yet: at each level, and at each second rank of a style
-void Game::offer_perk(Hero& h) {
+// a choice of three perks the hero has not filled yet: at each level, and at each second rank of a style. From level 15
+// (or on any Frost level) the deep perks take over, and every 5th level from 15 offers two keystones (plan.md section 7)
+void Game::offer_perk(Hero& h, bool level) {
+  if (h.lvl >= 15 || frost >= 1) {
+    bool keystone = level && h.lvl >= 15 && h.lvl % 5 == 0;
+    auto offer = perk_offer(h, keystone);
+    if (offer.size() > (keystone ? 1u : 0u)) {
+      h.perk_choices.push_back(offer);
+      tip(h, keystone ? "keystone" : "deepperk", keystone ? "A keystone: great power at a price. Choose one, or neither: [p]." : "You may learn a deep perk: [p].");
+      return;
+    }
+  }
   std::vector<std::string> pool;
   for (auto& p : PERKS) {
-    if (!p.cls.empty() || !p.path.empty() || h.perk(p.key) >= p.max) continue;
+    if (!p.cls.empty() || !p.path.empty() || !p.kind.empty() || h.perk(p.key) >= p.max) continue;  // the deep perks and keystones come only later
     bool offered = false;
     for (auto& c : h.perk_choices) for (auto& k : c) if (k == p.key) offered = true;
     if (!offered || h.perk(p.key) + 1 < p.max) pool.push_back(p.key);
@@ -1580,8 +1840,11 @@ void Game::choose_perk(Hero& h, const std::string& k) {
   auto& ch = h.perk_choices.front();
   if (std::find(ch.begin(), ch.end(), k) == ch.end()) return;
   h.perk_choices.erase(h.perk_choices.begin());
+  if (k == "neither") { h.say("You let the keystones lie.", 0xB4A078); return; }
   h.perks[k] = h.perk(k) + 1;
   h.say("You learn " + perk_def(k).name + ".", 0xFFE680);
+  if (k == "onecraft" && h.el2 >= 0) { h.say(std::string("Your second coal gutters out: only ") + elem::NAME[h.el] + " is left in your hands.", elem::COL[h.el]); h.el2 = -1; }
+  if (k == "glasspyre" || k == "packmule") { Stats st = stats(h); h.hp = std::min(h.hp, st.maxhp); }
 }
 
 void Game::drops(const Mon& m) {
@@ -1600,9 +1863,10 @@ void Game::drops(const Mon& m) {
     floor->items.push_back(fi);
   };
   int rank_mul = m.rank == "champion" ? 3 : m.rank == "unique" ? 6 : m.rank == "boss" ? 15 : 1;
-  if (rnd.real() < .35 || m.rank != "normal")
-    drop_at({0, 0, nullptr, rnd_i(lvl * rnd.range(2, 5) * rank_mul * (m.rank == "normal" ? 1.0 : .6)), "", rnd.pick(owners)->pid});
-  if (rnd.real() < (m.rank == "normal" ? .14 : .5))
+  double moon = omen(omen::BLOODMOON) ? 1.5 : 1.0;  // Blood Moon: everything drops more often
+  if (rnd.real() < .35 * moon || m.rank != "normal")
+    drop_at({0, 0, nullptr, rnd_i(lvl * rnd.range(2, 5) * rank_mul * (m.rank == "normal" ? 1.0 : .6) * (omen(omen::GOLDFEVER) ? 2 : 1)), "", rnd.pick(owners)->pid});
+  if (rnd.real() < (m.rank == "normal" ? .14 : .5) * moon)
     drop_at({0, 0, nullptr, 0, rnd.real() < .65 ? "heal" : "mana", rnd.pick(owners)->pid});
   if (m.rank == "boss") {
     // the great foes give each hero two things worth having
@@ -1610,13 +1874,14 @@ void Game::drops(const Mon& m) {
       drop_at({0, 0, roll_loot(lvl + 1, o->cls->kinds, "", "rare"), 0, "", o->pid});
       drop_at({0, 0, roll_loot(lvl + 1, kinds, "", "magic"), 0, "", o->pid});
     }
-    if (rnd.real() < .3) drop_at({0, 0, roll_loot(lvl, kinds, "unique"), 0, "", rnd.pick(owners)->pid});
+    if (omen(omen::REMEMBERS) || rnd.real() < .3) drop_at({0, 0, roll_loot(lvl, kinds, "unique"), 0, "", rnd.pick(owners)->pid});
+    if (frost >= 5 && rnd.real() < (omen(omen::REMEMBERS) ? .2 : .1)) drop_at({0, 0, roll_loot(lvl, kinds, "legendary"), 0, "", rnd.pick(owners)->pid});
     return;
   }
   std::vector<ItemP> items;
   if (m.rank == "unique") { items.push_back(roll_loot(lvl, kinds, "", "rare")); items.push_back(roll_loot(lvl, kinds, "", "magic")); }
-  else if (m.rank == "champion") { if (m.def->gear || rnd.real() < .4) items.push_back(roll_loot(lvl, kinds, "", "magic")); }
-  else if (m.def->gear && rnd.real() < .12) items.push_back(roll_loot(lvl, kinds));
+  else if (m.rank == "champion") { if (omen(omen::HUNGRYDARK)) items.push_back(roll_loot(lvl, kinds, "", "rare")); else if (m.def->gear || rnd.real() < .4 * moon) items.push_back(roll_loot(lvl, kinds, "", "magic")); }
+  else if (m.def->gear && rnd.real() < .12 * moon) items.push_back(roll_loot(lvl, kinds));
   for (auto& it : items) drop_at({0, 0, it, 0, "", rnd.pick(owners)->pid});
 }
 
@@ -1631,7 +1896,7 @@ void Game::open_chest(Hero& h, int x, int y) {
     });
   };
   for (auto* o : living()) {  // something for each hero
-    auto it = roll_loot(lvl, o->cls->kinds, rnd.real() < .45 ? "magic" : "");
+    auto it = roll_loot(lvl, o->cls->kinds, rnd.real() < (o->perk("treasurenose") ? .75 : .45) ? "magic" : "");
     P c;
     if (spot(c)) floor->items.push_back({c.x, c.y, it, 0, "", o->pid});
   }
@@ -1654,6 +1919,11 @@ void Game::shrine(Hero& h, int x, int y) {
     add_fx({{"k", "wave"}, {"x", x}, {"y", y}, {"r", 3}, {"col", 0x9CD2FF}, {"sign", "*"}});
     return;
   }
+  int strong = omen(omen::RESTLESS) ? 2 : 1;  // Restless Shrines: twice as strong, and loud
+  if (omen(omen::RESTLESS)) {
+    for (auto& m : floor->mons) if (m->hp > 0 && !m->dormant && !m->hidden && cheb(m->x, m->y, x, y) <= 12) { m->awake = true; m->sleep = 0; }
+    say_all("The shrine's voice rolls through the halls. Everything near it wakes.", 0xFF8C6A);
+  }
   switch (rnd.below(3)) {
     case 0:
       for (auto* o : active()) { o->hp = stats(*o).maxhp; o->poison = 0; }
@@ -1664,8 +1934,12 @@ void Game::shrine(Hero& h, int x, int y) {
       say_all(h.name + " touches the shrine: your minds fill with light.", 0xBEA0FF);
       break;
     default:
-      for (auto* o : living()) gain_xp(*o, 10 * lvl + 10);
+      for (auto* o : living()) gain_xp(*o, (10 * lvl + 10) * (1 + frost / 3) * strong);
       say_all(h.name + " touches the shrine: old knowledge settles in you.", 0xBEA0FF);
+  }
+  if (frost > 0) {  // deeper in the Frost the shrines bless harder: a while of fire in the blood (plan.md section 7)
+    for (auto* o : active()) o->boon = std::max(o->boon, (20 + 4 * std::min(frost, 10)) * strong);
+    say_all("The shrine's blessing burns on in you: your blows land harder for a while.", 0xBEA0FF);
   }
   add_fx({{"k", "wave"}, {"x", x}, {"y", y}, {"r", 3}, {"col", 0xBEA0FF}, {"sign", "*"}});
 }
@@ -1710,9 +1984,20 @@ void Game::skill(Hero& h, int n, int x, int y) {
   if (key == "tumble") cost -= 2 * h.perk("quick");
   if (key == "kindle" && h.perk("deeprunes")) cost = 0;
   bool in_blood = !fury && pool < cost && combo(h, 2, elem::BLOOD) && h.hp > 2 * cost + 1;  // Bloodbinder
-  if (pool < cost && !in_blood) { h.say(std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk.name + ".", fury ? 0xE08040 : 0x7090FF); return; }
+  int life = h.perk("bloodprice") ? (cost * 3 + 1) / 2 : 0;  // Bloodprice: paid in life, half as much again
+  if (life > 0) {
+    if (h.hp <= life) { h.say("Too little life left to pay for " + sk.name + ".", elem::COL[elem::BLOOD]); return; }
+    in_blood = false;
+  } else if (pool < cost && !in_blood) { h.say(std::string(fury ? "Not enough fury" : "Not enough mana") + " for " + sk.name + ".", fury ? 0xE08040 : 0x7090FF); return; }
   if (sk.target && !target(h, x, y)) { h.say("No target.", 0x909090); return; }
-  if (h.smother > 0) { h.say("Soot chokes you: your skills will not come this turn.", elem::COL[elem::ASH]); return; }
+  if (h.smother > 0 && !h.perk("clearlungs")) { h.say("Soot chokes you: your skills will not come this turn.", elem::COL[elem::ASH]); return; }
+  full_mana_ = h.mana >= stats(h).maxmana;
+  if (life > 0) {
+    h.hp -= life;
+    num(h.x, h.y, std::to_string(life), elem::COL[elem::BLOOD]);
+    cost = 0;
+  }
+  if (h.perk("spellblade") && !fury && cost > 0) h.fury = std::min(10, h.fury + 2);
   if (in_blood) {
     h.hp -= 2 * cost;
     num(h.x, h.y, std::to_string(2 * cost), elem::COL[elem::BLOOD]);
@@ -1804,14 +2089,16 @@ int Game::rune_dmg(const Hero& h) {
 
 void Game::burst_rune(Hero& h, P at) {
   int r = h.perk("fireward") ? 2 : 1;
-  add_fx({{"k", "burst"}, {"x", at.x}, {"y", at.y}, {"r", r}, {"col", 0x50E6E6}});
-  int dmg = rune_dmg(h);
-  auto ms = floor->mons;
-  for (auto& m : ms) {
-    if (m->hp <= 0 || cheb(m->x, m->y, at.x, at.y) > r) continue;
-    int d = m->pinned > 0 && h.perk("heavyrunes") ? dmg * 5 / 4 : dmg;
-    if (h.perk("stoneward")) m->pinned = std::max(m->pinned, 2);
-    hurt(*m, m->def->fire ? d / 2 : d, &h);
+  for (int twice = h.leg("gravechisel") ? 2 : 1; twice > 0; --twice) {  // the Gravechisel's runes burst twice
+    add_fx({{"k", "burst"}, {"x", at.x}, {"y", at.y}, {"r", r}, {"col", 0x50E6E6}, {"delay", twice == 1 ? 0.0 : .15}});
+    int dmg = rune_dmg(h);
+    auto ms = floor->mons;
+    for (auto& m : ms) {
+      if (m->hp <= 0 || cheb(m->x, m->y, at.x, at.y) > r) continue;
+      int d = m->pinned > 0 && h.perk("heavyrunes") ? dmg * 5 / 4 : dmg;
+      if (h.perk("stoneward")) m->pinned = std::max(m->pinned, 2);
+      hurt(*m, m->def->fire ? d / 2 : d, &h);
+    }
   }
 }
 
@@ -1830,6 +2117,75 @@ void Game::trod(Mon& m) {
   }
 }
 
+// every turn: what the legendaries do, and what they cost (plan.md section 7, Legendaries: power at a price)
+void Game::legends_tick() {
+  for (auto* h : active()) {
+    if (h->dead) continue;
+    if (h->boon > 0) --h->boon;  // a shrine's blessing burns down
+    bool fight = false, near = false;
+    for (auto& m : floor->mons)
+      if (m->hp > 0 && m->awake && !m->dormant && !m->hidden) {
+        if (h->sees(m->x, m->y)) fight = true;
+        if (cheb(m->x, m->y, h->x, h->y) <= 2) near = true;
+      }
+    // Hungering Edge: in a fight, each turn without a kill it drinks a little of you (never the last of it)
+    if (h->leg("hungering") && fight && h->kill_turn != turn && h->hp > 1) { --h->hp; num(h->x, h->y, "1", 0xA03030); }
+    // Pyrehand Gauntlets: with foes close the gauntlets burn you too
+    if (h->leg("pyrehand") && near) { hero_hurt(*h, nullptr, 1, "ember"); if (h->dead) continue; }
+    // Whispering Hood: every foe on the map knows where you are
+    if (h->leg("whispering"))
+      for (auto& m : floor->mons) if (m->hp > 0 && !m->dormant && !m->hidden && !m->sleep) m->awake = true;
+    // Ashwalker Boots: the foes that walk in your last steps choke on the ash you leave
+    if (h->leg("ashwalker")) {
+      if (h->trail.empty() || h->trail.back() != P{h->x, h->y}) h->trail.push_back({h->x, h->y});
+      if (h->trail.size() > 5) h->trail.erase(h->trail.begin());
+      auto ms = floor->mons;
+      for (auto& m : ms)
+        if (m->hp > 0 && P{m->x, m->y} != P{h->x, h->y} && std::find(h->trail.begin(), h->trail.end(), P{m->x, m->y}) != h->trail.end())
+          lay_on_mon(*h, *m, 1, elem::ASH);
+    } else h->trail.clear();
+    // Ring of the Hollow Court: a dead dwarf rises on each map and fights beside you
+    if (!h->leg("hollowcourt") || floor->depth == 0 || floor->resting()) { h->court = {-1, -1}; continue; }
+    if (h->court_floor != floor->id || h->court.x < 0 || cheb(h->court.x, h->court.y, h->x, h->y) > 12) {
+      P c;
+      if (!free_near(h->x, h->y, 3, c, [&](int a, int b) { return floor->walk(a, b) && !mon_at(a, b) && !hero_at(a, b) && P{a, b} != P{h->x, h->y}; })) continue;
+      if (h->court_floor != floor->id) {
+        h->say("A dead dwarf of the Hollow Court climbs out of the stone, and takes its place at your side.", 0x8CC8B4);
+        add_fx({{"k", "soul"}, {"x", c.x}, {"y", c.y}, {"dur", 1.2}});
+      }
+      h->court_floor = floor->id;
+      h->court = c;
+    }
+    MonP foe;
+    int bd = 9;
+    for (auto& m : floor->mons)
+      if (m->hp > 0 && m->awake && !m->dormant && !m->hidden && h->sees(m->x, m->y) && cheb(m->x, m->y, h->court.x, h->court.y) < bd) {
+        bd = cheb(m->x, m->y, h->court.x, h->court.y);
+        foe = m;
+      }
+    if (foe && bd <= 1) {
+      Stats st = stats(*h);
+      int dmg = std::max(1, rnd_i(rnd.range(st.lo, st.hi) * .5 + lvl / 2.0));
+      add_fx({{"k", "swing"}, {"src", xy(h->court.x, h->court.y)}, {"cells", json::array({xy(foe->x, foe->y)})}});
+      foe->awake = true;
+      hurt(*foe, dmg, h, "");
+      continue;
+    }
+    P goal = foe ? P{foe->x, foe->y} : P{h->x, h->y};
+    if (!foe && cheb(goal.x, goal.y, h->court.x, h->court.y) <= 2) continue;
+    P best = h->court;
+    int bdist = cheb(goal.x, goal.y, best.x, best.y);
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        int nx = h->court.x + dx, ny = h->court.y + dy;
+        if (!floor->walk(nx, ny) || mon_at(nx, ny) || hero_at(nx, ny)) continue;
+        int d = cheb(goal.x, goal.y, nx, ny);
+        if (d < bdist) { bdist = d; best = {nx, ny}; }
+      }
+    h->court = best;
+  }
+}
+
 // every turn: the lantern's light, burning and hallowed ground, bleeding, held foes, fury draining away
 void Game::classes_tick() {
   for (auto* h : active()) {
@@ -1837,7 +2193,7 @@ void Game::classes_tick() {
       int r = h->perk("shepherd") ? 3 : 2;
       for (auto* o : active()) {
         if (cheb(o->x, o->y, h->x, h->y) > r) continue;
-        o->hp = std::min(stats(*o).maxhp, o->hp + 1 + h->perk("warmth") + power(*h) / 6);
+        o->hp = std::min(stats(*o).maxhp, o->hp + heal_amt(*o, (1 + h->perk("warmth") + power(*h) / 6) * (h->leg("drowned") ? 2 : 1)));
       }
       auto ms = floor->mons;
       for (auto& m : ms)
@@ -1848,10 +2204,10 @@ void Game::classes_tick() {
           credit_ = -1; credit_weapon_ = false;
         }
     }
-    if (turn % 3 == 0 && h->fury > 0) {
+    if (h->fury > 0 && turn % (h->perk("secondbreath") ? 6 : 3) == 0) {
       bool fight = false;
       for (auto& m : floor->mons) if (m->awake && h->sees(m->x, m->y)) fight = true;
-      if (!fight) --h->fury;
+      if (!fight) h->fury = h->perk("berserkheart") ? 0 : h->fury - 1;  // Berserk Heart: it all goes at once
     }
   }
   for (auto& g : floor->ground) {
@@ -2028,6 +2384,7 @@ bool Game::skill_new(Hero& h, const std::string& key, int x, int y, const Stats&
   } else if (key == "rune") {
     for (auto& r : floor->runes) if (r.p == P{h.x, h.y}) { h.say("A rune is already carved here.", 0x909090); return false; }
     floor->runes.push_back({{h.x, h.y}, h.pid});
+    if (h.leg("gravechisel")) hero_hurt(h, nullptr, std::max(1, stats(h).maxhp / 20), "blood");  // the Gravechisel takes its toll
     int mine = 0;
     for (auto& r : floor->runes) if (r.owner == h.pid) ++mine;
     if (mine > (h.perk("stoneward") ? 5 : 3))
@@ -2144,14 +2501,19 @@ void Game::shoot_with(Hero& h, int x, int y) {
   MonP m = target(h, x, y);
   if (!m) return;
   if (cheb(m->x, m->y, h.x, h.y) > st.reach) { h.say("Too far: your " + wd->name + " reaches " + std::to_string(st.reach) + ".", 0x909090); return; }
+  if (k == "bow" && h.leg("recurve"))  // the Webmother's Recurve will not draw with a foe beside you
+    for (auto& o : floor->mons)
+      if (o->hp > 0 && !o->hidden && !o->dormant && cheb(o->x, o->y, h.x, h.y) == 1) { h.say("Too close: the great recurve will not draw with a foe beside you.", 0x909090); return; }
   double sp = 1 + st.spell / 100.0;
   std::vector<P> cells; std::vector<MonP> hit;
   if (k == "crossbow") {
-    if (h.reload > 0) { h.reload = 0; h.say("You wind the crossbow.", 0xB0A890); return; }
+    if (h.reload > 0) { --h.reload; h.say(h.reload ? "You wind the great crossbow. Halfway." : "You wind the crossbow.", 0xB0A890); return; }
     path(h, x, y, st.reach, true, cells, hit);
     add_fx({{"k", "line"}, {"cells", cells_json(cells)}, {"col", 0xE0D8C0}, {"dur", .25}});
-    for (auto& o : hit) if (o->hp > 0) strike(h, *o, 1.0, true);
-    h.reload = 1;
+    bool freeze = h.leg("coldheart");  // the Coldheart Arbalest: every bolt freezes, and it winds twice as long
+    for (auto& o : hit)
+      if (o->hp > 0 && strike(h, *o, 1.0, true) && freeze && o->hp > 0) { o->frozen = std::max(o->frozen, o->rank == "boss" ? 1 : 2); num(o->x, o->y, "frozen", elem::COL[elem::RIME]); }
+    h.reload = freeze ? 2 : 1;
     tip(h, "crossbow", "A bolt goes through every foe in its line. Then the crossbow wants a turn to wind: [f] again.");
     return;
   }
@@ -2159,6 +2521,7 @@ void Game::shoot_with(Hero& h, int x, int y) {
     path(h, x, y, 2, false, cells, hit);
     add_fx({{"k", "line"}, {"cells", cells_json(cells)}, {"col", 0xD8C8A0}, {"dur", .2}});
     if (!hit.empty()) strike(h, *hit[0], 1.0, false);
+    if (!hit.empty() && hit[0]->hp > 0 && h.leg("lastspear")) strike(h, *hit[0], 1.0, false);
     return;
   }
   path(h, x, y, st.reach, false, cells, hit);
@@ -2170,6 +2533,16 @@ void Game::shoot_with(Hero& h, int x, int y) {
   double mult = k == "staff" ? .9 * sp : k == "wand" ? .7 * sp : k == "thrown" && h.moved == turn - 1 ? 1.25 : 1.0;
   if (h.perk("skirmisher") && h.moved == turn - 1) mult *= 1.2;
   bool burning = t->stk.n[elem::EMBER] > 0;
+  if (k == "wand" && h.leg("splinter")) {  // the Splinterwand: three strikes a bolt, but a quarter fizzle
+    if (rnd.below(4) == 0) { h.say("The Splinterwand sputters. The bolt fizzles.", 0x909090); num(h.x, h.y, "fizzle", 0x808080); return; }
+    for (int i = 0; i < 2 && t->hp > 0; ++i) strike(h, *t, mult, true);
+  }
+  if (k == "thrown" && h.leg("bleedingstars")) {  // the Bleeding Stars cut both ways
+    lay_on_mon(h, *t, 3, elem::BLOOD);
+    h.stk.n[elem::BLOOD] = std::min(elem::MAX, h.stk.n[elem::BLOOD] + 1);
+    h.stk.idle[elem::BLOOD] = 0;
+  }
+  if (t->hp <= 0) { focus_up(h); return; }
   strike(h, *t, mult, true);
   if (burning && combo(h, 1, elem::EMBER)) {  // Kindler: the shot goes on through a burning foe
     std::vector<P> c2; std::vector<MonP> h2;
@@ -2190,11 +2563,15 @@ void Game::shoot_with(Hero& h, int x, int y) {
 
 void Game::quaff(Hero& h, const std::string& k) {
   Stats st = stats(h);
+  if (h.leg("lastcrown")) { h.say("The Crown of the Last Dwarf will not let a draught past your lips.", 0xB4A078); return; }
   if (k == "heal") {
+    if (h.perk("ironoath")) { h.say("Your oath forbids it: no draught passes your lips.", 0xB4A078); return; }
     if (h.heal <= 0) { h.say("No healing potions left.", 0x909090); return; }
     --h.heal;
     int before = h.hp;
-    h.hp = std::min(st.maxhp, h.hp + rnd_i(st.maxhp * .45 * (1 + .4 * h.perk("second")) * (100 - heal_cut(h.stk, true)) / 100));
+    double cut = h.perk("rotproof") ? std::min(25, heal_cut(h.stk, true)) : heal_cut(h.stk, true);
+    int top = h.leg("headsman") ? std::max(h.hp, st.maxhp / 2) : st.maxhp;  // Headsman's Promise: a potion stops at half
+    h.hp = std::min(top, h.hp + heal_amt(h, rnd_i(st.maxhp * .45 * (omen(omen::THIN) ? 2 / 3.0 : 1.0) * (h.perk("deathwish") ? .5 : 1) * (1 + .4 * h.perk("second")) * (100 - cut) / 100)));
     if (h.stk.n[elem::ROT] > 0) h.say("The rot in you takes some of it.", elem::COL[elem::ROT]);
     num(h.x, h.y, "+" + std::to_string(h.hp - before), 0x60E060);
     h.poison = 0;
@@ -2241,7 +2618,7 @@ void Game::give(Hero& h, int id) {
   Hero* to = nullptr;
   for (auto* o : active()) if (o != &h && cheb(o->x, o->y, h.x, h.y) <= 1) { to = o; break; }
   if (!to) { h.say("Nobody is next to you to take it.", 0x909090); return; }
-  if (int(to->pack.size()) >= PACK_MAX) { h.say(to->name + "'s pack is full.", 0x909090); return; }
+  if (int(to->pack.size()) >= pack_max(*to)) { h.say(to->name + "'s pack is full.", 0x909090); return; }
   ItemP it = take(h.pack, id);
   if (!it) return;
   to->pack.push_back(it);
@@ -2254,7 +2631,7 @@ void Game::buy(Hero& h, int i) {
   ItemP it = floor->shop[i];
   int price = this->price(h, *it);
   if (h.gold < price) { h.say("You cannot pay " + std::to_string(price) + " gold.", 0x909090); return; }
-  if (int(h.pack.size()) >= PACK_MAX) { h.say("Your pack is full.", 0x909090); return; }
+  if (int(h.pack.size()) >= pack_max(h)) { h.say("Your pack is full.", 0x909090); return; }
   h.gold -= price;
   floor->shop.erase(floor->shop.begin() + i);
   h.pack.push_back(it);
@@ -2263,10 +2640,10 @@ void Game::buy(Hero& h, int i) {
 
 void Game::buy_potion(Hero& h, const std::string& k) {
   if (h.talking != "healer") return;  // only Ysolde sells potions
-  int price = potion_price();
+  int price = h.perk("haggler") ? potion_price() * 4 / 5 : potion_price();
   if (h.gold < price) { h.say("You cannot pay " + std::to_string(price) + " gold.", 0x909090); return; }
   if (k == "heal" && h.heal < belt(h)) { ++h.heal; h.gold -= price; }
-  else if (k == "mana" && h.mana_pots < BELT_MAX) { ++h.mana_pots; h.gold -= price; }
+  else if (k == "mana" && h.mana_pots < belt(h)) { ++h.mana_pots; h.gold -= price; }
 }
 
 void Game::sell(Hero& h, int id) {
@@ -2373,6 +2750,15 @@ void Game::mon_turn(Mon& m) {
       auto it = BOSS_DECKS.find(m.def->key);
       if (it != BOSS_DECKS.end()) m.deck = it->second[std::min(m.phase, 2)];
       else m.deck = m.def->moves;
+      if (m.def->key == "ashenking") {  // what the King has learned
+        std::vector<std::string> more;
+        if (frost >= 1) more.push_back("frozenground");
+        if (frost >= 4) more.push_back("ashveil");
+        if (frost >= 7) more.push_back("hollowcourt");
+        for (auto& z : slain) if (auto b = KING_BORROWS.find(z); b != KING_BORROWS.end()) more.push_back(b->second);
+        for (int k = 0; k < (m.phase >= 3 ? 2 : 1); ++k) m.deck.insert(m.deck.end(), more.begin(), more.end());
+        if (m.phase >= 3) m.deck.push_back("pyre");
+      }
       rnd.shuffle(m.deck);
     }
     std::string mv = m.deck.back();
@@ -2440,10 +2826,14 @@ void Game::step_toward(Mon& m) {
 
 void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   Stats st = stats(h);
-  int chance = std::clamp(m.acc + lvl * 2 - st.armour - (h.cls->key == "dagger" && !ranged ? 15 : 0) - 8 * m.stk.n[elem::ASH], 20, 95);
+  int door = floor->tile(h.x, h.y) == DOOR || floor->tile(h.x, h.y) == OPEN;
+  int chance = std::clamp(m.acc + lvl * 2 - st.armour - (h.cls->key == "dagger" && !ranged ? 15 : 0) - 8 * m.stk.n[elem::ASH] -
+                              (door && h.perk("draughtwalker") ? 15 : 0) - (h.perk("whiteout") ? 5 * m.stk.n[elem::RIME] : 0), 20, 95);
+  if (h.perk("unyielding")) chance = 100;  // Unyielding: it no longer dodges
   if (!ranged) add_fx({{"k", "swing"}, {"src", xy(m.x, m.y)}, {"cells", json::array({xy(h.x, h.y)})}});
   if (rnd.below(100) >= chance) {
     if (h.perk("riposte")) m.open = 2;
+    if (h.perk("blindbleeding") && !m.can("stone")) { m.bleed = std::max(m.bleed, 3); m.bleed_dmg = std::max(m.bleed_dmg, 2 + lvl / 3); }
     num(h.x, h.y, "dodge", 0x808080);
     if (!ranged && m.stk.n[elem::ASH] > 0 && cheb(m.x, m.y, h.x, h.y) == 1 && combo(h, 0, elem::ASH)) {  // Cinderguard
       h.say(cap(the(m)) + " swings blind through the ash, and you strike back.", elem::COL[elem::ASH]);
@@ -2469,11 +2859,15 @@ void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
     return;
   }
   int dmg = std::max(1, rnd.range(m.lo, m.hi) - st.armour / 6);
+  if (h.leg("silentdirk") && rnd.below(100) < 10) { dmg *= 2; num(h.x, h.y, "crit", 0xFF5050); }  // the Silent Dirk's price
+  if (omen(omen::FRENZY) && m.hp * 3 < m.maxhp) dmg = rnd_i(dmg * 1.25);  // Frenzy
+  if (omen(omen::BLOODMOON)) dmg = rnd_i(dmg * 1.2);                       // Blood Moon
   if (m.can("fervour")) dmg = rnd_i(dmg * (1 + .6 * (1 - double(m.hp) / m.maxhp)));  // the more it bleeds, the harder
   hero_hurt(h, &m, dmg, "");
   if (!h.dead) trait_hit(m, h, dmg);
   // a quick builder lays its element with every blow, a slow discharger now and then
-  if (!h.dead && (!m.discharger || rnd.below(2) == 0)) lay_on_hero(m, h, 1);
+  int lays = 1 + (omen(omen::TWIN) && (m.rank == "champion" || m.rank == "unique") ? 1 : 0) + (omen(omen::EMBERTIDE) ? 1 : 0);
+  if (!h.dead && (!m.discharger || rnd.below(2) == 0)) lay_on_hero(m, h, lays);
   if (m.has("Vampiric")) m.hp = std::min(m.maxhp, m.hp + dmg / 2 * (100 - heal_cut(m.stk, m.rank == "boss")) / 100);
   if (!ranged && st.thorns > 0 && m.hp > 0) hurt(m, st.thorns, &h);
 }
@@ -2489,12 +2883,30 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
   if (h.standfast > 0) dmg = std::max(1, dmg / 2);
   if (landing_ && h.tal("mantle")) dmg = std::max(1, dmg * (100 - 10 * h.tal("mantle")) / 100);
   if (h.fury > 0) dmg = std::max(1, rnd_i(dmg * (1 - .02 * h.fury)));  // fury dulls the pain
+  if (h.perk("willward") && h.mana * 2 > st.maxmana) dmg = std::max(1, rnd_i(dmg * .85));
+  if (h.perk("hermit") && heroes.size() == 1) dmg = std::max(1, rnd_i(dmg * .8));
+  if (h.perk("slowbleeder") && (kind == "poison" || kind == "bleed" || kind == "blood")) dmg = std::max(1, rnd_i(dmg * .75));
   if (m && (h.srank[0] > 0 || main_style(h) == 0)) h.fury = std::min(10, h.fury + 1 + h.perk("guardian"));
   h.hp -= dmg;
   num(h.x, h.y, std::to_string(dmg), kind == "poison" ? 0x70D050 : kind == "ember" ? elem::COL[elem::EMBER] : kind == "blood" ? elem::COL[elem::BLOOD] : 0xFF5050);
   add_fx({{"k", "blood"}, {"x", h.x}, {"y", h.y}, {"src", xy(m ? m->x : h.x, m ? m->y : h.y - 1)}});
   h.say((m ? cap(the(*m)) : std::string(kind == "fire" ? "Fire" : kind == "bleed" || kind == "blood" ? "Bleeding" : kind == "ember" ? "Ember" : kind == "elem" ? "It" : "Poison")) + " hurts you (" + std::to_string(dmg) + ").", 0xFF8080);
   if (h.hp <= stats(h).maxhp / 3 && h.heal > 0) tip(h, "quaff", "You are badly hurt. Drink a healing potion: [q].");
+  if (h.hp <= 0 && h.leg("secondheart") && h.heart_floor != floor->id) {  // the Second Heart: once a map, whole again
+    h.heart_floor = floor->id;
+    h.hp = stats(h).maxhp;
+    h.say("Your second heart beats once, hard. You stand up whole.", 0x3CE0B4);
+    num(h.x, h.y, "second heart", 0x3CE0B4);
+    add_fx({{"k", "rise"}, {"x", h.x}, {"y", h.y}, {"col", 0x3CE0B4}});
+    return;
+  }
+  if (h.hp <= 0 && h.perk("lastember") && h.ember_floor != floor->id) {  // Last Ember: once a map
+    h.ember_floor = floor->id;
+    h.hp = 1;
+    h.say("Something in you refuses. You stand, on one last ember of life.", 0xFFB040);
+    num(h.x, h.y, "last ember", 0xFFB040);
+    return;
+  }
   if (h.hp <= 0 && h.tal("unquenched") && !h.unquenched) {  // Unquenched: once a dive, the fire will not go out
     h.unquenched = true;
     Stats st = stats(h);
@@ -2518,6 +2930,22 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
     h.hp = 0;
     h.dead = true;
     h.killer = m ? m->name : kind.empty() ? "the dark" : kind == "ember" ? "fire" : kind;
+    if (m && floor->depth > 0) {  // what this hero fell to: it may come back for the next one (plan.md section 7)
+      static const char* AFF[elem::N] = {"Fire-blooded", "Frost-touched", "Ash", "Venomous", "Vampiric"};
+      ItemP best;
+      for (auto& [slot, it] : h.equip) if (it && (!best || it->value > best->value)) best = it;
+      json items = json::array();
+      if (m->nemesis) for (auto& c : m->carried) items.push_back(loot::save(*c));
+      if (best) items.push_back(loot::save(*best));
+      std::string aff = h.el >= 0 && h.el < elem::N ? AFF[h.el] : "Brutal";
+      if (aff == "Ash") aff = "Ashen";
+      last_fell = {{"key", m->def->key}, {"zone", ACTS[floor->act].key}, {"zname", ACTS[floor->act].name}, {"hero", h.name},
+                   {"affix", m->nemesis && nemesis.is_object() ? nemesis.value("affix", aff) : aff}, {"items", items},
+                   {"kills", m->nemesis && nemesis.is_object() ? nemesis.value("kills", 1) + 1 : 1},
+                   {"name", m->nemesis ? m->name.substr(0, m->name.find(", Slayer of ")) : std::string()},
+                   {"slew", m->nemesis && nemesis.is_object() ? nemesis.value("slew", json::array()) : json::array()}};
+      last_fell["slew"].push_back(h.name);
+    }
     h.say("You die.", 0xFF4040);
     say_all(h.name + " has fallen.", 0xFF6060);
     // the embers this hero carried go out with it, and those friends are gone for good
@@ -2562,7 +2990,7 @@ bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
       if (cheb(o->x, o->y, h.x, h.y) <= 1) {
         hero_hurt(*o, &m, rnd.range(m.lo, m.hi) / 2, "");
         o->poison = 5;
-        o->poison_dmg = std::max(o->poison_dmg, rnd_i(m.def->poison * (1 - stats(*o).res_p / 100.0)));
+        o->poison_dmg = std::max(o->poison_dmg, rnd_i(std::max(m.def->poison, 2 + lvl / 3) * (1 - stats(*o).res_p / 100.0)));
       }
   } else if (mv == "flame") {
     if (d > 5) return false;
@@ -2604,6 +3032,50 @@ bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
   } else if (mv == "brace") {  // shield up: a quarter of the harm, until his next blow
     m.brace = 3;
     say_near(m.x, m.y, cap(the(m)) + " raises his shield. Wait for his blow.", 0xC0A080);
+  } else if (mv == "frozenground") {  // the King learns, Frost 1: the floor around him turns to ice and bites
+    if (d > 3) return false;
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 3}, {"col", 0x9CD2FF}, {"sign", "*"}});
+    for (auto* o : active())
+      if (cheb(o->x, o->y, m.x, m.y) <= 3) {
+        int res = hero_res(*o, elem::RIME), laid = 0;
+        for (int i = 0; i < 2; ++i) if (res < 100 && (res <= 0 || rnd.below(100) >= res)) ++laid;
+        o->stk.n[elem::RIME] = std::min(elem::MAX, o->stk.n[elem::RIME] + laid);
+        o->stk.idle[elem::RIME] = 0;
+        o->numb = std::max(o->numb, 2);
+        hero_hurt(*o, &m, std::max(1, rnd.range(m.lo, m.hi) / 3), "cold");
+      }
+    say_near(m.x, m.y, "Frost runs out from the King's feet. The floor turns to ice under you.", 0x9CD2FF);
+  } else if (mv == "ashveil") {  // Frost 4: he goes into ash and comes out somewhere else
+    std::vector<P> spots;
+    for (int dy = -8; dy <= 8; ++dy)
+      for (int dx = -8; dx <= 8; ++dx) {
+        int x = h.x + dx, y = h.y + dy, dd = cheb(x, y, h.x, h.y);
+        if (dd >= 4 && dd <= 7 && floor->walk(x, y) && !mon_at(x, y) && !hero_at(x, y)) spots.push_back({x, y});
+      }
+    if (spots.empty()) return false;
+    for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) if (floor->walk(m.x + dx, m.y + dy)) floor->ground.push_back({{m.x + dx, m.y + dy}, G_SMOKE, 4, 0, 0});
+    for (auto* o : active()) if (cheb(o->x, o->y, m.x, m.y) <= 1) { o->stk.n[elem::ASH] = std::min(elem::MAX, o->stk.n[elem::ASH] + 1); o->stk.idle[elem::ASH] = 0; }
+    add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", 0x8A8A8A}});
+    P c = rnd.pick(spots);
+    m.x = c.x; m.y = c.y;
+    add_fx({{"k", "inward"}, {"x", m.x}, {"y", m.y}, {"col", 0x8A8A8A}});
+    say_near(m.x, m.y, "The King comes apart into ash, and stands again elsewhere.", 0xA0A0A0);
+  } else if (mv == "hollowcourt") {  // Frost 7: his dead court climbs out of the floor
+    int n = 0;
+    for (auto& o : floor->mons) if (o->summoned) ++n;
+    if (n >= 8) return false;
+    std::string kind = "wraith";
+    for (auto& k : m.def->moves) if (k.rfind("summon:", 0) == 0) kind = k.substr(7);
+    int made = 0;
+    for (auto* o : active())
+      for (int i = 0; i < 2; ++i) {
+        P c;
+        if (free_near(o->x, o->y, 3, c, [&](int a, int b) { return floor->walk(a, b) && !mon_at(a, b) && !hero_at(a, b) && cheb(a, b, o->x, o->y) >= 2; }))
+          if (auto s2 = spawn(kind, c.x, c.y)) { s2->summoned = true; s2->awake = true; s2->dormant = s2->hidden = 0; s2->name = "dead dwarf of the Hollow Court"; s2->col = 0x8C9AA8; ++made; }
+      }
+    if (!made) return false;
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 4}, {"col", 0x8C9AA8}, {"sign", "sound"}});
+    say_near(m.x, m.y, "The King lifts his hand. His Hollow Court climbs out of the stone around you.", 0x8C9AA8);
   } else if (mv == "blink") {
     P c;
     if (!free_near(h.x, h.y, 2, c)) return false;
@@ -2643,6 +3115,8 @@ void Game::tick() {
   stacks_tick();
   if (state != "play") return;
   classes_tick();
+  legends_tick();
+  if (state != "play") return;
   traits_tick();
   // a status that has just taken hold floats up over the hero once, in its own colour
   for (auto* h : active()) {
@@ -2670,14 +3144,15 @@ void Game::look() {
   for (auto& [id, hp] : heroes) {
     Hero& h = *hp;
     if (h.away) continue;
-    int sight = (floor->deep ? SIGHT + 5 : SIGHT) + h.tal("lantern");  // the lava lights the Deep: you see further there
+    int sight = (floor->deep ? SIGHT + 5 : SIGHT) + h.tal("lantern") + 3 * h.perk("lanternbound");  // the lava lights the Deep: you see further there
     bool dim = false;
     for (auto& m : floor->mons) if (m->awake && m->can("dim") && cheb(m->x, m->y, h.x, h.y) <= 5) dim = true;
     if (dim) sight = 3;
     else if (h.ashen > 0) sight = std::min(sight, 4);
     if (dim && !h.dimmed) { h.say("Your light gutters.", 0xC0A060); tip(h, "dim", "A lantern wraith eats the light. Kill it, and your light flares up again."); }
     h.dimmed = dim;
-    int glow = h.carry.empty() ? 0 : 3;  // an ember carried glows: foes see its bearer from further off
+    if (omen(omen::LONGNIGHT)) sight = std::max(3, sight - 2);  // Long Night
+    int glow = (h.carry.empty() ? 0 : 3) + (h.leg("drowned") ? 4 : 0) + (omen(omen::LISTEN) ? 2 : 0);  // and the dark listens  // an ember carried glows (and the Drowned's lantern): foes see its bearer from further off
     TCOD_map_compute_fov(map, h.x, h.y, sight + glow, true, FOV_SYMMETRIC_SHADOWCAST);
     for (int y = 0; y < H; ++y)
       for (int x = 0; x < W; ++x) {
@@ -2686,7 +3161,7 @@ void Game::look() {
       }
     if (!h.present()) continue;
     for (auto& m : floor->mons)
-      if (!m->awake && !m->dormant && !m->hidden && !m->sleep && !whole_view &&
+      if (!m->awake && !m->dormant && !m->hidden && !m->sleep && !whole_view && !(h.perk("shadowstep") && rnd.below(4) == 0) &&
           (h.sees(m->x, m->y) || (glow && TCOD_map_is_in_fov(map, m->x, m->y) && cheb(m->x, m->y, h.x, h.y) <= sight + glow))) {
         m->awake = true;
         if (m->rank == "champion") tip(h, "champion", "Blue foes are champions: stronger, and they carry better things.");
@@ -2704,12 +3179,15 @@ void Game::look() {
 // Drops: the Frost makes them deeper, and Good Eye (the best in the party) sometimes makes them a rarity better.
 ItemP Game::roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity, const std::string& at_least) {
   d += 3 * frost;
-  auto it = loot::roll(d, rnd, kinds, rarity, at_least);
+  int band = frost_band();
+  // legendaries: from Frost 5, a thin chance on every drop that grows with the Frost
+  if (rarity.empty() && frost >= 5 && rnd.real() < .002 + .001 * frost) return loot::roll(d, rnd, kinds, "legendary", "normal", band, frost);
+  auto it = loot::roll(d, rnd, kinds, rarity, at_least, band, frost);
   int eye = 0;
   for (auto* h : living()) eye = std::max(eye, h->tal("goodeye"));
   if (rarity.empty() && eye && rnd.below(100) < 3 * eye) {
     std::string up = it->rarity == "normal" ? "magic" : it->rarity == "magic" ? "rare" : it->rarity == "rare" ? "unique" : "";
-    if (!up.empty()) it = loot::roll(d, rnd, kinds, up);
+    if (!up.empty()) it = loot::roll(d, rnd, kinds, up, "normal", band, frost);
   }
   return it;
 }
@@ -2720,16 +3198,17 @@ void Game::forge(Hero& h) {
   if (!floor->camp) { h.say("Only at a camp's fire.", 0x909090); return; }
   if (h.forged) { h.say("The Spark has already reforged once this dive.", 0x909090); return; }
   auto wi = h.equip.find("weapon");
-  if (wi == h.equip.end() || wi->second->rarity == "normal" || wi->second->rarity == "unique") {
+  if (wi == h.equip.end() || wi->second->rarity == "normal" || wi->second->rarity == "unique" || wi->second->rarity == "legendary") {
     h.say("Only a magic or rare weapon can be reforged.", 0x909090);
     return;
   }
   ItemP old = wi->second, best;
   for (int i = 0; i < 40 && !best; ++i) {
-    auto it = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity);
+    auto it = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity, "normal", old->band, frost);
     if (it->base == old->base) best = it;
   }
-  if (!best) best = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity);
+  if (!best) best = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity, "normal", old->band, frost);
+  for (int i = 0; i < old->plus; ++i) loot::temper(*best);
   if (best->slot != "weapon") return;
   h.forged = true;
   wi->second = best;
@@ -2759,6 +3238,15 @@ void Game::prison_tick() {
 // Charnfen: the dead climb from the open graves as heroes pass, and the guards at the gate shoot what comes near
 void Game::town_tick() {
   Floor& f = *floor;
+  for (auto* h : active())  // back from the King: a guard at the gate calls out, once
+    if (h->frost_open > 0 && !h->gate_called)
+      for (int i = 0; i < W * H; ++i)
+        if (f.t[i] == GUARD && cheb(i % W, i / W, h->x, h->y) <= 5) {
+          h->gate_called = true;
+          h->say("A guard calls out: \"Back from the King? The cold below has grown. Tell me how deep you mean to go.\"", 0xA8C0E0);
+          tip(*h, "gate", "Walk into the gate guard to choose the Frost level of this dive: any up to one above the highest you have beaten.");
+          break;
+        }
   int most = 1 + int(living().size());  // one or two alone, one more for each friend
   for (auto& h : living()) {
     if (!f.warned)

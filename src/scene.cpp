@@ -1445,6 +1445,24 @@ void Client::draw_particles(SDL_Renderer* r, double ox, double oy, double cell) 
     SDL_FRect rc{float(ox + X * cell), float(oy + Y * cell), float(px * size), float(px * size)};
     SDL_RenderFillRect(r, &rc);
   };
+  // a unique or a legendary on the floor glints: a few motes of its own colour turn slowly around it
+  if (snap_.contains("items"))
+    for (auto& it : snap_["items"]) {
+      int col = it.value("col", 0);
+      bool leg = col == data::rarity_col("legendary");
+      if (!leg && col != data::rarity_col("unique")) continue;
+      double ix = it["x"].get<int>(), iy = it["y"].get<int>();
+      if (!open_at(ix + .5, iy + .5)) continue;
+      int n = leg ? 4 : 3;
+      for (int j = 0; j < n; ++j) {
+        double ph = std::fmod(tt * (leg ? .5 : .35) + j / double(n) + nz(int(ix * 31 + iy * 17)) * .3, 1.0);
+        double a = ph * 2 * PI, rr = .55 + .15 * std::sin(tt * 1.7 + j);
+        double tw = .5 + .5 * std::sin(tt * 4 + j * 2.1);
+        dot(ix + .5 + std::cos(a) * rr, iy + .5 + std::sin(a) * rr * .8, mixc(col, 0xFFFFFF, .35 * tw), .35 + .5 * tw);
+      }
+      double sp = std::fmod(tt * .6 + ix * .13, 2.0);  // now and then a star flashes on it
+      if (sp < .12) dot(ix + .45, iy + .2, 0xFFFFFF, 1 - sp / .12, leg ? 2 : 1);
+    }
   for (auto& e : emits_) {
     double ex = e.x, ey = e.y;
     int sd = e.seed;

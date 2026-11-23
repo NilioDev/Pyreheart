@@ -41,6 +41,8 @@ inline int skill_sign(const std::string& k) {
   for (const char* b : {"cleave", "volley", "pin", "nova", "emberwall", "beacon", "shadowstep", "fan", "scatter", "whirlwind"}) if (k == b) return 0x25A0;
   return 0xB7;
 }
+bool watery(int t);  // water washes Ember off
+bool fiery(int t);   // fire thaws Rime
 }  // namespace elem
 
 // The stacks one target carries: how many of each element, the turns since each was last laid, and who laid it.

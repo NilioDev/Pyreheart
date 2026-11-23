@@ -8,7 +8,7 @@ const BaseDef& base_def(const std::string& k) {
   for (auto& b : data::BASES) if (b.key == k) return b;
   return data::BASES[0];
 }
-const std::vector<std::string> ORDER = {"normal", "magic", "rare", "unique"};
+const std::vector<std::string> ORDER = {"normal", "magic", "rare", "unique", "legendary"};
 int order(const std::string& r) { return int(std::find(ORDER.begin(), ORDER.end(), r) - ORDER.begin()); }
 bool contains(const std::vector<std::string>& v, const std::string& s) { return std::find(v.begin(), v.end(), s) != v.end(); }
 }  // namespace
@@ -24,6 +24,7 @@ void Item::add(const std::string& k, int v) {
 std::vector<std::string> Item::lines() const {
   std::vector<std::string> out;
   if (!base_name.empty()) out.push_back(base_name);
+  if (auto* l = loot::legend_def(legend)) { out.push_back("Power: " + l->power); out.push_back("Price: " + l->price); }
   if (slot == "weapon") out.push_back("damage " + std::to_string(lo) + "-" + std::to_string(hi));
   else if (ar > 0) out.push_back("armour " + std::to_string(ar));
   for (auto& [k, v] : stats)
@@ -52,7 +53,8 @@ json save(const Item& it) {
   json st = json::array();
   for (auto& [k, v] : it.stats) st.push_back({k, v});
   return {{"base", it.base}, {"name", it.name}, {"slot", it.slot}, {"kind", it.kind}, {"rarity", it.rarity}, {"bname", it.base_name},
-          {"tier", it.tier}, {"lo", it.lo}, {"hi", it.hi}, {"ar", it.ar}, {"value", it.value}, {"stats", st}};
+          {"tier", it.tier}, {"lo", it.lo}, {"hi", it.hi}, {"ar", it.ar}, {"value", it.value}, {"stats", st},
+          {"band", it.band}, {"plus", it.plus}, {"legend", it.legend}};
 }
 
 ItemP load(const json& j) {
@@ -61,6 +63,7 @@ ItemP load(const json& j) {
   it->id = next_id++;
   it->base = j.value("base", ""); it->name = j.value("name", ""); it->slot = j.value("slot", ""); it->kind = j.value("kind", "");
   it->rarity = j.value("rarity", "normal"); it->base_name = j.value("bname", "");
+  it->band = j.value("band", 0); it->plus = j.value("plus", 0); it->legend = j.value("legend", std::string());
   it->tier = j.value("tier", 1); it->lo = j.value("lo", 0); it->hi = j.value("hi", 0); it->ar = j.value("ar", 0); it->value = j.value("value", 10);
   for (auto& s : j.value("stats", json::array())) if (s.is_array() && s.size() == 2) it->stats.push_back({s[0].get<std::string>(), s[1].get<int>()});
   return it;
@@ -93,7 +96,59 @@ static std::string add_affix(Item& it, const std::vector<AffixDef>& table, std::
   return a.name;
 }
 
-ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std::string& rarity0, const std::string& at_least) {
+const LegendDef* legend_def(const std::string& key) {
+  if (key.empty()) return nullptr;
+  for (auto& l : data::LEGENDARIES) if (l.key == key) return &l;
+  return nullptr;
+}
+
+// the Frost band: the thing is forged deeper, its base and its magic stronger, and its name says how deep
+static void apply_band(Item& it, int band, const std::string& base_name) {
+  if (band <= 0) return;
+  band = std::min(band, int(data::BANDS.size()) - 1);
+  it.band = band;
+  double k = 1 + .3 * band, a = 1 + .25 * band;
+  it.lo = int(std::lround(it.lo * k)); it.hi = int(std::lround(it.hi * k)); it.ar = int(std::lround(it.ar * k));
+  for (auto& [s, v] : it.stats) v = int(std::lround(v * a));
+  std::string bn = data::BANDS[band] + " " + base_name;
+  if (it.rarity == "normal" || it.rarity == "magic") {
+    auto p = it.name.find(base_name);
+    if (p != std::string::npos) it.name.replace(p, base_name.size(), bn);
+  } else it.base_name = bn;
+  it.value = it.value * (1 + band);
+}
+
+ItemP legendary(Rng& rnd, const std::vector<std::string>& kinds, int band) {
+  std::vector<const LegendDef*> pool;
+  for (auto& l : data::LEGENDARIES) {
+    const BaseDef& b = base_def(l.base);
+    if (b.slot != "weapon" || kinds.empty() || contains(kinds, b.kind)) pool.push_back(&l);
+  }
+  if (pool.empty()) for (auto& l : data::LEGENDARIES) pool.push_back(&l);
+  const LegendDef& l = *rnd.pick(pool);
+  auto it = make(l.base, "legendary", 4);
+  it->name = l.name;
+  it->legend = l.key;
+  it->base_name = base_def(l.base).name;
+  for (auto& [k, v] : l.stats) it->add(k, v);
+  it->value = 1000;
+  apply_band(*it, band, base_def(l.base).name);
+  return it;
+}
+
+// Brann's tempering: a quarter more to the base, a gentler rise to its magic, and a step in its name
+void temper(Item& it) {
+  ++it.plus;
+  auto up = [](int v) { return v > 0 ? std::max(v + 1, int(std::lround(v * 1.25))) : v; };
+  it.lo = up(it.lo); it.hi = up(it.hi); it.ar = up(it.ar);
+  for (auto& [s, v] : it.stats) if (v > 0) v += std::max(1, v / 10);
+  auto p = it.name.rfind(" +");
+  if (p != std::string::npos && p + 2 < it.name.size() && std::isdigit((unsigned char)it.name[p + 2])) it.name.erase(p);
+  it.name += " +" + std::to_string(it.plus);
+  it.value += it.value / 4;
+}
+
+ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std::string& rarity0, const std::string& at_least, int band, int frost) {
   int tier = 1 + (depth - 1) / 4;
   double r0 = rnd.real();
   if (r0 < .15) --tier; else if (r0 > .85) ++tier;
@@ -104,16 +159,19 @@ ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std
     rarity = r < u ? "unique" : r < u + .06 + depth * .006 ? "rare" : r < .45 + depth * .01 ? "magic" : "normal";
   }
   if (order(rarity) < order(at_least)) rarity = at_least;
+  if (rarity == "legendary") return legendary(rnd, kinds, band);
   auto usable = [&](const BaseDef& b) { return b.slot != "weapon" || kinds.empty() || contains(kinds, b.kind); };
   if (rarity == "unique") {
     std::vector<const UniqueDef*> pool;
-    for (auto& u : data::UNIQUES) if (usable(base_def(u.base))) pool.push_back(&u);
-    if (pool.empty()) for (auto& u : data::UNIQUES) pool.push_back(&u);
+    for (auto& u : data::UNIQUES) if (usable(base_def(u.base)) && u.frost <= frost) pool.push_back(&u);
+    if (pool.empty()) for (auto& u : data::UNIQUES) if (u.frost <= frost) pool.push_back(&u);
     const UniqueDef& u = *rnd.pick(pool);
     auto it = make(u.base, "unique", std::max(base_def(u.base).tier, tier));
     it->name = u.name;
     for (auto& [k, v] : u.stats) it->add(k, v);
     it->value = 400 + 100 * it->tier;
+    it->base_name = base_def(u.base).name;
+    apply_band(*it, band, base_def(u.base).name);
     return it;
   }
   std::vector<const BaseDef*> bases;
@@ -123,12 +181,23 @@ ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std
     for (auto* b : bases) if (b->slot != "ring" && b->slot != "amulet") plain.push_back(b);
     if (!plain.empty()) bases = plain;
   }
+  // weapons and body armour weigh 3 each, rings and amulets 1; a helm, gloves or boots slot weighs 2 in all, shared by
+  // its bases, so more armour tiers do not crowd out the weapons
+  auto weight = [&](const BaseDef* b) {
+    if (b->slot == "weapon" || b->slot == "body") return 18;
+    if (b->slot == "helm" || b->slot == "gloves" || b->slot == "boots") {
+      int n = 0;
+      for (auto* o : bases) if (o->slot == b->slot) ++n;
+      return 12 / std::max(1, n);
+    }
+    return 6;
+  };
   int sum = 0;
-  for (auto* b : bases) sum += (b->slot == "weapon" || b->slot == "body") ? 3 : 1;
+  for (auto* b : bases) sum += weight(b);
   int pick = rnd.below(sum);
   const BaseDef* bd = bases[0];
   for (auto* b : bases) {
-    pick -= (b->slot == "weapon" || b->slot == "body") ? 3 : 1;
+    pick -= weight(b);
     if (pick < 0) { bd = b; break; }
   }
   auto it = make(bd->key, rarity, tier);
@@ -150,6 +219,7 @@ ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std
       if (slot == it->slot) it->name = rnd.pick(data::RARE_A) + " " + rnd.pick(names);
   }
   it->value = (10 + 15 * it->tier) * (rarity == "magic" ? 3 : rarity == "rare" ? 7 : 1);
+  apply_band(*it, band, bd->name);
   return it;
 }
 

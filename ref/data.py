@@ -555,6 +555,91 @@ PERKS = {   # key: (name, text, max ranks, class or None, path it needs or None;
     'second': ('Second Wind', 'potions heal 40% more', 1, None, None),
 }
 
+# Deep perks and keystones (plan.md section 7, "Levels that mean something"): from hero level 15 (or Frost 1) a level
+# offers 3 deep perks, every 5th level 2 keystones. key: (name, text, kind, need)
+# kind: deep, duo or key. need: what makes it fit a hero (an element, a style, both halves of a duo), or '' for any.
+DEEP_PERKS = {
+    # the elements
+    'kindling': ('Kindling', 'your Ember on a foe burns two turns longer', 'deep', 'ember'),
+    'wildfire': ('Wildfire', 'a burning foe that dies sets its neighbours alight', 'deep', 'ember'),
+    'banked': ('Banked Coals', 'Ember on a foe beside you does not fade', 'deep', 'ember'),
+    'hoarfrost': ('Hoarfrost', 'a slowed foe takes a second Rime stack from your blows', 'deep', 'rime'),
+    'brittle': ('Brittle', 'frozen foes take a quarter more from everything', 'deep', 'rime'),
+    'coldhands': ('Cold Hands', 'Rime on you never slows your step', 'deep', 'rime'),
+    'choking': ('Choking Cloud', 'an Ash discharge lays Ash on the foes beside it too', 'deep', 'ash'),
+    'blindrage': ('Blind Rage', '+10% harm for each Ash stack on the foe you strike', 'deep', 'ash'),
+    'clearlungs': ('Clear Lungs', 'Ash on you never chokes your skills', 'deep', 'ash'),
+    'festering': ('Festering', 'each Rot stack on a foe takes 1 from its armour', 'deep', 'rot'),
+    'carrion': ('Carrion', 'a rotting foe that dies heals you 3', 'deep', 'rot'),
+    'rotproof': ('Rotproof', 'Rot on you takes at most a quarter of your healing', 'deep', 'rot'),
+    'haemophage': ('Haemophage', 'each bleeding foe in sight gives you 1 life a turn', 'deep', 'blood'),
+    'openveins': ('Open Veins', 'a Blood discharge does a fifth more to a foe under half life', 'deep', 'blood'),
+    'thickblood': ('Thick Blood', 'Blood on you bleeds you half as much', 'deep', 'blood'),
+    # the styles
+    'secondbreath': ('Second Breath', 'your fury drains half as fast', 'deep', 'melee'),
+    'crowdbreaker': ('Crowd-breaker', '+3 armour for each foe beside you, up to three', 'deep', 'melee'),
+    'sweeping': ('Sweeping Blows', 'a plain blow in close also cuts one more foe beside you, at half harm', 'deep', 'melee'),
+    'steadyaim': ('Steady Aim', 'focus builds twice as fast', 'deep', 'ranged'),
+    'pointblank': ('Point Blank', 'shots at a foe beside you do a quarter more', 'deep', 'ranged'),
+    'quiver': ('Quiver-maker', 'a ranged kill gives 2 mana', 'deep', 'ranged'),
+    'deepwell2': ('Deep Well', 'a kill gives back a tenth of your mana', 'deep', 'magic'),
+    'overchannel': ('Overchannel', 'at full mana your skills do half again as much', 'deep', 'magic'),
+    'willward': ('Ward of Will', 'above half mana you take 15% less harm', 'deep', 'magic'),
+    # for anyone
+    'giantslayer': ('Giant-slayer', '+10% harm to great foes, champions and uniques', 'deep', ''),
+    'stillhand': ('Still Hand', 'your discharges do a fifth more when you did not move last turn', 'deep', ''),
+    'opener': ('Opener', 'your first blow on an unhurt foe always lands', 'deep', ''),
+    'finisher': ('Finisher', '+25% harm to foes under a quarter of their life', 'deep', ''),
+    'sixthsense': ('Sixth Sense', 'heavy blows aimed at you are seen one turn earlier', 'deep', ''),
+    'stackthief': ('Stack Thief', 'each kill takes one stack off you', 'deep', ''),
+    'lastember': ('Last Ember', 'once a map, a killing blow leaves you at 1 life', 'deep', ''),
+    'beltmaker': ('Belt-maker', 'your belt holds one more potion of each kind', 'deep', ''),
+    'slowbleeder': ('Slow Bleeder', 'poison and bleeding hurt you a quarter less', 'deep', ''),
+    'grounded': ('Grounded', "a foe's discharge does a quarter less to you", 'deep', ''),
+    'quenchborn': ('Quench-born', 'standing in water heals you 2 a turn', 'deep', ''),
+    'hearthkin': ('Hearth-kin', '+15% harm while you stand next to a fire', 'deep', ''),
+    'draughtwalker': ('Draught-walker', 'in a doorway foes miss you more often', 'deep', ''),
+    'shadowstep': ('Shadow-step', 'sleeping foes are a quarter less likely to wake as you pass', 'deep', ''),
+    'treasurenose': ('Treasure-nose', 'chests give magic things or better more often', 'deep', ''),
+    # the helpers, and friends (never needed alone)
+    'haggler': ('Haggler', 'the trader asks a fifth less', 'deep', 'helper'),
+    'brannsfriend': ("Brann's Friend", "Brann's work costs half", 'deep', 'helper'),
+    'emberbearer': ('Ember-bearer', "a friend's ember weighs nothing in your hands", 'deep', 'coop'),
+    'shoulder': ('Shoulder to Shoulder', '+10% harm while a friend stands beside you', 'deep', 'coop'),
+    # duo perks: only offered once the hero owns both halves
+    'thermalshock': ('Thermal Shock', 'Ember on a frozen foe shatters it for triple harm', 'duo', 'ember+rime'),
+    'cinderstorm': ('Cinderstorm', 'your Ember spreads Ash to the foes beside it', 'duo', 'ember+ash'),
+    'fever': ('Fever', 'a foe with your Ember and Rot burns half again as fast', 'duo', 'ember+rot'),
+    'boilingblood': ('Boiling Blood', 'a foe with your Blood on it also burns each turn', 'duo', 'ember+blood'),
+    'whiteout': ('Whiteout', 'foes with Rime on them also miss more', 'duo', 'rime+ash'),
+    'coldstorage': ('Cold Storage', 'Rot on a frozen foe does not fade', 'duo', 'rime+rot'),
+    'frozenveins': ('Frozen Veins', 'your Blood discharges freeze the foe for a turn', 'duo', 'rime+blood'),
+    'gravedust': ('Grave Dust', 'a smothered foe takes Rot twice as fast', 'duo', 'ash+rot'),
+    'blindbleeding': ('Blind Bleeding', 'a foe that misses you starts to bleed', 'duo', 'ash+blood'),
+    'septic': ('Septic', 'your Blood on a foe cuts its healing like Rot', 'duo', 'rot+blood'),
+    'skirmrhythm': ("Skirmisher's Rhythm", 'after a blow in close, your next shot does 30% more', 'duo', 'melee+ranged'),
+    'spellblade': ('Spellblade', 'a skill paid in mana gives 2 fury; a kill in close gives a tenth of your mana', 'duo', 'melee+magic'),
+    'fletching': ('Arcane Fletching', 'your shots often lay a second stack', 'duo', 'ranged+magic'),
+    # keystones: every 5th level from 15, a choice of two (or neither); each has a price
+    'glasspyre': ('Glass Pyre', '+30% harm, but 20% less life', 'key', ''),
+    'ironoath': ('Iron Oath', 'each kill heals 5% of your life, but you can drink no healing potion', 'key', ''),
+    'coldblood': ('Cold Blood', 'Rime cannot touch you, but Ember burns you twice as hard', 'key', ''),
+    'slowfire': ('Slow Fire', 'your stacks on foes never fade, but you lay a third fewer', 'key', ''),
+    'berserkheart': ('Berserk Heart', 'full fury adds 25% harm, but all fury is gone the moment no foe is in sight', 'key', ''),
+    'hermit': ('Hermit', 'alone you deal 20% more and take 20% less, but with friends you deal 10% less', 'key', ''),
+    'lanternbound': ('Lantern-bound', 'you see 3 cells further, but foes wake 3 cells further from you too', 'key', ''),
+    'bloodprice': ('Bloodprice', 'skills cost life instead of mana or fury, half as much again', 'key', ''),
+    'onecraft': ('One Craft', 'your first element does half again as much, but you lose your second coal', 'key', ''),
+    'unyielding': ('Unyielding', 'stun and slowing Rime do not hold you, but you no longer dodge', 'key', ''),
+    'ashenpact': ('Ashen Pact', 'every foe resists 15% less, and so do you', 'key', ''),
+    'gambler': ('Gambler', 'each blow does between half and twice its harm', 'key', ''),
+    'emberheart': ('Ember Heart', 'while Ember burns on you, you heal 2 a turn; but it always burns on you', 'key', ''),
+    'packmule': ('Pack Mule', '+4 places in your pack and +2 in your belt, but 10% less harm', 'key', ''),
+    'deathwish': ('Deathwish', '+5% harm for every tenth of life you miss, but all healing is halved', 'key', ''),
+    # the way out of a keystone offer
+    'neither': ('Neither', 'keep your hero as it is', 'skip', ''),
+}
+
 # ------------------------------------------------------------------ items
 SLOTS = ('weapon', 'body', 'helm', 'gloves', 'boots', 'ring', 'amulet')
 # base: (name, slot, kind, tier, dmg (lo, hi) or armour)
@@ -616,10 +701,15 @@ BASES = {
     'cap': ('Cap', 'helm', 'helm', 1, 1),
     'helm': ('Helm', 'helm', 'helm', 2, 3),
     'greathelm': ('Great Helm', 'helm', 'helm', 3, 5),
+    'visorhelm': ('Visored Helm', 'helm', 'helm', 4, 7),
     'gloves': ('Gloves', 'gloves', 'gloves', 1, 1),
+    'mailgloves': ('Mail Gloves', 'gloves', 'gloves', 2, 2),
     'gauntlets': ('Gauntlets', 'gloves', 'gloves', 3, 3),
+    'platehands': ('Plated Gauntlets', 'gloves', 'gloves', 4, 5),
     'boots': ('Boots', 'boots', 'boots', 1, 1),
+    'mailboots': ('Mail Boots', 'boots', 'boots', 2, 2),
     'greaves': ('Greaves', 'boots', 'boots', 3, 3),
+    'plategreaves': ('Plated Greaves', 'boots', 'boots', 4, 5),
     'ring': ('Ring', 'ring', 'ring', 1, 0),
     'amulet': ('Amulet', 'amulet', 'amulet', 2, 0),
 }
@@ -658,17 +748,65 @@ RARE_A = ['Grim', 'Dusk', 'Blood', 'Storm', 'Bone', 'Ash', 'Wraith', 'Raven', 'D
 RARE_B = {'weapon': ['Bite', 'Song', 'Fang', 'Edge', 'Thirst', 'Reaver'], 'body': ['Shell', 'Hide', 'Coat', 'Carapace'],
           'helm': ['Crown', 'Visage', 'Brow'], 'gloves': ['Grip', 'Hand', 'Clutch'], 'boots': ['Stride', 'Tread', 'Road'],
           'ring': ['Loop', 'Band', 'Coil'], 'amulet': ['Charm', 'Eye', 'Heart']}
-UNIQUES = [   # name, base, fixed stats
-    ('Lanternfang', 'blade', {'dmg_pct': 60, 'fire_dmg': 6, 'crit': 6}),
-    ('The Ninth Bell', 'maul', {'dmg_pct': 70, 'acc': 15, 'hp': 20}),
-    ('Widowstring', 'longbow', {'dmg_pct': 60, 'crit': 10, 'leech': 4}),
-    ('Emberwhisper', 'rodstaff', {'spell': 70, 'mana': 30, 'res_fire': 30}),
-    ('Skin of the Drowned King', 'mail', {'armour': 10, 'hp': 30, 'res_cold': 40}),
-    ('Gravewalker Treads', 'boots', {'armour': 5, 'hp': 15, 'res_poison': 40}),
-    ('Ring of the Ninth Door', 'ring', {'crit': 6, 'leech': 5, 'mana': 15}),
-    ('Heart of Cinders', 'amulet', {'fire_dmg': 6, 'spell': 30, 'res_fire': 30, 'hp': 15}),
+UNIQUES = [   # name, base, fixed stats, the Frost level it first drops on (plan.md section 7: some only deep on the ladder)
+    ('Lanternfang', 'blade', {'dmg_pct': 60, 'fire_dmg': 6, 'crit': 6}, 0),
+    ('The Ninth Bell', 'maul', {'dmg_pct': 70, 'acc': 15, 'hp': 20}, 0),
+    ('Widowstring', 'longbow', {'dmg_pct': 60, 'crit': 10, 'leech': 4}, 0),
+    ('Emberwhisper', 'rodstaff', {'spell': 70, 'mana': 30, 'res_fire': 30}, 0),
+    ('Skin of the Drowned King', 'mail', {'armour': 10, 'hp': 30, 'res_cold': 40}, 0),
+    ('Gravewalker Treads', 'boots', {'armour': 5, 'hp': 15, 'res_poison': 40}, 0),
+    ('Ring of the Ninth Door', 'ring', {'crit': 6, 'leech': 5, 'mana': 15}, 0),
+    ('Heart of Cinders', 'amulet', {'fire_dmg': 6, 'spell': 30, 'res_fire': 30, 'hp': 15}, 0),
+    ('Gutterfang', 'dirk', {'dmg_pct': 55, 'crit': 12, 'acc': 10}, 0),
+    ("Sexton's Spade", 'waraxe', {'dmg_pct': 60, 'hp': 25, 'res_poison': 25}, 0),
+    ('Mudlark Bolts', 'arbalest', {'dmg_pct': 60, 'acc': 15, 'res_ash': 25}, 0),
+    ('Pilgrim Lamp', 'stormlantern', {'spell': 50, 'hp': 25, 'regen': 2}, 0),
+    ('Cinderfoot Spear', 'pike', {'dmg_pct': 55, 'fire_dmg': 5, 'res_fire': 25}, 0),
+    ("Rookery Knives", 'taxes', {'dmg_pct': 55, 'crit': 8, 'leech': 3}, 0),
+    ('Chapel Chisel', 'masonchisel', {'spell': 55, 'mana': 25, 'res_blood': 25}, 0),
+    ('Wick of the Ossuary', 'bonewand', {'spell': 60, 'crit': 6, 'res_poison': 25}, 0),
+    ('Coalminer\'s Hood', 'helm', {'armour': 4, 'hp': 20, 'res_ash': 35}, 0),
+    ('Gravedigger\'s Grip', 'mailgloves', {'armour': 3, 'acc': 12, 'crit': 5}, 0),
+    ('Mantle of the Ninth Clan', 'scale', {'armour': 12, 'hp': 35, 'res_blood': 30}, 3),
+    ('Brass Warden\'s Visor', 'greathelm', {'armour': 6, 'hp': 25, 'res_cold': 30, 'res_fire': 20}, 3),
+    ('Webmother\'s Spinneret', 'warbow', {'dmg_pct': 75, 'crit': 10, 'res_poison': 30}, 3),
+    ('Tidebreaker', 'falchion', {'dmg_pct': 80, 'acc': 15, 'res_cold': 30}, 3),
+    ('Slagheart Hammer', 'hammer', {'dmg_pct': 85, 'fire_dmg': 8, 'hp': 25}, 3),
+    ('Runebound Lexicon', 'gnarl', {'spell': 90, 'mana': 40, 'regen': 2}, 3),
+    ('Halberd of the Last Watch', 'glaive', {'dmg_pct': 80, 'armour': 5, 'hp': 30}, 6),
+    ('Vaultkeeper\'s Coil', 'ring', {'res_fire': 20, 'res_cold': 20, 'res_poison': 20, 'res_ash': 20, 'res_blood': 20}, 6),
+    ('Bellows of the Deep Forge', 'platehands', {'armour': 6, 'fire_dmg': 8, 'dmg_pct': 25}, 6),
+    ('Starfall Wand', 'glasswand', {'spell': 100, 'crit': 10, 'mana': 30}, 6),
+    ('Crown of Embers', 'visorhelm', {'armour': 8, 'spell': 40, 'res_fire': 40, 'hp': 30}, 9),
+    ('Kingsfall', 'greatsword', {'dmg_pct': 110, 'crit': 12, 'leech': 6, 'hp': 30}, 9),
 ]
-RARITY_COL = {'normal': (210, 210, 210), 'magic': (110, 140, 255), 'rare': (240, 220, 90), 'unique': (210, 160, 70)}
+# legendaries (plan.md section 7): above unique, only from Frost 5, each with power and a price. key: (name, base, stats,
+# power, price). What each does is in the code under its key.
+LEGENDARIES = {
+    'hungering': ('Hungering Edge', 'greatsword', {'dmg_pct': 80}, 'every kill heals 10% of your life', 'every turn without a kill costs 1 life'),
+    'openchest': ('The Open Chest', 'starstaff', {'spell': 80}, 'your discharges strike every foe in sight', 'your own stacks go off with them'),
+    'kingsbane': ('Kingsbane Maul', 'hammer', {'dmg_pct': 80}, 'your blows always stun, even great foes', 'every third turn you stand still to lift it'),
+    'recurve': ("Webmother's Recurve", 'greatbow', {'dmg_pct': 70}, 'each arrow lays two stacks', 'you cannot shoot with a foe beside you'),
+    'drowned': ('Lantern of the Drowned', 'sunlantern', {'spell': 60}, 'its light heals twice as much', 'foes see you from 4 cells further'),
+    'gravechisel': ('Gravechisel', 'starchisel', {'spell': 60}, 'each rune bursts twice', 'carving a rune costs 5% of your life'),
+    'splinter': ('Splinterwand', 'starwand', {'spell': 60}, 'each bolt strikes three times', 'a quarter of your bolts fizzle'),
+    'headsman': ("Headsman's Promise", 'cleaver', {'dmg_pct': 70}, 'a foe under a fifth of its life dies at your blow', 'potions do not heal you above half your life'),
+    'lastspear': ("Last Dwarf's Spear", 'warspear', {'dmg_pct': 70}, 'each blow strikes twice', 'your armour counts for half'),
+    'bleedingstars': ('Bleeding Stars', 'starblades', {'dmg_pct': 60}, 'each throw lays 3 Blood stacks', 'each throw lays 1 Blood stack on you'),
+    'silentdirk': ('Silent Dirk', 'stiletto', {'dmg_pct': 60, 'crit': 10}, 'critical blows do triple harm', 'critical blows on you do double'),
+    'coldheart': ('Coldheart Arbalest', 'siegexbow', {'dmg_pct': 70}, 'every bolt freezes', 'every second turn goes to reloading'),
+    'kingsfrost': ('Kingsfrost Mail', 'plate', {'armour': 10, 'hp': 30}, 'Rime cannot touch you', 'you always move as if 2 Rime stacks slowed you'),
+    'lastcrown': ('Crown of the Last Dwarf', 'visorhelm', {'armour': 6}, '+2 to every style rank', 'you cannot drink potions'),
+    'whispering': ('Whispering Hood', 'greathelm', {'armour': 5, 'hp': 20}, 'you see every foe on the map', 'every foe always knows where you are'),
+    'ashwalker': ('Ashwalker Boots', 'plategreaves', {'armour': 5}, 'foes that follow your steps choke on Ash', 'fountains do not heal you'),
+    'pyrehand': ('Pyrehand Gauntlets', 'platehands', {'armour': 5}, 'every blow also lays an Ember stack', 'while foes are near you burn for 1 a turn'),
+    'hollowcourt': ('Ring of the Hollow Court', 'ring', {'hp': 20}, 'a dead dwarf rises to fight at your side on each map', 'it takes a quarter of your healing'),
+    'secondheart': ('Amulet of the Second Heart', 'amulet', {'hp': 20}, 'once a map a killing blow leaves you at full life', 'your life is 30% lower'),
+    'ashandoath': ('Ring of Ash and Oath', 'ring', {'res_fire': 25, 'res_cold': 25, 'res_poison': 25, 'res_ash': 25, 'res_blood': 25}, 'every resistance +25%', 'your belt holds only 2 potions of each kind'),
+}
+# the Frost bands (plan.md section 7): every three Frost levels a new layer of the same kinds, stronger, with its own name
+BANDS = ['', 'Rimesteel', 'Deepforged', 'Pyre-forged']
+RARITY_COL = {'normal': (210, 210, 210), 'magic': (110, 140, 255), 'rare': (240, 220, 90), 'unique': (184, 120, 255), 'legendary': (60, 224, 180)}
 POTION_HEAL, POTION_MANA = 'heal', 'mana'
 BELT_MAX = 6
 PACK_MAX = 14

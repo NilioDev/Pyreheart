@@ -202,7 +202,8 @@ json Game::record(const Hero& h) const {
   json r = {{"v", 1}, {"name", h.name}, {"lvl", h.lvl}, {"xp", h.xp}, {"gold", h.gold}, {"kills", h.kills},
           {"srank", h.srank}, {"sxp", h.sxp}, {"erank", h.erank}, {"exq", h.exq}, {"wxp", h.wxp}, {"known", h.known},
           {"path", h.path}, {"slotel", h.slot_el}, {"el", h.el}, {"el2", h.el2}, {"perks", h.perks}, {"choices", h.perk_choices},
-          {"equip", equip}, {"pack", pack}, {"heal", h.heal}, {"manap", h.mana_pots}, {"scars", h.scars}, {"rekindled", h.rekindled},
+          {"equip", equip}, {"pack", pack}, {"heal", h.heal}, {"manap", h.mana_pots}, {"scars", h.scars}, {"rekindled", h.rekindled}, {"reroll", h.reroll_frost},
+          {"frost_open", std::max(h.frost_open, state == "won" ? frost + 1 : 0)},
           {"tips", std::vector<std::string>(h.tips.begin(), h.tips.end())}};
   r.update(group_json());
   return r;
@@ -243,8 +244,9 @@ void Game::restore(Hero& h, const json& j) {
   h.pack.clear();
   if (j.contains("equip") && j["equip"].is_object())
     for (auto& [slot, it] : j["equip"].items()) if (auto i = loot::load(it)) h.equip[slot] = i;
-  for (auto& it : j.value("pack", json::array())) if (auto i = loot::load(it); i && int(h.pack.size()) < PACK_MAX) h.pack.push_back(i);
-  h.scars = j.value("scars", 0); h.rekindled = j.value("rekindled", 0);
+  for (auto& it : j.value("pack", json::array())) if (auto i = loot::load(it); i && int(h.pack.size()) < pack_max(h)) h.pack.push_back(i);
+  h.scars = j.value("scars", 0); h.rekindled = j.value("rekindled", 0); h.reroll_frost = j.value("reroll", -1);
+  h.frost_open = std::max(0, j.value("frost_open", 0));
   h.heal = j.value("heal", h.heal); h.mana_pots = j.value("manap", h.mana_pots);
   for (auto& t : j.value("tips", json::array())) h.tips.insert(t.get<std::string>());
   refit(h);
@@ -302,4 +304,100 @@ void Game::embers_tick() {
       }
       h->carry.clear();
     }
+}
+
+// ------------------------------------------------------------------ deep perks and keystones (plan.md section 7)
+// A deep perk fits a hero whose element or style it names; a duo perk is only open once the hero owns both halves; the
+// friends' perks only come in co-op.
+bool Game::owns(const Hero& h, const std::string& need) const {
+  if (need.empty() || need == "helper") return true;
+  if (need == "coop") return heroes.size() > 1;
+  if (auto plus = need.find('+'); plus != std::string::npos) return owns(h, need.substr(0, plus)) && owns(h, need.substr(plus + 1));
+  static const char* STYLE[3] = {"melee", "ranged", "magic"};
+  for (int s = 0; s < 3; ++s) if (need == STYLE[s]) return h.srank[s] >= 3 || main_style(h) == s;
+  for (int e = 0; e < elem::N; ++e) {
+    std::string n = elem::NAME[e];
+    for (auto& c : n) c = char(std::tolower(c));
+    if (need == n) return h.el == e || h.el2 == e;
+  }
+  return false;
+}
+
+std::vector<std::string> Game::perk_offer(const Hero& h, bool keystone) {
+  std::vector<std::string> fit, open;
+  for (auto& p : PERKS) {
+    if (h.perk(p.key) || (keystone ? p.kind != "key" : p.kind != "deep" && p.kind != "duo")) continue;
+    bool offered = false;
+    for (auto& c : h.perk_choices) for (auto& k : c) if (k == p.key) offered = true;
+    if (offered) continue;
+    if (p.kind == "duo" && !owns(h, p.need)) continue;
+    if (p.need == "coop" && !owns(h, p.need)) continue;
+    if (!p.need.empty() && p.need != "helper" && p.need != "coop" && owns(h, p.need)) fit.push_back(p.key); else open.push_back(p.key);
+  }
+  rnd.shuffle(fit);
+  rnd.shuffle(open);
+  std::vector<std::string> out;
+  if (keystone) {
+    for (auto& k : open) if (out.size() < 2) out.push_back(k);
+    if (!out.empty()) out.push_back("neither");
+    return out;
+  }
+  // at least one that fits the hero's element or style; the rest from everything
+  if (!fit.empty()) { out.push_back(fit.back()); fit.pop_back(); }
+  for (auto& k : fit) open.push_back(k);
+  rnd.shuffle(open);
+  for (auto& k : open) if (out.size() < 3) out.push_back(k);
+  return out;
+}
+
+// once a Frost level, by a camp's fire, the offer in front may be rolled again
+void Game::reroll_perks(Hero& h) {
+  if (h.perk_choices.empty()) return;
+  if (!floor->camp && floor->depth != 0) { h.say("Only by a camp's fire can an offer be weighed again.", 0x909090); return; }
+  if (h.reroll_frost == frost) { h.say("You have weighed an offer again once on this Frost level already.", 0x909090); return; }
+  auto& front = h.perk_choices.front();
+  bool keystone = std::find(front.begin(), front.end(), "neither") != front.end();
+  bool deep = keystone || (!front.empty() && perk_def(front[0]).kind != "");
+  auto old = front;
+  h.perk_choices.erase(h.perk_choices.begin());
+  std::vector<std::string> fresh;
+  if (deep) fresh = perk_offer(h, keystone);
+  if (fresh.size() <= (keystone ? 1u : 0u)) { h.perk_choices.insert(h.perk_choices.begin(), old); h.say("Nothing else is on offer.", 0x909090); return; }
+  h.perk_choices.insert(h.perk_choices.begin(), fresh);
+  h.reroll_frost = frost;
+  h.say("You stare into the fire, and other roads show themselves.", 0xFFB040);
+}
+
+// the perks that change the harm a hero deals to a foe (Game::hurt)
+double Game::perk_harm(Hero& h, Mon& m) {
+  double k = 1;
+  if (h.perk("giantslayer") && m.rank != "normal") k *= 1.10;
+  if (h.perk("finisher") && m.hp * 4 < m.maxhp) k *= 1.25;
+  if (h.perk("brittle") && m.frozen > 0) k *= 1.25;
+  if (h.perk("blindrage")) k *= 1 + .10 * m.stk.n[elem::ASH];
+  if (h.perk("hearthkin")) {
+    bool warm = floor->burning(h.x, h.y);
+    for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) if (elem::fiery(floor->tile(h.x + dx, h.y + dy))) warm = true;
+    if (warm) k *= 1.15;
+  }
+  if (h.perk("shoulder")) for (auto* o : active()) if (o != &h && cheb(o->x, o->y, h.x, h.y) == 1) { k *= 1.10; break; }
+  if (h.perk("pointblank") && credit_ == 1 && cheb(m.x, m.y, h.x, h.y) <= 1) k *= 1.25;
+  if (h.perk("skirmrhythm") && credit_ == 1 && h.skirm) { k *= 1.30; h.skirm = false; }
+  if (h.perk("stillhand") && discharging_ >= 0 && h.moved < turn - 1) k *= 1.20;
+  if (h.perk("openveins") && discharging_ == elem::BLOOD && m.hp * 2 < m.maxhp) k *= 1.20;
+  if (h.perk("overchannel") && full_mana_ && &h == acting_) k *= 1.5;
+  if (h.perk("thermalshock") && m.frozen > 0 && hero_el(h) == elem::EMBER) {
+    k *= 3;
+    m.frozen = 0;
+    say_near(m.x, m.y, "The frozen " + m.name + " cracks apart in the heat!", elem::COL[elem::EMBER]);
+  }
+  // keystones
+  if (h.perk("glasspyre")) k *= 1.30;
+  if (h.perk("packmule")) k *= .90;
+  if (h.perk("hermit")) k *= heroes.size() > 1 ? .90 : 1.20;
+  if (h.perk("berserkheart") && h.fury >= 10) k *= 1.25;
+  if (h.perk("onecraft") && discharging_ >= 0 && discharging_ == h.el) k *= 1.5;
+  if (h.perk("deathwish")) { Stats st = stats(h); k *= 1 + .05 * ((st.maxhp - h.hp) * 10 / std::max(1, st.maxhp)); }
+  if (h.perk("gambler")) k *= .5 + 1.5 * rnd.real();
+  return k;
 }

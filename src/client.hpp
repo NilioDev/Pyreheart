@@ -247,6 +247,7 @@ class Client {
   void draw_talk();
   void talk_key(SDL_Keycode k);
   int talk_sel_ = 0, talk_el_ = -1;
+  bool smith_temper_ = false;  // Brann's window: retune an element, or [Tab] temper a worn thing
   void put(int x, int y, int ch, int fg, int bg = -1);
   void text(int x, int y, const std::string& s, int fg, int bg = -1);
   int wrap(int x, int y, int w, const std::string& s, int fg, int max_lines = 99);

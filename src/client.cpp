@@ -209,7 +209,15 @@ void Client::hello() {
   json h = {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}, {"frost", frost_}};
   if (hero_.is_object()) {
     h["name"] = hero_.value("name", name_);
-    if (hero_.contains("record") && hero_["record"].is_object()) h["hero"] = hero_["record"];
+    if (hero_.contains("record") && hero_["record"].is_object()) {
+      if (!hero_["record"].contains("frost_open")) hero_["record"]["frost_open"] = frost_;  // a hero kept before the Frost could be chosen
+      h["hero"] = hero_["record"];
+    }
+  }
+  {  // the killer of this player's last hero, waiting to come back
+    std::ifstream nf(pref("nemesis.json"));
+    json n = nf ? json::parse(nf, nullptr, false) : json();
+    if (n.is_object()) h["nemesis"] = n;
   }
   respec_ = false;  // the tree is set for this dive
   dive_closed_ = false;
@@ -228,16 +236,19 @@ void Client::save_hero() {
 
 void Client::close_dive(const json& s) {
   if (dive_closed_) return;
+  if (s.value("nemesis_beaten", false) && (s.value("state", "play") == "won" || s.contains("grave"))) std::remove(pref("nemesis.json").c_str());  // the killer is dead
   if (s.value("state", "play") == "won" && s.contains("record") && hero_.is_object()) {
     dive_closed_ = true;
     hero_["record"] = s["record"];
-    ++frost_;
+    frost_ = s["record"].value("frost_open", frost_ + 1);  // the next dive: the highest open, unless chosen at the gate
     respec_ = true;
     save_hero();
-    log_.push_back({"You will wake in Charnfen, and go down again into Frost " + std::to_string(frost_) + ". The Pyre will let you take back your Sparks, once.", 0x90C8FF});
+    log_.push_back({"You will wake in Charnfen. Frost " + std::to_string(frost_) + " is open below; the gate guard lets you choose an easier one. The Pyre will let you take back your Sparks, once.", 0x90C8FF});
   } else if (s.contains("grave")) {  // the dive ended in death, or in co-op the ember went out
     dive_closed_ = true;
     json g = s["grave"];
+    if (g.contains("nemesis") && g["nemesis"].is_object()) { std::ofstream nf(pref("nemesis.json")); nf << g["nemesis"].dump(); }  // it will come back
+    g.erase("nemesis");
     graves_.push_back(g);
     std::ofstream f(pref("graves.json"));
     f << graves_.dump();
@@ -360,7 +371,7 @@ void Client::apply(const json& s) {
   if (shopping && !was_shopping) { over_ = Over::Shop; sel_ = 0; }
   if (!shopping && over_ == Over::Shop) over_ = Over::None;
   std::string talking = s["me"].value("talking", std::string());  // a helper's window: Ysolde, Brann or old Ebb
-  if (!talking.empty() && talking != was_talking) { over_ = Over::Talk; talk_sel_ = 0; talk_el_ = -1; }
+  if (!talking.empty() && talking != was_talking) { over_ = Over::Talk; talk_sel_ = 0; talk_el_ = -1; smith_temper_ = false; }
   if (talking.empty() && over_ == Over::Talk) over_ = Over::None;
   if (s["me"].value("dead", false) && over_ == Over::Target) over_ = Over::None;
   if (layout_ == Layout::Watch && !s["fx"].empty()) {
@@ -378,7 +389,7 @@ void Client::apply(const json& s) {
 void Client::send(const json& a) {
   if (!link_ || !snap_.is_object()) return;
   std::string t = a.value("t", "");
-  bool free = t == "perk" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel" || t == "talents" || t == "talk";
+  bool free = t == "perk" || t == "reroll" || t == "buy" || t == "buyp" || t == "sell" || t == "close" || t == "path" || t == "slot" || t == "slotel" || t == "talents" || t == "talk";
   if (!free) {
     if (waiting_) return;
     waiting_ = true;
@@ -613,6 +624,7 @@ void Client::key(SDL_Keycode k, SDL_Keymod mod) {
       if (k == SDLK_ESCAPE) over_ = Over::None;
       else if (dy) sel_ = (sel_ + dy + n) % n;
       else if (k >= SDLK_1 && k < SDLK_1 + n) { send({{"t", "perk"}, {"k", ch[k - SDLK_1][0]}}); over_ = Over::None; }
+      else if (k == SDLK_R && me.value("reroll", false)) send({{"t", "reroll"}});
       else if (enter) { send({{"t", "perk"}, {"k", ch[std::clamp(sel_, 0, n - 1)][0]}}); over_ = Over::None; }
       return;
     }
@@ -927,7 +939,7 @@ void Client::follow_lab() {
     jl_state_ = st;
     for (auto& it : snap_["items"]) {
       int col = it.value("col", 0);
-      if (col != data::rarity_col("rare") && col != data::rarity_col("unique")) continue;
+      if (col != data::rarity_col("rare") && col != data::rarity_col("unique") && col != data::rarity_col("legendary")) continue;
       std::string key = std::to_string(snap_.value("floor", 0)) + ":" + std::to_string(it["x"].get<int>()) + "," + std::to_string(it["y"].get<int>());
       if (jl_items_.insert(key).second) lab->jingle(music_lab::J_LOOT);
     }
@@ -1384,6 +1396,8 @@ void Client::draw_map() {
       put(X + 1, Y - 1, ph < .5 ? 'z' : 'Z', ph < .5 ? 0x9696BE : 0x50506E);
     }
   }
+  if (s.contains("court"))  // the Hollow Court's dead dwarf, fighting at a hero's side
+    for (auto& c : s["court"]) put(sx(c[0]), sy(c[1]), 'd', std::fmod(now() * .7, 2.0) < 1 ? 0x8CC8B4 : 0x6FA898);
   if (s.contains("embers"))  // a fallen friend's ember, waiting to be carried to the fire
     for (auto& e : s["embers"]) {
       double fl = .75 + .25 * std::sin(now() * 5.0 + e[0].get<int>() * 1.7);
@@ -1523,7 +1537,7 @@ void Client::draw_pack() {
   }
   ++r;
   auto& pack = me["pack"];
-  text(x + 2, r, "Pack (" + std::to_string(pack.size()) + "/" + std::to_string(data::PACK_MAX) + ")", GOLD);
+  text(x + 2, r, "Pack (" + std::to_string(pack.size()) + "/" + std::to_string(snap_["me"].value("packmax", data::PACK_MAX)) + ")", GOLD);
   text(x + 18, r++, std::to_string(me["gold"].get<int>()) + " gold", 0xFFD700);
   int list_top = r;
   sel_ = pack.empty() ? 0 : std::clamp(sel_, 0, int(pack.size()) - 1);
@@ -1627,9 +1641,17 @@ void Client::draw_perk() {
   auto& ch = snap_["me"]["choice"];
   if (ch.is_null()) { over_ = Over::None; return; }
   int cw = con_.get_width(), chh = con_.get_height();
-  int w = std::min(cw, 60), h = 4 + int(ch.size()) * 4;
+  bool key = false;
+  for (auto& c : ch) if (c.size() > 3 && c[3] == "key") key = true;
+  bool reroll = snap_["me"].value("reroll", false);
+  int w = std::min(cw, 60), h = 4 + int(ch.size()) * 4 + (reroll ? 1 : 0);
   int x = (cw - w) / 2, y = (chh - h) / 2;
-  box(x, y, w, h, "Choose a perk");
+  box(x, y, w, h, key ? "Choose a keystone, or neither" : "Choose a perk");
+  if (reroll) {  // once a Frost level, by a camp's fire
+    text(x + 2, y + h - 2, "[r]", KEY);
+    text(x + 6, y + h - 2, "weigh the offer again (once a Frost level)", 0xB4A078);
+    buttons_.push_back({x + 1, y + h - 2, w - 2, 1, "", "key:" + std::to_string(SDLK_R)});
+  }
   for (size_t i = 0; i < ch.size(); ++i) {
     int r = y + 2 + int(i) * 4;
     bool on = int(i) == sel_;
@@ -1694,7 +1716,7 @@ void Client::draw_end() {
   int r = y + 2;
   if (won) {
     for (auto& l : lore::VICTORY) r += wrap(x + 2, r, w - 4, l, GOLD);
-    r += wrap(x + 2, r, w - 4, "You will wake in Charnfen. The frost comes back harder: Frost " + std::to_string(snap_.value("frost", 0) + 1) + " waits below.", 0x90C8FF);
+    r += wrap(x + 2, r, w - 4, "You will wake in Charnfen. The frost comes back harder: Frost " + std::to_string(std::max(snap_.value("frost", 0) + 1, snap_.contains("record") ? snap_["record"].value("frost_open", 0) : 0)) + " is open below.", 0x90C8FF);
   } else {
     r += wrap(x + 2, r, w - 4, "Charnfen waits in vain.", 0xFF8080);
     if (snap_.contains("grave"))

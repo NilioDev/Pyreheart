@@ -6,6 +6,7 @@
 #include "data.hpp"
 #include "defs.hpp"
 #include "elements.hpp"
+#include "omens.hpp"
 
 using json = nlohmann::json;
 
@@ -47,6 +48,8 @@ struct Item {
   int id = 0;
   std::string base, name, slot, kind, rarity = "normal", base_name;
   int tier = 1, lo = 0, hi = 0, ar = 0, value = 10;
+  int band = 0, plus = 0;  // the Frost band it was forged in (Rimesteel, Deepforged, Pyre-forged) and Brann's tempering
+  std::string legend;      // a legendary's key (data::LEGENDARIES): its power and its price live in the code
   std::vector<std::pair<std::string, int>> stats;
   int stat(const std::string& k) const;
   void add(const std::string& k, int v);
@@ -58,7 +61,10 @@ using ItemP = std::shared_ptr<Item>;
 
 namespace loot {
 ItemP make(const std::string& base, const std::string& rarity = "normal", int tier = 0);
-ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
+ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal", int band = 0, int frost = 0);
+ItemP legendary(Rng& rnd, const std::vector<std::string>& kinds, int band);  // one of data::LEGENDARIES
+void temper(Item& it);                                                       // Brann forges one step onto it
+const LegendDef* legend_def(const std::string& key);
 json save(const Item& it);   // all of an item, for the hero kept between dives
 ItemP load(const json& j);   // and back (a new id); nullptr if it does not read
 }
@@ -117,6 +123,20 @@ struct Hero {
   std::map<std::string, int> talents;  // the Pyre's gifts this player brought (pyre.hpp)
   int heat_floor = -1, fury_floor = -1, fury_t = 0;  // Heat of Battle and Heart's Fury: once a floor
   bool unquenched = false, forged = false;           // Unquenched and Spark-Forged: once a dive
+  // the deep perks (plan.md section 7): Last Ember's map, the Frost level an offer was last rolled again on, and a
+  // Skirmisher's next shot made stronger by a blow in close
+  int ember_floor = -1, reroll_frost = -1;
+  bool skirm = false;
+  // the legendaries (plan.md section 7): the turn of the last kill (Hungering Edge), the blows since the maul was
+  // lifted (Kingsbane), the map the Second Heart was spent on, and the Hollow Court's dead dwarf: where, and on which map
+  int kill_turn = 0, lift = 0, heart_floor = -1, court_floor = -1;
+  P court{-1, -1};
+  std::vector<P> trail;  // the Ashwalker Boots: the last steps taken
+  // the Frost ladder: the highest Frost level this hero may choose (one above the highest beaten), whether the gate
+  // guard has called out to it this dive, and a shrine's blessing (turns left)
+  int frost_open = 0, boon = 0;
+  bool gate_called = false, omen_gift = false;
+  bool leg(const std::string& k) const { for (auto& [s, i] : equip) if (i && i->legend == k) return true; return false; }
   int tal(const std::string& k) const { auto it = talents.find(k); return it == talents.end() ? 0 : it->second; }
   int perk(const std::string& k) const { auto it = perks.find(k); return it == perks.end() ? 0 : it->second; }
   bool present() const { return !dead && !gone && !away; }
@@ -146,6 +166,9 @@ struct Mon {
   int energy = 0, stun = 0, frozen = 0, cool = 3;
   int smothered = 0;  // an Ashseer's discharge: it takes a quarter more from everything
   bool awake = false, summoned = false;
+  bool risen = false, reborn = false, caught = false;
+  bool nemesis = false;            // the killer come back (plan.md section 7): what it carries drops when it dies
+  std::vector<ItemP> carried;  // the omens: up once more (no xp, no drops); a boss risen again; struck before it woke
   Blow blow;                       // turns > 0 while it winds up
   int bleed = 0, bleed_dmg = 0;    // turns left, harm each turn
   int pinned = 0, lost = 0, surprised = 0, open = 0;  // held fast; lost in smoke; caught off guard; open after missing
@@ -240,14 +263,40 @@ const SkillDef& skill_def(const std::string& key);
 class Game {
  public:
   int retune_price() const { return 40 + 8 * lvl; }
+  int temper_cap() const { return frost + 1; }  // Brann's steps: one at Normal, one more per Frost level
+  int temper_price(const Hero& h, const Item& it) const { int p = (60 + 10 * lvl) * (it.plus + 1) * (1 + it.band); return h.perk("brannsfriend") ? p / 2 : p; }
   int potion_price() const { return 25 + 5 * lvl; }
   explicit Game(uint64_t seed, int frost = 0);
   uint64_t seed = 0;  // the dive's seed: each map is made from it, its zone and which of the zone's maps it is
   int frost = 0;                  // the Frost level: 0 the game as it is, each one up harder foes and better loot
+  std::vector<int> omens;         // this dive's Frost omens (omens.hpp), drawn from the seed and the Frost level
+  bool omen(int k) const { for (int o : omens) if (o == k) return true; return false; }
+  void set_frost(int f);          // in Charnfen, at the gate guard: the Frost level of this dive, and its omens
+  // the killer comes back (plan.md section 7): the one this player's last hero fell to, waiting in its zone; whether it
+  // was met and beaten in this dive; and what the last hero to fall here fell to, for its grave
+  json nemesis, last_fell;
+  bool nemesis_met = false, nemesis_beaten = false;
+  void set_nemesis(const json& n) { if (n.is_object() && n.contains("key") && n.contains("zone")) nemesis = n; }
+  void spawn_nemesis(Floor& fl, const std::vector<P>& far);
+  std::string nemesis_warning() const;
+  int res_held(const Hero& h) const;                     // the hero's resistances from gear, the five together
+  std::string threshold(const Hero& h, int f = -1) const;  // "The cold here bites 40%. You hold 20%." 
+  // plan.md section 7, the curve: foes grow +25% life and +15% blows per Frost level up to Frost 4, +40% and +20% after,
+  // there are 5% more of them on each level, and the cold takes 10% from each resistance, at most 50%
+  double frost_life() const { return 1 + .25 * std::min(frost, 4) + .40 * std::max(0, frost - 4); }
+  double frost_blow() const { return 1 + .15 * std::min(frost, 4) + .20 * std::max(0, frost - 4); }
+  int frost_res_cut() const { return 10 * std::min(frost, 5); }
+  int frost_band() const { return frost <= 0 ? 0 : std::min(3, (frost + 2) / 3); }  // Rimesteel 1-3, Deepforged 4-6, Pyre-forged 7+
   std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)
   bool landing_ = false;           // a blow seen coming is landing (for Mantle)
-  int belt(const Hero& h) const { return data::BELT_MAX + h.tal("banked"); }
-  int price(const Hero& h, const Item& it) const { return h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2; }
+  int pack_max(const Hero& h) const { return data::PACK_MAX + 4 * h.perk("packmule"); }
+  int belt(const Hero& h) const { return h.leg("ashandoath") ? 2 : data::BELT_MAX + h.tal("banked") + h.perk("beltmaker") + 2 * h.perk("packmule"); }
+  int heal_amt(const Hero& h, int v) const { return h.leg("hollowcourt") ? v - v / 4 : v; }  // the Hollow Court takes a quarter
+  int price(const Hero& h, const Item& it) const {
+    int p = h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2;
+    if (omen(omen::GOLDFEVER)) p = p * 3 / 2;  // Gold Fever: the trader knows what gold is worth now
+    return h.perk("haggler") ? p * 4 / 5 : p;
+  }
   ItemP roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
   void forge(Hero& h);
   Rng rnd;
@@ -301,6 +350,7 @@ class Game {
   void open_way(Hero& h, int zone);
   void talk(Hero& h, const json& a);
   void retune(Hero& h, int id, const std::string& from, int to);
+  void temper(Hero& h, int id);
   void build_rooms(Floor& fl, int d, bool boss_floor);
   void furnish(Floor& fl, const std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>> treasure);
   void zone_foes(Floor& fl);  // zones.cpp
@@ -362,7 +412,7 @@ class Game {
   int rime_slow(const Mon& m) const;
  private:
   void assign_element(Mon& m);
-  void lay_on_mon(Hero& h, Mon& m, int n);
+  void lay_on_mon(Hero& h, Mon& m, int n, int e = -1);  // e: an element of its own (a legendary), else the hero's
   void lay_on_hero(Mon& m, Hero& h, int n);
   void discharge_mon(Hero& h, Mon& m, int e);
   void discharge_hero(Mon& m, Hero& h, int e);
@@ -390,7 +440,13 @@ class Game {
   void embers_tick();  // co-op: ghosts follow, embers are picked up and carried to a camp fire
   void ember_out(Hero& o, const std::string& why);
   void take_weapon(Hero& h, const std::string& kind);
-  void offer_perk(Hero& h);
+  void offer_perk(Hero& h, bool level = false);
+  std::vector<std::string> perk_offer(const Hero& h, bool keystone);  // three deep perks, or two keystones and Neither
+  bool owns(const Hero& h, const std::string& need) const;            // whether a deep perk fits (or a duo is open to) a hero
+  void reroll_perks(Hero& h);                                          // once a Frost level, at a camp fire
+  double perk_harm(Hero& h, Mon& m);
+  Hero* stacks_by(const Mon& m, int e) { auto it = heroes.find(m.stk.by[e]); return it == heroes.end() ? nullptr : it->second.get(); }                                   // what the hero's perks do to the harm it deals
+  bool full_mana_ = false;                                             // Overchannel: the skill was begun at full mana
   void shoot_with(Hero& h, int x, int y);
 
   void act(Hero& h, const json& a);
@@ -405,6 +461,8 @@ class Game {
   void burst_rune(Hero& h, P at);
   void trod(Mon& m);
   void classes_tick();
+  void legends_tick();  // the legendaries' powers and prices that work each turn
+  bool chest_chain_ = false;  // the Open Chest's discharges, while they run
   bool skill_new(Hero& h, const std::string& key, int x, int y, const Stats& st, double sp);
   void melee(Hero& h, Mon& m);
   void hurt(Mon& m, int dmg, Hero* by, const std::string& text = "");

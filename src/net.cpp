@@ -112,6 +112,7 @@ Host::Host(uint64_t seed, bool open, const std::string& journal, bool resume, in
       json e = json::parse(line, nullptr, false);
       if (!e.is_object()) break;  // a line cut short when the app was killed
       if (e.contains("j")) {
+        if (e["j"].size() > 5) game_.set_nemesis(e["j"][5]);
         game_.join(e["j"][0], e["j"][1], e["j"][2], e["j"].size() > 3 ? e["j"][3] : json(), e["j"].size() > 4 ? e["j"][4] : json());
         resume_pid_ = e["j"][0];
         next_pid_ = (std::max)(next_pid_, resume_pid_ + 1);
@@ -355,9 +356,11 @@ void Host::handle(const std::shared_ptr<Peer>& peer, const json& m) {
     json talents = hello.contains("talents") && hello["talents"].is_object() ? hello["talents"] : json::object();
     json record = hello.contains("hero") && hello["hero"].is_object() ? hello["hero"] : json();  // a hero kept from a dive won
     if (std::string why = game_.can_join(record); !why.empty()) { peer->pid = 0; peer->out(json{{"error", why}}.dump()); return; }
+    json nem = hello.contains("nemesis") && game_.heroes.empty() && game_.depth == 0 ? hello["nemesis"] : json();  // the host's killer comes back
+    game_.set_nemesis(nem);
     Hero& h = game_.join(peer->pid, name, hello.value("cls", "warrior"), talents, record);
     json kept(h.talents);  // only what the tree allows
-    write({{"j", {peer->pid, name, hello.value("cls", "warrior"), kept, record}}});
+    write({{"j", {peer->pid, name, hello.value("cls", "warrior"), kept, record, nem}}});
     peer->out(json{{"welcome", peer->pid}}.dump());
     for (auto& p : peers_) push(*p);
     return;
