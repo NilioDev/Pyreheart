@@ -360,7 +360,7 @@ void Client::apply(const json& s) {
   if (shopping && !was_shopping) { over_ = Over::Shop; sel_ = 0; }
   if (!shopping && over_ == Over::Shop) over_ = Over::None;
   std::string talking = s["me"].value("talking", std::string());  // a helper's window: Ysolde, Brann or old Ebb
-  if (!talking.empty() && talking != was_talking) { over_ = Over::Talk; talk_sel_ = 0; talk_el_ = -1; }
+  if (!talking.empty() && talking != was_talking) { over_ = Over::Talk; talk_sel_ = 0; talk_el_ = -1; smith_temper_ = false; }
   if (talking.empty() && over_ == Over::Talk) over_ = Over::None;
   if (s["me"].value("dead", false) && over_ == Over::Target) over_ = Over::None;
   if (layout_ == Layout::Watch && !s["fx"].empty()) {
@@ -928,7 +928,7 @@ void Client::follow_lab() {
     jl_state_ = st;
     for (auto& it : snap_["items"]) {
       int col = it.value("col", 0);
-      if (col != data::rarity_col("rare") && col != data::rarity_col("unique")) continue;
+      if (col != data::rarity_col("rare") && col != data::rarity_col("unique") && col != data::rarity_col("legendary")) continue;
       std::string key = std::to_string(snap_.value("floor", 0)) + ":" + std::to_string(it["x"].get<int>()) + "," + std::to_string(it["y"].get<int>());
       if (jl_items_.insert(key).second) lab->jingle(music_lab::J_LOOT);
     }

@@ -778,6 +778,8 @@ void Game::talk(Hero& h, const json& a) {
     } else if (k == "potion") buy_potion(h, a.value("p", ""));
   } else if (h.talking == "smith" && k == "retune") {
     retune(h, a.value("id", 0), a.value("from", ""), a.value("e", -1));
+  } else if (h.talking == "smith" && k == "temper") {
+    temper(h, a.value("id", 0));
   } else if (h.talking == "guide" && k == "way") {
     open_way(h, a.value("z", -1));
   }
@@ -802,6 +804,24 @@ void Game::retune(Hero& h, int id, const std::string& from, int to) {
   refit(h);
   h.say("Brann's hammer rings. " + it->name + " now turns " + elem::NAME[to] + " instead.", 0xC8966E);
   add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", elem::COL[to]}});
+}
+
+// Brann tempers a worn thing one step, for gold; never past what the Frost level could give (plan.md section 7)
+void Game::temper(Hero& h, int id) {
+  ItemP it;
+  for (auto& [slot, i] : h.equip) if (i->id == id) it = i;
+  if (!it) return;
+  if (it->plus >= temper_cap()) {
+    h.say("Brann turns it over. \"No more in it. Not at this Frost. Go deeper, and I'll go further.\"", 0xC8966E);
+    return;
+  }
+  int price = temper_price(h, *it);
+  if (h.gold < price) { h.say("Brann grunts. \"" + std::to_string(price) + " gold, and not a coin less.\"", 0xC8966E); return; }
+  h.gold -= price;
+  loot::temper(*it);
+  refit(h);
+  h.say("Brann's hammer rings on and on. " + it->name + ".", 0xC8966E);
+  add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xFFB040}});
 }
 
 MonP Game::spawn(const std::string& key, int x, int y) {
@@ -1654,6 +1674,7 @@ void Game::drops(const Mon& m) {
       drop_at({0, 0, roll_loot(lvl + 1, kinds, "", "magic"), 0, "", o->pid});
     }
     if (rnd.real() < .3) drop_at({0, 0, roll_loot(lvl, kinds, "unique"), 0, "", rnd.pick(owners)->pid});
+    if (frost >= 5 && rnd.real() < .1) drop_at({0, 0, roll_loot(lvl, kinds, "legendary"), 0, "", rnd.pick(owners)->pid});
     return;
   }
   std::vector<ItemP> items;
@@ -2774,12 +2795,15 @@ void Game::look() {
 // Drops: the Frost makes them deeper, and Good Eye (the best in the party) sometimes makes them a rarity better.
 ItemP Game::roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity, const std::string& at_least) {
   d += 3 * frost;
-  auto it = loot::roll(d, rnd, kinds, rarity, at_least);
+  int band = frost_band();
+  // legendaries: from Frost 5, a thin chance on every drop that grows with the Frost
+  if (rarity.empty() && frost >= 5 && rnd.real() < .002 + .001 * frost) return loot::roll(d, rnd, kinds, "legendary", "normal", band, frost);
+  auto it = loot::roll(d, rnd, kinds, rarity, at_least, band, frost);
   int eye = 0;
   for (auto* h : living()) eye = std::max(eye, h->tal("goodeye"));
   if (rarity.empty() && eye && rnd.below(100) < 3 * eye) {
     std::string up = it->rarity == "normal" ? "magic" : it->rarity == "magic" ? "rare" : it->rarity == "rare" ? "unique" : "";
-    if (!up.empty()) it = loot::roll(d, rnd, kinds, up);
+    if (!up.empty()) it = loot::roll(d, rnd, kinds, up, "normal", band, frost);
   }
   return it;
 }
@@ -2790,16 +2814,17 @@ void Game::forge(Hero& h) {
   if (!floor->camp) { h.say("Only at a camp's fire.", 0x909090); return; }
   if (h.forged) { h.say("The Spark has already reforged once this dive.", 0x909090); return; }
   auto wi = h.equip.find("weapon");
-  if (wi == h.equip.end() || wi->second->rarity == "normal" || wi->second->rarity == "unique") {
+  if (wi == h.equip.end() || wi->second->rarity == "normal" || wi->second->rarity == "unique" || wi->second->rarity == "legendary") {
     h.say("Only a magic or rare weapon can be reforged.", 0x909090);
     return;
   }
   ItemP old = wi->second, best;
   for (int i = 0; i < 40 && !best; ++i) {
-    auto it = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity);
+    auto it = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity, "normal", old->band, frost);
     if (it->base == old->base) best = it;
   }
-  if (!best) best = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity);
+  if (!best) best = loot::roll(lvl + 1 + 3 * frost, rnd, {old->kind}, old->rarity, "normal", old->band, frost);
+  for (int i = 0; i < old->plus; ++i) loot::temper(*best);
   if (best->slot != "weapon") return;
   h.forged = true;
   wi->second = best;

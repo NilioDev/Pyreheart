@@ -278,6 +278,14 @@ json snapshot(Game& g, Hero& h, bool with_map) {
             if (k == RES[e]) rows.push_back({{"id", it->second->id}, {"name", it->second->shortname()}, {"rarity", it->second->rarity}, {"from", k}, {"el", e}, {"v", v}});
       }
       t["gear"] = rows;
+      json tem = json::array();  // what Brann can temper: every worn thing, its step, his price
+      for (auto& sl : data::SLOTS) {
+        auto it = h.equip.find(sl);
+        if (it == h.equip.end()) continue;
+        tem.push_back({{"id", it->second->id}, {"name", it->second->shortname()}, {"rarity", it->second->rarity}, {"plus", it->second->plus}, {"price", g.temper_price(h, *it->second)}});
+      }
+      t["temper"] = tem;
+      t["cap"] = g.temper_cap();
     }
     if (h.talking == "guide" && f.camp) {
       json ways = json::array();

@@ -47,6 +47,8 @@ struct Item {
   int id = 0;
   std::string base, name, slot, kind, rarity = "normal", base_name;
   int tier = 1, lo = 0, hi = 0, ar = 0, value = 10;
+  int band = 0, plus = 0;  // the Frost band it was forged in (Rimesteel, Deepforged, Pyre-forged) and Brann's tempering
+  std::string legend;      // a legendary's key (data::LEGENDARIES): its power and its price live in the code
   std::vector<std::pair<std::string, int>> stats;
   int stat(const std::string& k) const;
   void add(const std::string& k, int v);
@@ -58,7 +60,10 @@ using ItemP = std::shared_ptr<Item>;
 
 namespace loot {
 ItemP make(const std::string& base, const std::string& rarity = "normal", int tier = 0);
-ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
+ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal", int band = 0, int frost = 0);
+ItemP legendary(Rng& rnd, const std::vector<std::string>& kinds, int band);  // one of data::LEGENDARIES
+void temper(Item& it);                                                       // Brann forges one step onto it
+const LegendDef* legend_def(const std::string& key);
 json save(const Item& it);   // all of an item, for the hero kept between dives
 ItemP load(const json& j);   // and back (a new id); nullptr if it does not read
 }
@@ -244,6 +249,8 @@ const SkillDef& skill_def(const std::string& key);
 class Game {
  public:
   int retune_price() const { return 40 + 8 * lvl; }
+  int temper_cap() const { return frost + 1; }  // Brann's steps: one at Normal, one more per Frost level
+  int temper_price(const Hero& h, const Item& it) const { int p = (60 + 10 * lvl) * (it.plus + 1) * (1 + it.band); return h.perk("brannsfriend") ? p / 2 : p; }
   int potion_price() const { return 25 + 5 * lvl; }
   explicit Game(uint64_t seed, int frost = 0);
   uint64_t seed = 0;  // the dive's seed: each map is made from it, its zone and which of the zone's maps it is
@@ -253,6 +260,7 @@ class Game {
   double frost_life() const { return 1 + .25 * std::min(frost, 4) + .40 * std::max(0, frost - 4); }
   double frost_blow() const { return 1 + .15 * std::min(frost, 4) + .20 * std::max(0, frost - 4); }
   int frost_res_cut() const { return 10 * std::min(frost, 5); }
+  int frost_band() const { return frost <= 0 ? 0 : std::min(3, (frost + 2) / 3); }  // Rimesteel 1-3, Deepforged 4-6, Pyre-forged 7+
   std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)
   bool landing_ = false;           // a blow seen coming is landing (for Mantle)
   int pack_max(const Hero& h) const { return data::PACK_MAX + 4 * h.perk("packmule"); }
@@ -311,6 +319,7 @@ class Game {
   void open_way(Hero& h, int zone);
   void talk(Hero& h, const json& a);
   void retune(Hero& h, int id, const std::string& from, int to);
+  void temper(Hero& h, int id);
   void build_rooms(Floor& fl, int d, bool boss_floor);
   void furnish(Floor& fl, const std::vector<std::vector<P>>& rooms, std::vector<std::vector<P>> treasure);
   void zone_foes(Floor& fl);  // zones.cpp

@@ -35,7 +35,8 @@ struct SkillDef { std::string key, name; int mana; bool target; std::string abou
 struct PerkDef { std::string key, name, text; int max; std::string cls, path, kind, need; };  // path "*": a path itself; kind deep, duo, key (plan.md section 7)
 struct BaseDef { std::string key, name, slot, kind; int tier, lo, hi, ar, spell; };
 struct AffixDef { std::string name, stat; int lo, hi; double grow; std::vector<std::string> slots; };
-struct UniqueDef { std::string name, base; std::vector<std::pair<std::string, int>> stats; };
+struct UniqueDef { std::string name, base; std::vector<std::pair<std::string, int>> stats; int frost; };
+struct LegendDef { std::string key, name, base; std::vector<std::pair<std::string, int>> stats; std::string power, price; };
 
 struct P {
   int x = 0, y = 0;

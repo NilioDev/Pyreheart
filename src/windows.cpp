@@ -881,8 +881,8 @@ void Client::draw_talk() {
   int cw = con_.get_width(), chh = con_.get_height();
   bool guide = who == "guide", smith = who == "smith";
   int w = std::min(cw, guide ? 72 : 62);
-  int rows = smith ? std::max(1, int(t.value("gear", json::array()).size())) : 0;
-  int h = std::min(chh, guide ? (t.contains("ways") ? 34 : 10) : smith ? 14 + rows : 14);
+  int rows = smith ? std::max({1, int(t.value("gear", json::array()).size()), int(t.value("temper", json::array()).size())}) : 0;
+  int h = std::min(chh, guide ? (t.contains("ways") ? 34 : 10) : smith ? 15 + rows : 14);
   int x = (cw - w) / 2, y = (chh - h) / 2;
   const char* title = who == "healer" ? "Ysolde, the healer" : smith ? "Brann, the smith" : "Old Ebb";
   int col = who == "healer" ? 0xAADCAA : smith ? 0xC8966E : 0x9696AA;
@@ -904,7 +904,31 @@ void Client::draw_talk() {
     buttons_.push_back({x + 2, r++, w - 4, 1, "", "key:" + std::to_string(SDLK_M)});
     ++r;
     if (me.value("scars", 0) > 0) text(x + 3, r, "Scars she cannot mend: " + std::to_string(me.value("scars", 0)) + ".", DIM, PAPER);
+  } else if (smith && smith_temper_) {
+    auto tem = t.value("temper", json::array());
+    int n = int(tem.size()), cap = t.value("cap", 1);
+    text(x + 3, r++, "TEMPER  (up to +" + std::to_string(cap) + " at this Frost)", GOLD, PAPER);
+    if (!n) rich_wrap(x + 3, r, w - 6, "You wear nothing I could put my hammer to.", DIM, PAPER);
+    else {
+      talk_sel_ = std::clamp(talk_sel_, 0, n - 1);
+      for (int i = 0; i < n; ++i, ++r) {
+        auto& g = tem[i];
+        bool on = i == talk_sel_, full = g.value("plus", 0) >= cap;
+        int bg = on ? SEL : PAPER;
+        for (int k = x + 2; k < x + w - 2; ++k) put(k, r, ' ', INK, bg);
+        text(x + 3, r, on ? ">" : " ", GOLD, bg);
+        text(x + 5, r, clip(g.value("name", std::string()), w - 22), data::rarity_col(g.value("rarity", std::string("normal"))), bg);
+        std::string pr = full ? "as far as it goes" : std::to_string(g.value("price", 0)) + "g";
+        text(x + w - 3 - ulen(pr), r, pr, full ? DIM : 0xFFD700, bg);
+        buttons_.push_back({x + 2, r, w - 4, 1, "", "talksel:" + std::to_string(i)});
+      }
+      ++r;
+      rich(x + 3, r++, "Your gold: " + std::to_string(gold) + ".", ASH, PAPER);
+    }
+    rich(x + 3, y + h - 2, "[↑↓] gear  [Enter] temper  [Tab] retune  [Esc] leave", INK, PAPER);
+    return;
   } else if (smith) {
+    text(x + 3, r++, "RETUNE", GOLD, PAPER);
     auto gear = t.value("gear", json::array());
     int n = int(gear.size());
     if (!n) {
@@ -932,7 +956,7 @@ void Client::draw_talk() {
       ++r;
       rich(x + 3, r++, "Costs " + std::to_string(t.value("retune", 0)) + " gold. Your gold: " + std::to_string(gold) + ".", ASH, PAPER);
     }
-    rich(x + 3, y + h - 2, "[↑↓] gear  [◄►] element  [Enter] retune  [Esc] leave", INK, PAPER);
+    rich(x + 3, y + h - 2, "[↑↓] gear  [◄►] element  [Enter] retune  [Tab] temper  [Esc] leave", INK, PAPER);
     return;
   } else if (guide) {
     if (!t.contains("ways")) {
@@ -980,6 +1004,15 @@ void Client::talk_key(SDL_Keycode k) {
     else if (k == SDLK_P) send({{"t", "talk"}, {"k", "potion"}, {"p", "heal"}});
     else if (k == SDLK_M) send({{"t", "talk"}, {"k", "potion"}, {"p", "mana"}});
   } else if (who == "smith") {
+    if (k == SDLK_TAB) { smith_temper_ = !smith_temper_; talk_sel_ = 0; talk_el_ = -1; return; }
+    if (smith_temper_) {
+      auto tem = t.value("temper", json::array());
+      int n = int(tem.size());
+      if (!n) return;
+      if (up || down) { talk_sel_ = (talk_sel_ + (up ? n - 1 : 1)) % n; return; }
+      if (enter) send({{"t", "talk"}, {"k", "temper"}, {"id", tem[std::clamp(talk_sel_, 0, n - 1)]["id"]}});
+      return;
+    }
     auto gear = t.value("gear", json::array());
     int n = int(gear.size());
     if (!n) return;
