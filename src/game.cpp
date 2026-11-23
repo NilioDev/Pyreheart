@@ -1538,7 +1538,17 @@ const std::map<std::string, std::map<std::string, std::string>> BLOW_SAYS = {
     {"prelate", {{"smash", "spreads his frozen hands."}, {"line", "opens his ribs at you."}, {"sweep", "turns, and the cold spreads."},
                  {"toll", "begins a black prayer. Break it!"}, {"pyre", "opens the void in his chest. Find the gold!"}}},
     {"ashenking", {{"smash", "raises the black blade."}, {"line", "points, and the frost gathers."}, {"sweep", "draws the cold around him."},
-                   {"toll", "speaks a word of the old dwarves. Break it!"}, {"pyre", "opens his chest. The Pyreheart blazes. Find the gold!"}}},
+                   {"toll", "speaks a word of the old dwarves. Break it!"}, {"pyre", "opens his chest. The Pyreheart blazes. Find the gold!"},
+                   // what he borrows from the great foes slain on the way down (plan.md section 7, The King learns)
+                   {"flood", "spills black meltwater across the floor."}, {"chain", "flings a chain of frozen links."},
+                   {"ingot", "hurls a shard of burning heart-iron."}, {"charge", "lowers the black blade and charges."},
+                   {"ashbreath", "breathes the ash of the dead city. Break it, or the hall goes dark!"}}},
+};
+// The King learns (plan.md section 7): a new move at Frost 1, 4 and 7, and from every zone boss slain on the way down
+// he borrows its heaviest trick, so the route makes each King fight different
+const std::map<std::string, std::string> KING_BORROWS = {
+    {"crypt", "slam"}, {"caves", "spit"}, {"forge", "flame"}, {"cistern", "flood"}, {"city", "ashbreath"},
+    {"vaults", "ingot"}, {"barracks", "charge"}, {"prison", "chain"}, {"sanctum", "void"},
 };
 
 bool Game::wind_up(Mon& m, Hero& h, const std::string& name) {
@@ -1657,10 +1667,21 @@ void Game::land(Mon& m) {
 
 void Game::boss_phase(Mon& m) {
   int ph = m.hp * 3 <= m.maxhp ? 2 : m.hp * 3 <= 2 * m.maxhp ? 1 : 0;
+  bool fourth = m.def->key == "ashenking" && frost >= 10 && m.hp * 7 <= m.maxhp;  // from Frost 10 the King has a fourth phase
+  if (fourth) ph = 3;
   if (ph <= m.phase) return;
   m.phase = ph;
   m.deck.clear();
   m.cool = 1;
+  if (ph == 3) {
+    say_all("The Ashen King tears the Pyreheart half out of his chest. Its light and its cold pour over the hall: he holds nothing back now.", 0xFF8C28);
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 4}, {"col", 0xFF8C28}, {"sign", "*"}});
+    m.spd = m.spd * 5 / 4;
+    m.stk = {};
+    Hero* h = nearest_hero(m, false);
+    if (h) boss_move(m, *h, cheb(h->x, h->y, m.x, m.y), "hollowcourt");
+    return;
+  }
   say_near(m.x, m.y, cap(the(m)) + (ph == 1 ? " staggers, and fights harder." : " is badly hurt. Now it holds nothing back."), 0xFFB060);
   Hero* h = nearest_hero(m, false);
   if (h) boss_move(m, *h, cheb(h->x, h->y, m.x, m.y), "summon");
@@ -2729,6 +2750,15 @@ void Game::mon_turn(Mon& m) {
       auto it = BOSS_DECKS.find(m.def->key);
       if (it != BOSS_DECKS.end()) m.deck = it->second[std::min(m.phase, 2)];
       else m.deck = m.def->moves;
+      if (m.def->key == "ashenking") {  // what the King has learned
+        std::vector<std::string> more;
+        if (frost >= 1) more.push_back("frozenground");
+        if (frost >= 4) more.push_back("ashveil");
+        if (frost >= 7) more.push_back("hollowcourt");
+        for (auto& z : slain) if (auto b = KING_BORROWS.find(z); b != KING_BORROWS.end()) more.push_back(b->second);
+        for (int k = 0; k < (m.phase >= 3 ? 2 : 1); ++k) m.deck.insert(m.deck.end(), more.begin(), more.end());
+        if (m.phase >= 3) m.deck.push_back("pyre");
+      }
       rnd.shuffle(m.deck);
     }
     std::string mv = m.deck.back();
@@ -2960,7 +2990,7 @@ bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
       if (cheb(o->x, o->y, h.x, h.y) <= 1) {
         hero_hurt(*o, &m, rnd.range(m.lo, m.hi) / 2, "");
         o->poison = 5;
-        o->poison_dmg = std::max(o->poison_dmg, rnd_i(m.def->poison * (1 - stats(*o).res_p / 100.0)));
+        o->poison_dmg = std::max(o->poison_dmg, rnd_i(std::max(m.def->poison, 2 + lvl / 3) * (1 - stats(*o).res_p / 100.0)));
       }
   } else if (mv == "flame") {
     if (d > 5) return false;
@@ -3002,6 +3032,50 @@ bool Game::boss_move(Mon& m, Hero& h, int d, const std::string& mv0) {
   } else if (mv == "brace") {  // shield up: a quarter of the harm, until his next blow
     m.brace = 3;
     say_near(m.x, m.y, cap(the(m)) + " raises his shield. Wait for his blow.", 0xC0A080);
+  } else if (mv == "frozenground") {  // the King learns, Frost 1: the floor around him turns to ice and bites
+    if (d > 3) return false;
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 3}, {"col", 0x9CD2FF}, {"sign", "*"}});
+    for (auto* o : active())
+      if (cheb(o->x, o->y, m.x, m.y) <= 3) {
+        int res = hero_res(*o, elem::RIME), laid = 0;
+        for (int i = 0; i < 2; ++i) if (res < 100 && (res <= 0 || rnd.below(100) >= res)) ++laid;
+        o->stk.n[elem::RIME] = std::min(elem::MAX, o->stk.n[elem::RIME] + laid);
+        o->stk.idle[elem::RIME] = 0;
+        o->numb = std::max(o->numb, 2);
+        hero_hurt(*o, &m, std::max(1, rnd.range(m.lo, m.hi) / 3), "cold");
+      }
+    say_near(m.x, m.y, "Frost runs out from the King's feet. The floor turns to ice under you.", 0x9CD2FF);
+  } else if (mv == "ashveil") {  // Frost 4: he goes into ash and comes out somewhere else
+    std::vector<P> spots;
+    for (int dy = -8; dy <= 8; ++dy)
+      for (int dx = -8; dx <= 8; ++dx) {
+        int x = h.x + dx, y = h.y + dy, dd = cheb(x, y, h.x, h.y);
+        if (dd >= 4 && dd <= 7 && floor->walk(x, y) && !mon_at(x, y) && !hero_at(x, y)) spots.push_back({x, y});
+      }
+    if (spots.empty()) return false;
+    for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) if (floor->walk(m.x + dx, m.y + dy)) floor->ground.push_back({{m.x + dx, m.y + dy}, G_SMOKE, 4, 0, 0});
+    for (auto* o : active()) if (cheb(o->x, o->y, m.x, m.y) <= 1) { o->stk.n[elem::ASH] = std::min(elem::MAX, o->stk.n[elem::ASH] + 1); o->stk.idle[elem::ASH] = 0; }
+    add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", 0x8A8A8A}});
+    P c = rnd.pick(spots);
+    m.x = c.x; m.y = c.y;
+    add_fx({{"k", "inward"}, {"x", m.x}, {"y", m.y}, {"col", 0x8A8A8A}});
+    say_near(m.x, m.y, "The King comes apart into ash, and stands again elsewhere.", 0xA0A0A0);
+  } else if (mv == "hollowcourt") {  // Frost 7: his dead court climbs out of the floor
+    int n = 0;
+    for (auto& o : floor->mons) if (o->summoned) ++n;
+    if (n >= 8) return false;
+    std::string kind = "wraith";
+    for (auto& k : m.def->moves) if (k.rfind("summon:", 0) == 0) kind = k.substr(7);
+    int made = 0;
+    for (auto* o : active())
+      for (int i = 0; i < 2; ++i) {
+        P c;
+        if (free_near(o->x, o->y, 3, c, [&](int a, int b) { return floor->walk(a, b) && !mon_at(a, b) && !hero_at(a, b) && cheb(a, b, o->x, o->y) >= 2; }))
+          if (auto s2 = spawn(kind, c.x, c.y)) { s2->summoned = true; s2->awake = true; s2->dormant = s2->hidden = 0; s2->name = "dead dwarf of the Hollow Court"; s2->col = 0x8C9AA8; ++made; }
+      }
+    if (!made) return false;
+    add_fx({{"k", "wave"}, {"x", m.x}, {"y", m.y}, {"r", 4}, {"col", 0x8C9AA8}, {"sign", "sound"}});
+    say_near(m.x, m.y, "The King lifts his hand. His Hollow Court climbs out of the stone around you.", 0x8C9AA8);
   } else if (mv == "blink") {
     P c;
     if (!free_near(h.x, h.y, 2, c)) return false;
