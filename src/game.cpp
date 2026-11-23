@@ -2402,6 +2402,12 @@ bool Game::skill_new(Hero& h, const std::string& key, int x, int y, const Stats&
     add_fx({{"k", "burst"}, {"x", m->x}, {"y", m->y}, {"r", 1}, {"col", 0xFFE68C}});
     int mx = m->x, my = m->y;
     strike(h, *m, mult);
+    // the blow shakes the ground: the others pressing in on you may reel
+    for (auto& o : floor->mons)
+      if (o != m && o->hp > 0 && o->rank != "boss" && cheb(o->x, o->y, h.x, h.y) == 1 && !o->can("stone") && rnd.below(2)) {
+        o->stun = std::max(o->stun, 1);
+        num(o->x, o->y, "stunned", 0xE0D080);
+      }
     if (h.perk("zealot"))
       for (auto& o : floor->mons)
         if (o != m && o->hp > 0 && cheb(o->x, o->y, mx, my) <= 2 && h.sees(o->x, o->y)) {

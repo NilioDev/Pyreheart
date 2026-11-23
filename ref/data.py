@@ -329,7 +329,7 @@ M = {
                     ai='ranged', rng=6, shot=('*', (150, 230, 90)), poison=3, traits=('lob:tar',)),
     'giantrat': dict(name='giant rat', ch='R', col=(120, 100, 90), hp=18, dmg=(3, 6), acc=65, ar=3, spd=120, xp=9,
                      ai='melee', traits=('leap',)),
-    'webmother': dict(name='the Webmother', ch='A', col=(220, 180, 120), hp=260, dmg=(6, 13), acc=80, ar=6, spd=110,
+    'webmother': dict(name='the Webmother', ch='A', col=(220, 180, 120), hp=240, dmg=(5, 12), acc=80, ar=6, spd=110,
                       xp=260, ai='melee', boss=True, poison=5, moves=('summon:spider', 'spit')),
     # act 3
     'imp': dict(name='scrap hurler', ch='h', col=(200, 130, 90), hp=18, dmg=(4, 8), acc=70, ar=2, spd=120, xp=16,
@@ -362,7 +362,7 @@ M = {
     'acidspitter': dict(name='acid spitter', ch='j', col=(225, 215, 80), hp=16, dmg=(3, 6), acc=65, ar=1, spd=100, xp=12,
                         ai='ranged', rng=6, shot=('*', (235, 225, 90)), poison=3, traits=('lob:acid',)),
     'crab': dict(name='rust-shell crab', ch='k', col=(170, 95, 60), hp=34, dmg=(4, 8), acc=65, ar=6, spd=80, xp=15, ai='melee', traits=('brace',)),
-    'sluicekeeper': dict(undead=True, name='the Sluice-Keeper', ch='L', col=(130, 160, 115), hp=280, dmg=(6, 13), acc=80, ar=6,
+    'sluicekeeper': dict(undead=True, name='the Sluice-Keeper', ch='L', col=(130, 160, 115), hp=250, dmg=(5, 12), acc=80, ar=6,
                          spd=100, xp=280, ai='melee', boss=True, poison=4, moves=('summon:leech', 'spit')),
     # the third step, beside the Forge: the City and the Vaults
     'citizen': dict(undead=True, name='ash-buried citizen', ch='z', col=(170, 165, 150), hp=26, dmg=(4, 8), acc=65, ar=2, spd=80, xp=14,
@@ -528,7 +528,7 @@ SKILLS = {
     'nova': dict(name='Nova', mana=10, target=False, about='a burst around you that freezes foes in place'),
     'blink': dict(name='Blink', mana=5, target=False, about='vanish and stand up to 5 away, far from your foes'),
     'emberwall': dict(name='Barrier', mana=8, target=True, about='a burning wall across the way to a foe; foes will not cross it'),
-    'smite': dict(name='Smite', mana=3, target=False, about='a holy blow at a foe next to you; the dead take far more'),
+    'smite': dict(name='Smite', mana=3, target=False, about='a holy blow at a foe next to you; the dead take far more, and the others beside you may reel'),
     'mend': dict(name='Mend', mana=6, target=False, about='heal yourself and every friend within 3'),
     'hallow': dict(name='Hallow', mana=7, target=False, about='the ground around you burns foes for 5 turns'),
     'beacon': dict(name='Beacon', mana=9, target=False, about='your lantern flares: foes within 4 are stunned, the dead burn'),
