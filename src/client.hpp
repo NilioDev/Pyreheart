@@ -45,6 +45,9 @@ class Client {
   std::set<std::string> jl_items_;
   music_lab::Scene listen_scene_;  // the listening player can try the lab's hooks by hand
   std::string name_ = "Hero", addr_, message_;
+  bool name_rolled_ = false;  // the name on the name screen is a random roll: typing replaces it, [Tab] rolls again
+  void roll_name();
+  void open_name_screen();
   std::vector<std::string> found_;
 
   std::unique_ptr<Host> host_;
