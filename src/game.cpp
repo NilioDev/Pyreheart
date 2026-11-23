@@ -558,6 +558,7 @@ std::unique_ptr<Floor> Game::make_floor_from(int d) {
     for (int i = 0; i < n; ++i) spawn_near(kind, c);
     budget -= cost;
   }
+  if (!boss_floor && floor->depth > 0 && !far.empty()) spawn_nemesis(fl, far);
   if (omen(omen::CRACKED) && zfloor == 0 && !boss_floor && floor->depth > 0 && !far.empty()) {  // Cracked Seals: a hoard, and its guards
     P c = rnd.pick(far);
     if (fl.tile(c.x, c.y) == FLOOR || fl.tile(c.x, c.y) == CRUST) {
@@ -863,6 +864,49 @@ void Game::temper(Hero& h, int id) {
   add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 1}, {"col", 0xFFB040}});
 }
 
+// ------------------------------------------------------------------ the killer comes back
+void Game::spawn_nemesis(Floor& fl, const std::vector<P>& far) {
+  if (!nemesis.is_object() || nemesis_met || nemesis.value("zone", std::string()) != ACTS[fl.act].key) return;
+  const std::string key = nemesis.value("key", std::string());
+  bool known = false;
+  for (auto& d : data::MONSTERS) if (d.key == key && !d.boss) known = true;
+  if (!known) { nemesis_met = true; return; }
+  P c = rnd.pick(far);
+  auto m = spawn(key, c.x, c.y);
+  if (!m) return;
+  nemesis_met = true;
+  unique(*m);
+  std::string aff = nemesis.value("affix", std::string("Brutal"));
+  if (std::find(m->mods.begin(), m->mods.end(), aff) == m->mods.end()) {  // the dead hero's element, in its blood now
+    auto all = m->mods;
+    m->mods = {aff};
+    apply_mods(*m);
+    all.push_back(aff);
+    m->mods = all;
+    assign_element(*m);
+  }
+  int kills = std::max(1, nemesis.value("kills", 1));  // each hero it slays makes it stronger
+  m->maxhp = rnd_i(m->maxhp * (1 + .3 * (kills - 1))); m->hp = m->maxhp;
+  m->lo = rnd_i(m->lo * (1 + .1 * (kills - 1))); m->hi = rnd_i(m->hi * (1 + .1 * (kills - 1)));
+  std::string first = nemesis.value("name", std::string());
+  if (first.empty()) first = m->name;
+  auto slew = nemesis.value("slew", json::array());
+  std::string hero = slew.empty() ? nemesis.value("hero", std::string("a hero")) : slew.back().get<std::string>();
+  m->name = first + ", Slayer of " + hero;
+  nemesis["name"] = first;
+  m->nemesis = true;
+  for (auto& it : nemesis.value("items", json::array())) if (auto i = loot::load(it)) m->carried.push_back(i);
+}
+
+std::string Game::nemesis_warning() const {
+  if (!nemesis.is_object() || nemesis_met) return "";
+  std::string what;
+  auto items = nemesis.value("items", json::array());
+  if (!items.empty()) what = " It carries " + items.back().value("name", std::string("what was theirs")) + ".";
+  return "Ebb lowers his voice. \"The thing that killed " + nemesis.value("hero", std::string("your kin")) + " walks in " +
+         nemesis.value("zname", std::string("the dark")) + " now." + what + " Be ready, or go another way.\"";
+}
+
 // ------------------------------------------------------------------ the Frost ladder: its level, its omens, its bite
 int Game::res_held(const Hero& h) const {
   Stats st = stats(h);
@@ -1126,6 +1170,13 @@ void Game::move(Hero& h, int dx, int dy) {
     const auto& lines = ht == HEALER ? lore::YSOLDE : ht == SMITH ? lore::BRANN : lore::EBB;
     h.talking = ht == HEALER ? "healer" : ht == SMITH ? "smith" : "guide";
     h.talk_line = ht == DIGGER && floor->depth == 0 ? lore::EBB_TOWN : lines[rnd.below(int(lines.size()))];
+    if (ht == DIGGER && !nemesis_warning().empty()) {  // Ebb warns of the killer come back, before its zone
+      int z = -1;
+      for (int i = 0; i < ZONES; ++i) if (ACTS[i].key == nemesis.value("zone", std::string())) z = i;
+      bool ahead = floor->depth == 0 ? z == 0 : false;
+      if (floor->camp) for (int n : ACTS[floor->act].next) ahead = ahead || n == z;
+      if (ahead) h.talk_line = nemesis_warning();
+    }
     return;
   }
   switch (floor->tile(nx, ny)) {
@@ -1689,6 +1740,15 @@ void Game::kill(Mon& m, Hero* by) {
   if (!m.risen) for (auto* h : living()) gain_xp(*h, xp);
   trait_death(m);
   if (!m.risen) drops(m);
+  if (m.nemesis) {  // the killer falls: what it took comes back
+    nemesis_beaten = true;
+    for (auto& c : m.carried) {
+      P at;
+      if (!free_near(m.x, m.y, 2, at)) at = {m.x, m.y};
+      floor->items.push_back({at.x, at.y, c, 0, "", 0});
+    }
+    say_all("The slayer of " + nemesis.value("hero", std::string("your kin")) + " falls at last. What it took lies where it fell.", 0xE0B050);
+  }
   // the dead will not lie: one in six of the ordinary dead gets up once more, at half its life
   if (omen(omen::RISE) && m.rank == "normal" && !m.risen && !m.summoned && !m.def->boss && rnd.below(6) == 0 && state == "play") {
     P c;
@@ -2840,6 +2900,22 @@ void Game::hero_hurt(Hero& h, Mon* m, int dmg0, const std::string& kind) {
     h.hp = 0;
     h.dead = true;
     h.killer = m ? m->name : kind.empty() ? "the dark" : kind == "ember" ? "fire" : kind;
+    if (m && floor->depth > 0) {  // what this hero fell to: it may come back for the next one (plan.md section 7)
+      static const char* AFF[elem::N] = {"Fire-blooded", "Frost-touched", "Ash", "Venomous", "Vampiric"};
+      ItemP best;
+      for (auto& [slot, it] : h.equip) if (it && (!best || it->value > best->value)) best = it;
+      json items = json::array();
+      if (m->nemesis) for (auto& c : m->carried) items.push_back(loot::save(*c));
+      if (best) items.push_back(loot::save(*best));
+      std::string aff = h.el >= 0 && h.el < elem::N ? AFF[h.el] : "Brutal";
+      if (aff == "Ash") aff = "Ashen";
+      last_fell = {{"key", m->def->key}, {"zone", ACTS[floor->act].key}, {"zname", ACTS[floor->act].name}, {"hero", h.name},
+                   {"affix", m->nemesis && nemesis.is_object() ? nemesis.value("affix", aff) : aff}, {"items", items},
+                   {"kills", m->nemesis && nemesis.is_object() ? nemesis.value("kills", 1) + 1 : 1},
+                   {"name", m->nemesis ? m->name.substr(0, m->name.find(", Slayer of ")) : std::string()},
+                   {"slew", m->nemesis && nemesis.is_object() ? nemesis.value("slew", json::array()) : json::array()}};
+      last_fell["slew"].push_back(h.name);
+    }
     h.say("You die.", 0xFF4040);
     say_all(h.name + " has fallen.", 0xFF6060);
     // the embers this hero carried go out with it, and those friends are gone for good

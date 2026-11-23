@@ -214,6 +214,11 @@ void Client::hello() {
       h["hero"] = hero_["record"];
     }
   }
+  {  // the killer of this player's last hero, waiting to come back
+    std::ifstream nf(pref("nemesis.json"));
+    json n = nf ? json::parse(nf, nullptr, false) : json();
+    if (n.is_object()) h["nemesis"] = n;
+  }
   respec_ = false;  // the tree is set for this dive
   dive_closed_ = false;
   save_hero();
@@ -231,6 +236,7 @@ void Client::save_hero() {
 
 void Client::close_dive(const json& s) {
   if (dive_closed_) return;
+  if (s.value("nemesis_beaten", false) && (s.value("state", "play") == "won" || s.contains("grave"))) std::remove(pref("nemesis.json").c_str());  // the killer is dead
   if (s.value("state", "play") == "won" && s.contains("record") && hero_.is_object()) {
     dive_closed_ = true;
     hero_["record"] = s["record"];
@@ -241,6 +247,8 @@ void Client::close_dive(const json& s) {
   } else if (s.contains("grave")) {  // the dive ended in death, or in co-op the ember went out
     dive_closed_ = true;
     json g = s["grave"];
+    if (g.contains("nemesis") && g["nemesis"].is_object()) { std::ofstream nf(pref("nemesis.json")); nf << g["nemesis"].dump(); }  // it will come back
+    g.erase("nemesis");
     graves_.push_back(g);
     std::ofstream f(pref("graves.json"));
     f << graves_.dump();

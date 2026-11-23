@@ -166,7 +166,9 @@ struct Mon {
   int energy = 0, stun = 0, frozen = 0, cool = 3;
   int smothered = 0;  // an Ashseer's discharge: it takes a quarter more from everything
   bool awake = false, summoned = false;
-  bool risen = false, reborn = false, caught = false;  // the omens: up once more (no xp, no drops); a boss risen again; struck before it woke
+  bool risen = false, reborn = false, caught = false;
+  bool nemesis = false;            // the killer come back (plan.md section 7): what it carries drops when it dies
+  std::vector<ItemP> carried;  // the omens: up once more (no xp, no drops); a boss risen again; struck before it woke
   Blow blow;                       // turns > 0 while it winds up
   int bleed = 0, bleed_dmg = 0;    // turns left, harm each turn
   int pinned = 0, lost = 0, surprised = 0, open = 0;  // held fast; lost in smoke; caught off guard; open after missing
@@ -270,6 +272,13 @@ class Game {
   std::vector<int> omens;         // this dive's Frost omens (omens.hpp), drawn from the seed and the Frost level
   bool omen(int k) const { for (int o : omens) if (o == k) return true; return false; }
   void set_frost(int f);          // in Charnfen, at the gate guard: the Frost level of this dive, and its omens
+  // the killer comes back (plan.md section 7): the one this player's last hero fell to, waiting in its zone; whether it
+  // was met and beaten in this dive; and what the last hero to fall here fell to, for its grave
+  json nemesis, last_fell;
+  bool nemesis_met = false, nemesis_beaten = false;
+  void set_nemesis(const json& n) { if (n.is_object() && n.contains("key") && n.contains("zone")) nemesis = n; }
+  void spawn_nemesis(Floor& fl, const std::vector<P>& far);
+  std::string nemesis_warning() const;
   int res_held(const Hero& h) const;                     // the hero's resistances from gear, the five together
   std::string threshold(const Hero& h, int f = -1) const;  // "The cold here bites 40%. You hold 20%." 
   // plan.md section 7, the curve: foes grow +25% life and +15% blows per Frost level up to Frost 4, +40% and +20% after,

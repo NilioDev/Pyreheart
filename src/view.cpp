@@ -85,7 +85,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   if (g.state == "won" && !h.lost) out["record"] = g.record(h);
   if (g.state == "over" || h.lost)
     out["grave"] = {{"name", h.name}, {"title", h.cls->name}, {"lvl", h.lvl}, {"frost", std::max(g.frost, h.frost_open - 1)}, {"depth", f.depth},
-                    {"omens", omen_names(g)}, {"died_at", g.frost},
+                    {"omens", omen_names(g)}, {"died_at", g.frost}, {"nemesis", g.state == "over" ? g.last_fell : json()},
                     {"zone", data::ACTS[f.act].name}, {"killer", h.killer.empty() ? "the dark" : h.killer}, {"kills", h.kills},
                     {"coop", g.heroes.size() > 1}, {"rekindled", h.rekindled}, {"el", h.el}, {"el2", h.el2},
                     {"weapon", h.equip.count("weapon") ? h.equip.at("weapon")->kind : std::string()}, {"keystones", keystones(h)}};
@@ -333,6 +333,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["log"] = log;
   out["fx"] = g.fx;
   if (!g.omens.empty()) out["omens"] = omen_list(g.omens);
+  if (g.nemesis_beaten) out["nemesis_beaten"] = true;
   out["slain"] = g.slain;  // the zones whose boss fell: Sparks for the players' Pyre
   if (h.tal("forged") && !h.forged && f.camp) out["forge"] = true;
   json wait = json::array();
