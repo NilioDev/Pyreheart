@@ -76,6 +76,8 @@ static int bot_elem = 0;  // BOTELEM=n, else one after another
 static int bot_force_elem = -1;  // the matrix (BOTMATRIX) sets each element in turn
 static int dive_depth = 0;       // how deep the last dive came
 static bool dive_stalled = false;  // the last dive hit the step cap still playing
+// which way the bot takes at a fork: by its weapon name, or BOTROUTE=n to send every weapon the same way
+static int route_bias(const Game& g) { return std::getenv("BOTROUTE") ? std::atoi(std::getenv("BOTROUTE")) : int(g.heroes.begin()->second->cls->key.size()); }
 static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from the rack
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
@@ -124,7 +126,7 @@ static json choose(Game& g, Hero& h) {
       const auto& next = data::ACTS[g.route.back()].next;
       if (!next.empty()) {
         h.talking = "guide";
-        g.free_action(h, {{"t", "talk"}, {"k", "way"}, {"z", next[(g.depth + int(g.heroes.begin()->second->cls->key.size())) % next.size()]}});
+        g.free_action(h, {{"t", "talk"}, {"k", "way"}, {"z", next[(g.depth + route_bias(g)) % next.size()]}});
         h.talking.clear();
       }
     }
@@ -236,7 +238,7 @@ static json choose(Game& g, Hero& h) {
   P down = f.down;
   if (f.exits.size() > 1) {  // a waystation with two ways on: the dives spread over the routes
     auto it = f.exits.begin();
-    std::advance(it, (g.depth + int(g.heroes.begin()->second->cls->key.size())) % 2);
+    std::advance(it, (g.depth + route_bias(g)) % 2);
     down = {it->first % W, it->first / W};
   }
   auto a = toward(g, h, down.x, down.y);

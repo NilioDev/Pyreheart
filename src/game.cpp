@@ -1414,6 +1414,7 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   if (h.perk("berserker")) d *= 1 + .03 * h.fury;
   if (ranged && h.cls->key == "bow") d *= 1 + .2 * h.focus;
   if (m.frozen > 0 && h.perk("frostbinder")) d *= 1.25;
+  if (m.stun > 0 && h.cls->key == "mace") d *= 1.25;  // the mace falls hardest on a foe that reels
   if (ranged && combo(h, 1, elem::RIME)) d *= 1 + .08 * m.stk.n[elem::RIME];  // Coldeye
   if (h.perk("duelist")) {
     if (h.combo_id == m.id) h.combo = std::min(6, h.combo + 1); else { h.combo_id = m.id; h.combo = 1; }
@@ -1439,8 +1440,8 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
     num(m.x, m.y, "burning", 0xFF8C28);
   }
   // the mace's weight: a blow may stun (not a great foe)
-  if (!ranged && h.cls->key == "mace" && m.rank != "boss" && rnd.below(100) < 15 + 3 * mastery(h, "mace") && !m.can("stone")) {
-    m.stun = std::max(m.stun, 1);
+  if (!ranged && h.cls->key == "mace" && m.rank != "boss" && rnd.below(100) < 20 + 4 * mastery(h, "mace") && !m.can("stone")) {
+    m.stun = std::max(m.stun, 2);  // it reels a turn, and the next blow finds it still reeling
     num(m.x, m.y, "stunned", 0xE0D080);
   }
   if (!ranged && h.leg("kingsbane") && !m.can("stone")) { m.stun = std::max(m.stun, 1); num(m.x, m.y, "stunned", 0xE0D080); }  // Kingsbane: every blow

@@ -251,7 +251,7 @@ inline const std::vector<MonDef> MONSTERS = {
     {"bonearcher", "ash-caked archer", 0x73, 0xDCDCC8, 10, 2, 4, 60, 1, 100, 6, "ranged", 7, 0x2D, 0xDCDCC8, false, false, 0, false, false, {}, true, {}},
     {"bat", "carrion bat", 0x62, 0x966E96, 5, 1, 3, 65, 0, 150, 3, "erratic", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false, {}},
     {"ghoul", "ember-ribbed dead", 0x67, 0xAABE78, 22, 3, 6, 65, 2, 100, 10, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, true, {"embers"}},
-    {"gravewarden", "the Gravewarden", 0x57, 0xE6E6B4, 140, 5, 10, 75, 4, 100, 120, "melee", 1, 0x2A, 0xFFFFFF, true, false, 0, false, false, {"summon:shambler", "slam"}, true, {}},
+    {"gravewarden", "the Gravewarden", 0x57, 0xE6E6B4, 125, 4, 9, 75, 4, 100, 120, "melee", 1, 0x2A, 0xFFFFFF, true, false, 0, false, false, {"summon:shambler", "slam"}, true, {}},
     {"spider", "grease crawler", 0x61, 0x96785A, 14, 2, 5, 70, 1, 120, 8, "melee", 1, 0x2A, 0xFFFFFF, false, false, 3, false, false, {}, false, {"trail:grease"}},
     {"hound", "blind hound", 0x43, 0xAA9682, 20, 3, 7, 70, 2, 130, 11, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false, {"hears"}},
     {"trog", "tunnel brute", 0x74, 0x8CAAA0, 30, 4, 8, 65, 3, 100, 14, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, false, {"heavy"}},
@@ -326,7 +326,7 @@ inline const std::vector<WeaponDef> WEAPONS = {
     {"dagger", "Dagger", "melee", "knife", "garrote", 0, "openings: a busy foe takes a bleeding critical blow; foes hit you less"},
     {"sword", "Sword", "melee", "sword", "charge", 0, "parry: now and then you turn a blow aside and strike back"},
     {"axe", "Axe", "melee", "handaxe", "cleave", 0, "each blow also bites a second foe beside you"},
-    {"mace", "Mace", "melee", "cudgel", "smite", 0, "heavy: a blow may stun"},
+    {"mace", "Mace", "melee", "cudgel", "smite", 0, "heavy: a blow may stun, and a reeling foe takes a quarter more"},
     {"bow", "Bow", "ranged", "bow", "pierce", 9, "focus: each arrow loosed without moving hits harder"},
     {"crossbow", "Crossbow", "ranged", "crossbow", "pin", 9, "a bolt goes through every foe in a line; then a turn to wind it"},
     {"thrown", "Throwing knives", "ranged", "knives", "fan", 5, "short reach; a throw right after a step hits harder"},
@@ -337,8 +337,8 @@ inline const std::vector<WeaponDef> WEAPONS = {
     {"wand", "Wand", "magic", "wand", "scatter", 7, "quick small bolts with [f]; now and then a second one"},
 };
 inline const std::vector<StyleDef> STYLES = {
-    {"melee", "Melee", "fury", 64, 10, 20, 1, 80, 0xE6C896, {"warcry", "shadowstep", "standfast", "whirlwind"}},
-    {"ranged", "Ranged", "mana", 46, 7, 30, 3, 85, 0x96DC8C, {"volley", "tumble", "ward", "smoke"}},
+    {"melee", "Melee", "fury", 72, 12, 20, 1, 80, 0xE6C896, {"warcry", "shadowstep", "standfast", "whirlwind"}},
+    {"ranged", "Ranged", "mana", 52, 8, 30, 3, 85, 0x96DC8C, {"volley", "tumble", "ward", "smoke"}},
     {"magic", "Magic", "mana", 36, 5, 55, 6, 80, 0xA0AAFF, {"nova", "blink", "mend", "emberwall", "hallow"}},
 };
 inline const int STYLE_RANKS[] = {1, 3, 6, 10, 15, 20};
