@@ -468,7 +468,7 @@ WEAPONS = {
     'dagger': ('Dagger', 'melee', 'knife', 'garrote', 0, 'openings: a busy foe takes a bleeding critical blow; foes hit you less'),
     'sword': ('Sword', 'melee', 'sword', 'charge', 0, 'parry: now and then you turn a blow aside and strike back'),
     'axe': ('Axe', 'melee', 'handaxe', 'cleave', 0, 'each blow also bites a second foe beside you'),
-    'mace': ('Mace', 'melee', 'cudgel', 'smite', 0, 'heavy: a blow may stun'),
+    'mace': ('Mace', 'melee', 'cudgel', 'smite', 0, 'heavy: a blow may stun, and a reeling foe takes a quarter more'),
     'bow': ('Bow', 'ranged', 'bow', 'pierce', 9, 'focus: each arrow loosed without moving hits harder'),
     'crossbow': ('Crossbow', 'ranged', 'crossbow', 'pin', 9, 'a bolt goes through every foe in a line; then a turn to wind it'),
     'thrown': ('Throwing knives', 'ranged', 'knives', 'fan', 5, 'short reach; a throw right after a step hits harder'),
