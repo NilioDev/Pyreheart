@@ -484,7 +484,7 @@ STYLES = {
                   skills=('warcry', 'shadowstep', 'standfast', 'whirlwind')),
     'ranged': dict(name='Ranged', res='mana', hp=52, hp_lvl=8, mana=30, mana_lvl=3, acc=85, col=(150, 220, 140),
                    skills=('volley', 'tumble', 'ward', 'smoke')),
-    'magic': dict(name='Magic', res='mana', hp=36, hp_lvl=5, mana=55, mana_lvl=6, acc=80, col=(160, 170, 255),
+    'magic': dict(name='Magic', res='mana', hp=36, hp_lvl=4, mana=55, mana_lvl=6, acc=80, col=(160, 170, 255),
                   skills=('nova', 'blink', 'mend', 'emberwall', 'hallow')),
 }
 STYLE_ORDER = ('melee', 'ranged', 'magic')
