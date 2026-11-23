@@ -228,7 +228,7 @@ void Game::stacks_tick() {
     if (draught) wash(ASH, "The draught in the doorway blows the Ash away.");
     for (int e = 0; e < N; ++e) {
       if (s.n[e] <= 0) continue;
-      int fade = e == ROT && warm ? 1 : FADE;
+      int fade = e == ROT && warm ? 1 : h && omen(omen::CLINGS) ? FADE + 2 : FADE;  // the cold clings
       if (m) {  // the perks of the hero who laid it
         Hero* by = stacks_by(*m, e);
         if (by && by->perk("slowfire")) continue;                                                                   // Slow Fire

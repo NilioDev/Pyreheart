@@ -6,6 +6,7 @@
 #include "data.hpp"
 #include "defs.hpp"
 #include "elements.hpp"
+#include "omens.hpp"
 
 using json = nlohmann::json;
 
@@ -131,6 +132,10 @@ struct Hero {
   int kill_turn = 0, lift = 0, heart_floor = -1, court_floor = -1;
   P court{-1, -1};
   std::vector<P> trail;  // the Ashwalker Boots: the last steps taken
+  // the Frost ladder: the highest Frost level this hero may choose (one above the highest beaten), whether the gate
+  // guard has called out to it this dive, and a shrine's blessing (turns left)
+  int frost_open = 0, boon = 0;
+  bool gate_called = false, omen_gift = false;
   bool leg(const std::string& k) const { for (auto& [s, i] : equip) if (i && i->legend == k) return true; return false; }
   int tal(const std::string& k) const { auto it = talents.find(k); return it == talents.end() ? 0 : it->second; }
   int perk(const std::string& k) const { auto it = perks.find(k); return it == perks.end() ? 0 : it->second; }
@@ -161,6 +166,7 @@ struct Mon {
   int energy = 0, stun = 0, frozen = 0, cool = 3;
   int smothered = 0;  // an Ashseer's discharge: it takes a quarter more from everything
   bool awake = false, summoned = false;
+  bool risen = false, reborn = false, caught = false;  // the omens: up once more (no xp, no drops); a boss risen again; struck before it woke
   Blow blow;                       // turns > 0 while it winds up
   int bleed = 0, bleed_dmg = 0;    // turns left, harm each turn
   int pinned = 0, lost = 0, surprised = 0, open = 0;  // held fast; lost in smoke; caught off guard; open after missing
@@ -261,6 +267,11 @@ class Game {
   explicit Game(uint64_t seed, int frost = 0);
   uint64_t seed = 0;  // the dive's seed: each map is made from it, its zone and which of the zone's maps it is
   int frost = 0;                  // the Frost level: 0 the game as it is, each one up harder foes and better loot
+  std::vector<int> omens;         // this dive's Frost omens (omens.hpp), drawn from the seed and the Frost level
+  bool omen(int k) const { for (int o : omens) if (o == k) return true; return false; }
+  void set_frost(int f);          // in Charnfen, at the gate guard: the Frost level of this dive, and its omens
+  int res_held(const Hero& h) const;                     // the hero's resistances from gear, the five together
+  std::string threshold(const Hero& h, int f = -1) const;  // "The cold here bites 40%. You hold 20%." 
   // plan.md section 7, the curve: foes grow +25% life and +15% blows per Frost level up to Frost 4, +40% and +20% after,
   // there are 5% more of them on each level, and the cold takes 10% from each resistance, at most 50%
   double frost_life() const { return 1 + .25 * std::min(frost, 4) + .40 * std::max(0, frost - 4); }
@@ -272,7 +283,11 @@ class Game {
   int pack_max(const Hero& h) const { return data::PACK_MAX + 4 * h.perk("packmule"); }
   int belt(const Hero& h) const { return h.leg("ashandoath") ? 2 : data::BELT_MAX + h.tal("banked") + h.perk("beltmaker") + 2 * h.perk("packmule"); }
   int heal_amt(const Hero& h, int v) const { return h.leg("hollowcourt") ? v - v / 4 : v; }  // the Hollow Court takes a quarter
-  int price(const Hero& h, const Item& it) const { int p = h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2; return h.perk("haggler") ? p * 4 / 5 : p; }
+  int price(const Hero& h, const Item& it) const {
+    int p = h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2;
+    if (omen(omen::GOLDFEVER)) p = p * 3 / 2;  // Gold Fever: the trader knows what gold is worth now
+    return h.perk("haggler") ? p * 4 / 5 : p;
+  }
   ItemP roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
   void forge(Hero& h);
   Rng rnd;

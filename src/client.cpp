@@ -209,7 +209,10 @@ void Client::hello() {
   json h = {{"name", name_}, {"cls", ""}, {"ver", NET_VERSION}, {"talents", pyre::clean(talents_, sparks_)}, {"frost", frost_}};
   if (hero_.is_object()) {
     h["name"] = hero_.value("name", name_);
-    if (hero_.contains("record") && hero_["record"].is_object()) h["hero"] = hero_["record"];
+    if (hero_.contains("record") && hero_["record"].is_object()) {
+      if (!hero_["record"].contains("frost_open")) hero_["record"]["frost_open"] = frost_;  // a hero kept before the Frost could be chosen
+      h["hero"] = hero_["record"];
+    }
   }
   respec_ = false;  // the tree is set for this dive
   dive_closed_ = false;
@@ -231,10 +234,10 @@ void Client::close_dive(const json& s) {
   if (s.value("state", "play") == "won" && s.contains("record") && hero_.is_object()) {
     dive_closed_ = true;
     hero_["record"] = s["record"];
-    ++frost_;
+    frost_ = s["record"].value("frost_open", frost_ + 1);  // the next dive: the highest open, unless chosen at the gate
     respec_ = true;
     save_hero();
-    log_.push_back({"You will wake in Charnfen, and go down again into Frost " + std::to_string(frost_) + ". The Pyre will let you take back your Sparks, once.", 0x90C8FF});
+    log_.push_back({"You will wake in Charnfen. Frost " + std::to_string(frost_) + " is open below; the gate guard lets you choose an easier one. The Pyre will let you take back your Sparks, once.", 0x90C8FF});
   } else if (s.contains("grave")) {  // the dive ended in death, or in co-op the ember went out
     dive_closed_ = true;
     json g = s["grave"];
@@ -1705,7 +1708,7 @@ void Client::draw_end() {
   int r = y + 2;
   if (won) {
     for (auto& l : lore::VICTORY) r += wrap(x + 2, r, w - 4, l, GOLD);
-    r += wrap(x + 2, r, w - 4, "You will wake in Charnfen. The frost comes back harder: Frost " + std::to_string(snap_.value("frost", 0) + 1) + " waits below.", 0x90C8FF);
+    r += wrap(x + 2, r, w - 4, "You will wake in Charnfen. The frost comes back harder: Frost " + std::to_string(std::max(snap_.value("frost", 0) + 1, snap_.contains("record") ? snap_["record"].value("frost_open", 0) : 0)) + " is open below.", 0x90C8FF);
   } else {
     r += wrap(x + 2, r, w - 4, "Charnfen waits in vain.", 0xFF8080);
     if (snap_.contains("grave"))

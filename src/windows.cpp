@@ -275,6 +275,11 @@ void Client::draw_hero() {
     text(R + W2 - ulen(vs), r++, vs, v < 0 ? 0xE05040 : ASH, PAPER);
   }
   if (frost) text(R, r++, "Frost takes " + std::to_string(10 * std::min(frost, 5)) + "% from each", 0x8AB8E0, PAPER);
+  if (snap_.contains("omens")) {  // this dive's Frost omens
+    ++r;
+    head(R, r++, "Omens");
+    for (auto& o : snap_["omens"]) text(R, r++, clip(o.value("name", std::string()), W2), o.value("two", false) ? 0xB4C8E6 : 0x9CD2FF, PAPER);
+  }
   ++r;
   head(R, r++, "Perks");
   if (me["perks"].empty()) text(R, r++, "none yet", DIM, PAPER);
@@ -865,6 +870,10 @@ void Client::draw_grave() {
     line("felled by " + g.value("killer", std::string("the dark")), 0xC8C0B0);
     int rk = g.value("rekindled", 0);
     line(std::to_string(g.value("kills", 0)) + " foes went before" + (rk ? ", rekindled " + std::to_string(rk) + (rk == 1 ? " time" : " times") : std::string()), 0xA8A090);
+    auto names = [](const json& a) { std::string t; for (auto& k : a) t += (t.empty() ? "" : ", ") + k.get<std::string>(); return t; };
+    sr -= 1;  // the keystones and the omens of the last dive, closer together
+    if (g.contains("keystones") && !g["keystones"].empty()) { std::string t = clip(names(g["keystones"]), sw - 2); text(sx + (sw - ulen(t)) / 2, sr++, t, 0xE0B050, 0x4A4640); }
+    if (g.contains("omens") && !g["omens"].empty()) { std::string t = clip("omens: " + names(g["omens"]), sw - 2); text(sx + (sw - ulen(t)) / 2, sr++, t, 0x9CD2FF, 0x4A4640); }
   }
   rich(x + 3, y + h - 2, "[↑↓] grave   [Tab] alone / together   [Esc] leave", INK, bg);
 }
@@ -882,10 +891,10 @@ void Client::draw_talk() {
   bool guide = who == "guide", smith = who == "smith";
   int w = std::min(cw, guide ? 72 : 62);
   int rows = smith ? std::max({1, int(t.value("gear", json::array()).size()), int(t.value("temper", json::array()).size())}) : 0;
-  int h = std::min(chh, guide ? (t.contains("ways") ? 34 : 10) : smith ? 15 + rows : 14);
+  int h = std::min(chh, guide ? (t.contains("ways") ? 34 : 10) : smith ? 15 + rows : who == "gate" ? 14 + int(t.value("levels", json::array()).size()) + 10 : 14);
   int x = (cw - w) / 2, y = (chh - h) / 2;
-  const char* title = who == "healer" ? "Ysolde, the healer" : smith ? "Brann, the smith" : "Old Ebb";
-  int col = who == "healer" ? 0xAADCAA : smith ? 0xC8966E : 0x9696AA;
+  const char* title = who == "healer" ? "Ysolde, the healer" : smith ? "Brann, the smith" : who == "gate" ? "The gate guard" : "Old Ebb";
+  int col = who == "healer" ? 0xAADCAA : smith ? 0xC8966E : who == "gate" ? 0xA8C0E0 : 0x9696AA;
   window(x, y, w, h, title);
   int r = y + 2;
   r += rich_wrap(x + 3, r, w - 6, "\"" + t.value("line", std::string()) + "\"", col, PAPER) + 1;
@@ -904,6 +913,27 @@ void Client::draw_talk() {
     buttons_.push_back({x + 2, r++, w - 4, 1, "", "key:" + std::to_string(SDLK_M)});
     ++r;
     if (me.value("scars", 0) > 0) text(x + 3, r, "Scars she cannot mend: " + std::to_string(me.value("scars", 0)) + ".", DIM, PAPER);
+  } else if (who == "gate") {
+    auto lv = t.value("levels", json::array());
+    int n = int(lv.size()), hold = t.value("hold", 0);
+    talk_sel_ = std::clamp(talk_sel_, 0, std::max(0, n - 1));
+    for (int i = 0; i < n; ++i) {
+      auto& l = lv[i];
+      bool on = i == talk_sel_, cur = l.value("cur", false);
+      int fr = l.value("f", 0), bg = on ? SEL : PAPER, top = r;
+      for (int k = x + 2; k < x + w - 2; ++k) put(k, r, ' ', INK, bg);
+      text(x + 3, r, on ? ">" : " ", GOLD, bg);
+      text(x + 5, r, fr ? "Frost " + std::to_string(fr) : std::string("Normal"), cur ? GOLD : ASH, bg);
+      if (cur) text(x + 15, r, "(chosen)", DIM, bg);
+      std::string th = "bites " + std::to_string(l.value("bite", 0)) + "%, you hold " + std::to_string(hold) + "%";
+      text(x + w - 3 - ulen(th), r++, th, l.value("bite", 0) > hold ? 0xE08070 : 0x90C8FF, bg);
+      if (on)
+        for (auto& o : l.value("omens", json::array()))
+          r += rich_wrap(x + 7, r, w - 10, o.value("name", std::string()) + ": " + o.value("text", std::string()) + ".", o.value("two", false) ? 0xB4C8E6 : 0x9CD2FF, PAPER);
+      buttons_.push_back({x + 2, top, w - 4, r - top, "", "talksel:" + std::to_string(i)});
+    }
+    rich(x + 3, y + h - 2, "[↑↓] Frost level  [Enter] go down at it  [Esc] leave", INK, PAPER);
+    return;
   } else if (smith && smith_temper_) {
     auto tem = t.value("temper", json::array());
     int n = int(tem.size()), cap = t.value("cap", 1);
@@ -1028,6 +1058,12 @@ void Client::talk_key(SDL_Keycode k) {
       send({{"t", "talk"}, {"k", "retune"}, {"id", g["id"]}, {"from", g["from"]}, {"e", talk_el_}});
       talk_el_ = -1;
     }
+  } else if (who == "gate") {
+    auto lv = t.value("levels", json::array());
+    int n = int(lv.size());
+    if (!n) return;
+    if (up || down) { talk_sel_ = (talk_sel_ + (up ? n - 1 : 1)) % n; return; }
+    if (enter) send({{"t", "talk"}, {"k", "frost"}, {"f", lv[std::clamp(talk_sel_, 0, n - 1)]["f"]}});
   } else if (who == "guide" && t.contains("ways") && !t.value("open", false)) {
     auto& ways = t["ways"];
     int n = int(ways.size());

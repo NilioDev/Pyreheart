@@ -203,6 +203,7 @@ json Game::record(const Hero& h) const {
           {"srank", h.srank}, {"sxp", h.sxp}, {"erank", h.erank}, {"exq", h.exq}, {"wxp", h.wxp}, {"known", h.known},
           {"path", h.path}, {"slotel", h.slot_el}, {"el", h.el}, {"el2", h.el2}, {"perks", h.perks}, {"choices", h.perk_choices},
           {"equip", equip}, {"pack", pack}, {"heal", h.heal}, {"manap", h.mana_pots}, {"scars", h.scars}, {"rekindled", h.rekindled}, {"reroll", h.reroll_frost},
+          {"frost_open", std::max(h.frost_open, state == "won" ? frost + 1 : 0)},
           {"tips", std::vector<std::string>(h.tips.begin(), h.tips.end())}};
   r.update(group_json());
   return r;
@@ -245,6 +246,7 @@ void Game::restore(Hero& h, const json& j) {
     for (auto& [slot, it] : j["equip"].items()) if (auto i = loot::load(it)) h.equip[slot] = i;
   for (auto& it : j.value("pack", json::array())) if (auto i = loot::load(it); i && int(h.pack.size()) < pack_max(h)) h.pack.push_back(i);
   h.scars = j.value("scars", 0); h.rekindled = j.value("rekindled", 0); h.reroll_frost = j.value("reroll", -1);
+  h.frost_open = std::max(0, j.value("frost_open", 0));
   h.heal = j.value("heal", h.heal); h.mana_pots = j.value("manap", h.mana_pots);
   for (auto& t : j.value("tips", json::array())) h.tips.insert(t.get<std::string>());
   refit(h);
