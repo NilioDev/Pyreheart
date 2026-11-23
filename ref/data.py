@@ -317,7 +317,7 @@ M = {
     'bat': dict(name='carrion bat', ch='b', col=(150, 110, 150), hp=5, dmg=(1, 3), acc=65, ar=0, spd=150, xp=3, ai='erratic'),
     'ghoul': dict(undead=True, name='ember-ribbed dead', ch='g', col=(170, 190, 120), hp=22, dmg=(3, 6), acc=65, ar=2, spd=100, xp=10, ai='melee',
                   gear=True, traits=('embers',)),
-    'gravewarden': dict(undead=True, name='the Gravewarden', ch='W', col=(230, 230, 180), hp=140, dmg=(5, 10), acc=75, ar=4, spd=100,
+    'gravewarden': dict(undead=True, name='the Gravewarden', ch='W', col=(230, 230, 180), hp=125, dmg=(4, 9), acc=75, ar=4, spd=100,
                         xp=120, ai='melee', boss=True, moves=('summon:shambler', 'slam')),
     # act 2
     'spider': dict(name='grease crawler', ch='a', col=(150, 120, 90), hp=14, dmg=(2, 5), acc=70, ar=1, spd=120, xp=8,
@@ -480,9 +480,9 @@ WEAPONS = {
 }
 # style: name, pool its skills use, life and mana at the start and per step of power, accuracy, colour, skills by rank
 STYLES = {
-    'melee': dict(name='Melee', res='fury', hp=64, hp_lvl=10, mana=20, mana_lvl=1, acc=80, col=(230, 200, 150),
+    'melee': dict(name='Melee', res='fury', hp=72, hp_lvl=12, mana=20, mana_lvl=1, acc=80, col=(230, 200, 150),
                   skills=('warcry', 'shadowstep', 'standfast', 'whirlwind')),
-    'ranged': dict(name='Ranged', res='mana', hp=46, hp_lvl=7, mana=30, mana_lvl=3, acc=85, col=(150, 220, 140),
+    'ranged': dict(name='Ranged', res='mana', hp=52, hp_lvl=8, mana=30, mana_lvl=3, acc=85, col=(150, 220, 140),
                    skills=('volley', 'tumble', 'ward', 'smoke')),
     'magic': dict(name='Magic', res='mana', hp=36, hp_lvl=5, mana=55, mana_lvl=6, acc=80, col=(160, 170, 255),
                   skills=('nova', 'blink', 'mend', 'emberwall', 'hallow')),
