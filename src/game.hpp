@@ -126,6 +126,12 @@ struct Hero {
   // Skirmisher's next shot made stronger by a blow in close
   int ember_floor = -1, reroll_frost = -1;
   bool skirm = false;
+  // the legendaries (plan.md section 7): the turn of the last kill (Hungering Edge), the blows since the maul was
+  // lifted (Kingsbane), the map the Second Heart was spent on, and the Hollow Court's dead dwarf: where, and on which map
+  int kill_turn = 0, lift = 0, heart_floor = -1, court_floor = -1;
+  P court{-1, -1};
+  std::vector<P> trail;  // the Ashwalker Boots: the last steps taken
+  bool leg(const std::string& k) const { for (auto& [s, i] : equip) if (i && i->legend == k) return true; return false; }
   int tal(const std::string& k) const { auto it = talents.find(k); return it == talents.end() ? 0 : it->second; }
   int perk(const std::string& k) const { auto it = perks.find(k); return it == perks.end() ? 0 : it->second; }
   bool present() const { return !dead && !gone && !away; }
@@ -264,7 +270,8 @@ class Game {
   std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)
   bool landing_ = false;           // a blow seen coming is landing (for Mantle)
   int pack_max(const Hero& h) const { return data::PACK_MAX + 4 * h.perk("packmule"); }
-  int belt(const Hero& h) const { return data::BELT_MAX + h.tal("banked") + h.perk("beltmaker") + 2 * h.perk("packmule"); }
+  int belt(const Hero& h) const { return h.leg("ashandoath") ? 2 : data::BELT_MAX + h.tal("banked") + h.perk("beltmaker") + 2 * h.perk("packmule"); }
+  int heal_amt(const Hero& h, int v) const { return h.leg("hollowcourt") ? v - v / 4 : v; }  // the Hollow Court takes a quarter
   int price(const Hero& h, const Item& it) const { int p = h.tal("friend") ? it.value * 2 * 9 / 10 : it.value * 2; return h.perk("haggler") ? p * 4 / 5 : p; }
   ItemP roll_loot(int d, const std::vector<std::string>& kinds, const std::string& rarity = "", const std::string& at_least = "normal");
   void forge(Hero& h);
@@ -381,7 +388,7 @@ class Game {
   int rime_slow(const Mon& m) const;
  private:
   void assign_element(Mon& m);
-  void lay_on_mon(Hero& h, Mon& m, int n);
+  void lay_on_mon(Hero& h, Mon& m, int n, int e = -1);  // e: an element of its own (a legendary), else the hero's
   void lay_on_hero(Mon& m, Hero& h, int n);
   void discharge_mon(Hero& h, Mon& m, int e);
   void discharge_hero(Mon& m, Hero& h, int e);
@@ -430,6 +437,8 @@ class Game {
   void burst_rune(Hero& h, P at);
   void trod(Mon& m);
   void classes_tick();
+  void legends_tick();  // the legendaries' powers and prices that work each turn
+  bool chest_chain_ = false;  // the Open Chest's discharges, while they run
   bool skill_new(Hero& h, const std::string& key, int x, int y, const Stats& st, double sp);
   void melee(Hero& h, Mon& m);
   void hurt(Mon& m, int dmg, Hero* by, const std::string& text = "");

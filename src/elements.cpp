@@ -32,7 +32,7 @@ int Game::hero_res(const Hero& h, int e) const {
   Stats st = stats(h);
   auto s = [&](const std::string& k) { int t = 0; for (auto& [slot, it] : h.equip) t += it->stat(k); return t; };
   int r = e == EMBER ? st.res_f : e == RIME ? st.res_c : e == ROT ? st.res_p : e == ASH ? std::min(75, s("res_ash")) : std::min(75, s("res_blood"));
-  if (e == RIME && h.perk("coldblood")) return 100;  // Cold Blood: Rime cannot touch it
+  if (e == RIME && (h.perk("coldblood") || h.leg("kingsfrost"))) return 100;  // Cold Blood, Kingsfrost Mail: Rime cannot touch it
   return r - frost_res_cut() - 15 * h.perk("ashenpact");
 }
 // Rot cuts healing: 20% a stack; a hero or a great foe keeps at least half.
@@ -60,8 +60,8 @@ void Game::assign_element(Mon& m) {
 }
 
 // ------------------------------------------------------------------ laying stacks
-void Game::lay_on_mon(Hero& h, Mon& m, int n) {
-  int e = hero_el(h);
+void Game::lay_on_mon(Hero& h, Mon& m, int n, int e) {
+  if (e < 0) e = hero_el(h);
   if (e < 0 || m.hp <= 0) return;
   if (e == BLOOD && m.can("stone")) return;  // stone does not bleed
   int res = mon_res(m, e), laid = 0;
@@ -99,6 +99,20 @@ void Game::lay_on_hero(Mon& m, Hero& h, int n) {
 void Game::discharge_mon(Hero& h, Mon& m, int e) {
   int k = m.stk.n[e];
   if (k <= 0 || m.hp <= 0) return;
+  if (h.leg("openchest") && !chest_chain_) {  // the Open Chest: one discharge sets off every foe in sight, and you
+    chest_chain_ = true;
+    discharge_mon(h, m, e);
+    auto ms = floor->mons;
+    for (auto& o : ms) if (o.get() != &m && o->hp > 0 && o->stk.n[e] > 0 && h.sees(o->x, o->y)) discharge_mon(h, *o, e);
+    chest_chain_ = false;
+    if (int mine = h.stk.n[e]; mine > 0 && !h.dead) {
+      h.stk.n[e] = 0;
+      add_fx({{"k", "burst"}, {"x", h.x}, {"y", h.y}, {"r", 0}, {"col", COL[e]}});
+      h.say("☼ The Open Chest takes your own " + stacks_word(mine, e) + " with them.", COL[e]);
+      hero_hurt(h, nullptr, std::min(stats(h).maxhp * 2 / 5, mine * (3 + lvl)), "elem");
+    }
+    return;
+  }
   m.stk.n[e] = 0;
   m.stk.idle[e] = 0;
   Stats st = stats(h);
@@ -242,7 +256,7 @@ void Game::stacks_tick() {
     if (h->perk("quenchborn") && watery(floor->tile(h->x, h->y))) heal += 2;
     if (h->perk("haemophage")) for (auto& m : floor->mons) if (m->hp > 0 && (m->stk.n[BLOOD] > 0 || m->bleed > 0) && h->sees(m->x, m->y)) ++heal;
     if (h->perk("deathwish")) heal /= 2;
-    if (heal > 0 && h->hp < st.maxhp) h->hp = std::min(st.maxhp, h->hp + heal);
+    if (heal > 0 && h->hp < st.maxhp) h->hp = std::min(st.maxhp, h->hp + heal_amt(*h, heal));
     settle(h->stk, h->x, h->y, h, nullptr);
   }
   auto ms = floor->mons;

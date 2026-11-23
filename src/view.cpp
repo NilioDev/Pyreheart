@@ -108,8 +108,9 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   for (int i = 0; i < W * H; ++i) if (h.vis[i] || f.depth == 0) vis[i] = '1';
   out["vis"] = vis;
   json ents = json::array();
+  bool whisper = h.leg("whispering");  // the Whispering Hood: every foe on the map, seen or not
   for (auto& m : f.mons) {
-    if (!h.sees(m->x, m->y)) continue;
+    if (!h.sees(m->x, m->y) && !(whisper && !m->hidden && !m->dormant)) continue;
     if (m->hidden) {  // a mimic is a heap of gold like any other until it moves
       ents.push_back({{"id", m->id}, {"x", m->x}, {"y", m->y}, {"ch", int('$')}, {"col", 0xFFD700}, {"name", "gold"}, {"hp", 1}, {"max", 1},
                       {"rank", "npc"}, {"about", ""}, {"hidden", true}});
@@ -150,6 +151,9 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   if (f.has_merchant)
     ents.push_back({{"id", -1}, {"x", f.merchant.x}, {"y", f.merchant.y}, {"ch", int('@')}, {"col", 0xD2B48C},
                     {"name", "the trader"}, {"rank", "npc"}, {"hp", 1}, {"max", 1}, {"about", "a trader from Charnfen"}});
+  json court = json::array();  // the Hollow Court's dead dwarves
+  for (auto& [id, o] : g.heroes) if (o->present() && o->court_floor == f.id && o->court.x >= 0 && o->leg("hollowcourt") && (h.sees(o->court.x, o->court.y) || o.get() == &h)) court.push_back({o->court.x, o->court.y});
+  if (!court.empty()) out["court"] = court;
   out["ents"] = ents;
   if (f.rack.x >= 0) out["rack"] = {f.rack.x, f.rack.y};
   if (f.fire.x >= 0) out["fire"] = {f.fire.x, f.fire.y};

@@ -1385,6 +1385,8 @@ void Client::draw_map() {
       put(X + 1, Y - 1, ph < .5 ? 'z' : 'Z', ph < .5 ? 0x9696BE : 0x50506E);
     }
   }
+  if (s.contains("court"))  // the Hollow Court's dead dwarf, fighting at a hero's side
+    for (auto& c : s["court"]) put(sx(c[0]), sy(c[1]), 'd', std::fmod(now() * .7, 2.0) < 1 ? 0x8CC8B4 : 0x6FA898);
   if (s.contains("embers"))  // a fallen friend's ember, waiting to be carried to the fire
     for (auto& e : s["embers"]) {
       double fl = .75 + .25 * std::sin(now() * 5.0 + e[0].get<int>() * 1.7);
