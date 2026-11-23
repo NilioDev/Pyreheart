@@ -274,7 +274,7 @@ void Client::draw_hero() {
     std::string vs = std::to_string(v) + "%";
     text(R + W2 - ulen(vs), r++, vs, v < 0 ? 0xE05040 : ASH, PAPER);
   }
-  if (frost) text(R, r++, "Frost takes " + std::to_string(10 * frost) + "% from each", 0x8AB8E0, PAPER);
+  if (frost) text(R, r++, "Frost takes " + std::to_string(10 * std::min(frost, 5)) + "% from each", 0x8AB8E0, PAPER);
   ++r;
   head(R, r++, "Perks");
   if (me["perks"].empty()) text(R, r++, "none yet", DIM, PAPER);

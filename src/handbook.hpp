@@ -102,7 +102,7 @@ inline const std::vector<Chapter>& chapters() {
        {{'p', "The first time you slay a zone's great foe on a Frost level, a Spark settles in your palm; the Ashen King gives three. Spend them at the Pyre: walk into Charnfen's great fire (or open it from the title screen). Gifts that belong to your hero and die with it."},
         {'h', "The Frost ladder"},
         {'p', "Beating the Ashen King sends your hero back to Charnfen and opens the next Frost level: the same way down, colder and harder, without end. The bar above the log shows the Frost level you are on."},
-        {'p', "Each Frost level takes a tenth off all your resistances; foes resist their zone's element more, and have more life and harder blows. Levels come slower the higher you climb."},
+        {'p', "Each Frost level takes a tenth off all your resistances, never more than half; foes resist their zone's element more, come in greater numbers, and have more life and harder blows, faster from Frost 5 on. Levels come slower the higher you climb."},
         {'p', "Only after a King may the Pyre's Sparks be taken back, once, to try another way."}}},
       {"signs", "Signs",
        {{'h', "In the log"},

@@ -488,7 +488,7 @@ std::unique_ptr<Floor> Game::make_floor_from(int d) {
   }
   // as many foes for the room there is: a big map holds more of them
   double room = std::max(1.0, .85 * fl.w * fl.h / double(76 * 42));
-  int budget = int((14 + lvl * 1.5) * room) - int(fl.sleepers.size());
+  int budget = int((14 + lvl * 1.5) * room * (1 + .05 * frost)) - int(fl.sleepers.size());  // 5% more on each Frost level
   auto& spawns = SPAWNS[act];
   auto pick_kind = [&]() {
     int sum = 0;
@@ -806,9 +806,9 @@ MonP Game::spawn(const std::string& key, int x, int y) {
   m->xp = d.xp * 2;
   m->rank = d.boss ? "boss" : "normal";
   double k = 1 + .6 * (std::max<size_t>(1, living().size()) - 1);
-  m->maxhp = rnd_i(d.hp * k * (1 + .25 * frost)); m->hp = m->maxhp;
+  m->maxhp = rnd_i(d.hp * k * frost_life()); m->hp = m->maxhp;
   if (frost > 0) {  // the deeper the frost, the harder they come; their resistances carry the rest
-    m->lo = rnd_i(m->lo * (1 + .15 * frost)); m->hi = rnd_i(m->hi * (1 + .15 * frost));
+    m->lo = rnd_i(m->lo * frost_blow()); m->hi = rnd_i(m->hi * frost_blow());
     m->acc += 3 * frost; m->ar += frost;
     m->xp = rnd_i(m->xp * (1 + .3 * frost));
   }

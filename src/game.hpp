@@ -244,6 +244,11 @@ class Game {
   explicit Game(uint64_t seed, int frost = 0);
   uint64_t seed = 0;  // the dive's seed: each map is made from it, its zone and which of the zone's maps it is
   int frost = 0;                  // the Frost level: 0 the game as it is, each one up harder foes and better loot
+  // plan.md section 7, the curve: foes grow +25% life and +15% blows per Frost level up to Frost 4, +40% and +20% after,
+  // there are 5% more of them on each level, and the cold takes 10% from each resistance, at most 50%
+  double frost_life() const { return 1 + .25 * std::min(frost, 4) + .40 * std::max(0, frost - 4); }
+  double frost_blow() const { return 1 + .15 * std::min(frost, 4) + .20 * std::max(0, frost - 4); }
+  int frost_res_cut() const { return 10 * std::min(frost, 5); }
   std::vector<std::string> slain;  // the zones whose boss died in this dive (for the Sparks)
   bool landing_ = false;           // a blow seen coming is landing (for Mantle)
   int belt(const Hero& h) const { return data::BELT_MAX + h.tal("banked"); }

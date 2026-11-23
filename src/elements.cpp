@@ -23,12 +23,12 @@ int Game::mon_res(const Mon& m, int e) const {
   if (e == z.weak) return -25;
   return 0;
 }
-// A hero's resistances come from gear, less 10% on each Frost level.
+// A hero's resistances come from gear, less 10% on each Frost level, but never more than 50% (plan.md section 7).
 int Game::hero_res(const Hero& h, int e) const {
   Stats st = stats(h);
   auto s = [&](const std::string& k) { int t = 0; for (auto& [slot, it] : h.equip) t += it->stat(k); return t; };
   int r = e == EMBER ? st.res_f : e == RIME ? st.res_c : e == ROT ? st.res_p : e == ASH ? std::min(75, s("res_ash")) : std::min(75, s("res_blood"));
-  return r - 10 * frost;
+  return r - frost_res_cut();
 }
 // Rot cuts healing: 20% a stack; a hero or a great foe keeps at least half.
 int Game::heal_cut(const Stacks& s, bool capped) const { return std::min(capped ? 50 : 100, 20 * s.n[ROT]); }
