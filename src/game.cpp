@@ -724,6 +724,29 @@ void Game::make_camp(Floor& f, P at) {
   for (int y = at.y - 6; y <= at.y + 6; ++y)
     for (int x = at.x - 12; x <= at.x + 12; ++x) if (f.walk(x, y)) ++room;
   int hx = room > 180 ? 9 : 5, hy = room > 180 ? 4 : 3;
+  // the ground the fire's room reaches before anything is set down, to check after that the camp shuts no one in
+  auto reach = [&](P from) {
+    std::vector<char> seen(W * H, 0);
+    std::vector<int> todo{from.y * W + from.x};
+    seen[todo[0]] = 1;
+    while (!todo.empty()) {
+      int i = todo.back(); todo.pop_back();
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          int nx = i % W + dx, ny = i / W + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny * W + nx] || !f.walk(nx, ny)) continue;
+          seen[ny * W + nx] = 1;
+          todo.push_back(ny * W + nx);
+        }
+    }
+    return seen;
+  };
+  std::vector<std::pair<int, int>> stones;  // where the ring of stones went, and what lay there before
+  P fire0{-1, -1};
+  for (int y = 1, bd = 1 << 30; y < H - 1; ++y)
+    for (int x = 1; x < W - 1; ++x)
+      if (open_ground(x, y) && roomy(x, y) && (x - at.x) * (x - at.x) + (y - at.y) * (y - at.y) < bd) { bd = (x - at.x) * (x - at.x) + (y - at.y) * (y - at.y); fire0 = {x, y}; }
+  std::vector<char> before = fire0.x >= 0 ? reach(fire0) : std::vector<char>(W * H, 0);
   P fire = place(0, 0, CAMPFIRE);
   if (fire.x < 0) return;
   at = fire;
@@ -731,7 +754,10 @@ void Game::make_camp(Floor& f, P at) {
   f.camp_at = fire;
   for (int dy = -1; dy <= 1; ++dy)
     for (int dx = -1; dx <= 1; ++dx)
-      if ((dx || dy) && open_ground(at.x + dx, at.y + dy)) { f.set(at.x + dx, at.y + dy, STONES); used[(at.y + dy) * W + at.x + dx] = 1; }
+      if ((dx || dy) && open_ground(at.x + dx, at.y + dy)) {
+        stones.push_back({(at.y + dy) * W + at.x + dx, f.tile(at.x + dx, at.y + dy)});
+        f.set(at.x + dx, at.y + dy, STONES); used[(at.y + dy) * W + at.x + dx] = 1;
+      }
   for (auto [dx, dy] : std::vector<P>{{-3, 1}, {3, 1}, {-2, -3}, {2, -3}, {-1, 3}, {2, 3}}) place(dx, dy, HIDE);
   // Ysolde with her kettle, herbs and bandages
   place(-hx, -hy, HEALER); place(-hx - 1, -hy, BANDAGE); place(-hx - 2, -hy, HIDE); place(-hx + 1, -hy - 1, CANDLE);
@@ -743,6 +769,16 @@ void Game::make_camp(Floor& f, P at) {
   place(-hx - 1, hy, CART); place(-hx + 1, hy - 1, CRATE); place(-hx + 1, hy + 1, CRATE); place(-hx - 1, hy + 1, KEG);
   // old Ebb with his book of the dead, candles and spade
   place(hx, hy, DIGGER); place(hx + 1, hy, LEDGER); place(hx + 2, hy, CANDLE); place(hx + 1, hy + 1, SHOVEL);
+  // a ring of stones across a narrow hall would wall the camp off from the rest of the map: then the ring goes
+  auto split = [&] {
+    int from = -1;
+    for (int i = 0; i < W * H && from < 0; ++i) if (before[i] && f.walk(i % W, i / W)) from = i;
+    if (from < 0) return false;
+    auto now = reach({from % W, from / W});
+    for (int i = 0; i < W * H; ++i) if (before[i] && f.walk(i % W, i / W) && !now[i]) return true;
+    return false;
+  };
+  if (split()) for (auto [i, t] : stones) f.set(i % W, i / W, t);
   f.camp = true;
   f.shop.clear();
   auto kinds = party_kinds();
@@ -770,11 +806,25 @@ void Game::open_way(Hero& h, int zone) {
   if (!f.camp || std::find(next.begin(), next.end(), zone) == next.end()) return;
   for (auto [i, z] : f.exits) { h.say("Ebb taps the book. \"The way to " + ACTS[z].name + " is open. One way a camp.\"", 0x9696AA); return; }
   P c = f.camp_at;
+  // only a cell the fire's ground reaches: a walled-off pocket would hold the way where no one can get to it
+  std::vector<char> near(W * H, 0);
+  std::vector<int> todo{c.y * W + c.x};
+  near[todo[0]] = 1;
+  while (!todo.empty()) {
+    int i = todo.back(); todo.pop_back();
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        int nx = i % W + dx, ny = i / W + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] || !f.walk(nx, ny)) continue;
+        near[ny * W + nx] = 1;
+        todo.push_back(ny * W + nx);
+      }
+  }
   int best = -1, bd = 1 << 30;
   for (int y = 1; y < H - 1; ++y)
     for (int x = 1; x < W - 1; ++x) {
       int t = f.tile(x, y);
-      if (!f.walk(x, y) || way_down(t) || t == UPSTAIRS || hero_at(x, y) || mon_at(x, y)) continue;
+      if (!near[y * W + x] || !f.walk(x, y) || way_down(t) || t == UPSTAIRS || hero_at(x, y) || mon_at(x, y)) continue;
       bool by_stair = false;
       for (auto [i, z] : f.exits) if (cheb(x, y, i % W, i / W) < 4) by_stair = true;
       int d = cheb(x, y, c.x, c.y);

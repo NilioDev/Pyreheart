@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <fstream>
 #include <map>
 #include <set>
 #include <tuple>
@@ -74,6 +75,7 @@ static json dodge(Game& g, Hero& h) {
 static int bot_elem = 0;  // BOTELEM=n, else one after another
 static int bot_force_elem = -1;  // the matrix (BOTMATRIX) sets each element in turn
 static int dive_depth = 0;       // how deep the last dive came
+static bool dive_stalled = false;  // the last dive hit the step cap still playing
 static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from the rack
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
@@ -276,6 +278,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
     g.step(acts);
     if (std::getenv("BOTLOG")) for (auto& [id, h] : g.heroes) { for (auto& l : h->log) std::printf("%5d hp%3d mp%2d %s\n", g.turn, h->hp, h->mana, l.text.c_str()); h->log.clear(); }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, h] : g.heroes) for (auto& l : h->log) std::printf("  %s\n", l.text.c_str());
+    if (std::getenv("BOTMAP") && steps == 19999) { auto& f = *g.floor; auto& h = *g.heroes.begin()->second; for (int y = 0; y < H; ++y) { std::string r; for (int x = 0; x < W; ++x) { int t = f.tile(x, y); r += (x == h.x && y == h.y) ? '@' : (x == f.down.x && y == f.down.y) ? '>' : g.mon_at(x, y) ? 'M' : f.walk(x, y) ? '.' : '#'; } std::printf("%s\n", r.c_str()); } std::printf("exits %zu camp_at %d,%d\n", f.exits.size(), f.camp_at.x, f.camp_at.y); }
     if (!std::getenv("BOTDBG")) for (auto& [id, h] : g.heroes) { view::snapshot(g, *h, steps % 50 == 0); }
     ++steps;
   }
@@ -299,6 +302,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
               gear.c_str());
   if (std::getenv("BOTPACE")) std::printf("   pace (level at each depth): %s\n", pace.c_str());
   dive_depth = g.depth;
+  dive_stalled = g.state == "play";
   return g.state == "won" ? g.record(*g.heroes.begin()->second) : json();
 }
 
@@ -348,10 +352,19 @@ int main() {
   // BOTLADDER=n: the first weapon's hero goes on down the Frost ladder, n dives at most, kept between them
   if (const char* l = std::getenv("BOTLADDER")) {
     std::string w = std::getenv("BOTWEAPON") ? std::getenv("BOTWEAPON") : "staff";
+    // BOTKEEP=dir saves the hero after each won dive; BOTFROM=f picks the ladder up from that hero at Frost f.
+    // A dive the bot cannot finish (stuck at the step cap) is tried once more on another seed.
+    const char* keep = std::getenv("BOTKEEP");
+    int from = std::getenv("BOTFROM") ? std::atoi(std::getenv("BOTFROM")) : 0;
+    auto path = [&](int f) { return std::string(keep) + "/" + w + "-" + std::to_string(f) + ".json"; };
     json kept;
-    for (int f = 0; f < std::atoi(l); ++f) {
-      kept = run({w}, 100 + f, f, kept);
+    if (keep && from > 0) { std::ifstream in(path(from - 1)); if (in) in >> kept; }
+    for (int f = from; f < std::atoi(l); ++f) {
+      json prev = kept;
+      kept = run({w}, 100 + f, f, prev);
+      if (kept.is_null() && dive_stalled) kept = run({w}, 1100 + f, f, prev);
       if (kept.is_null()) break;
+      if (keep) { std::ofstream out(path(f)); out << kept.dump(); }
     }
     return 0;
   }
