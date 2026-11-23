@@ -181,12 +181,23 @@ ItemP roll(int depth, Rng& rnd, const std::vector<std::string>& kinds, const std
     for (auto* b : bases) if (b->slot != "ring" && b->slot != "amulet") plain.push_back(b);
     if (!plain.empty()) bases = plain;
   }
+  // weapons and body armour weigh 3 each, rings and amulets 1; a helm, gloves or boots slot weighs 2 in all, shared by
+  // its bases, so more armour tiers do not crowd out the weapons
+  auto weight = [&](const BaseDef* b) {
+    if (b->slot == "weapon" || b->slot == "body") return 18;
+    if (b->slot == "helm" || b->slot == "gloves" || b->slot == "boots") {
+      int n = 0;
+      for (auto* o : bases) if (o->slot == b->slot) ++n;
+      return 12 / std::max(1, n);
+    }
+    return 6;
+  };
   int sum = 0;
-  for (auto* b : bases) sum += (b->slot == "weapon" || b->slot == "body") ? 3 : 1;
+  for (auto* b : bases) sum += weight(b);
   int pick = rnd.below(sum);
   const BaseDef* bd = bases[0];
   for (auto* b : bases) {
-    pick -= (b->slot == "weapon" || b->slot == "body") ? 3 : 1;
+    pick -= weight(b);
     if (pick < 0) { bd = b; break; }
   }
   auto it = make(bd->key, rarity, tier);

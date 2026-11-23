@@ -1825,7 +1825,7 @@ void Game::offer_perk(Hero& h, bool level) {
   }
   std::vector<std::string> pool;
   for (auto& p : PERKS) {
-    if (!p.cls.empty() || !p.path.empty() || h.perk(p.key) >= p.max) continue;
+    if (!p.cls.empty() || !p.path.empty() || !p.kind.empty() || h.perk(p.key) >= p.max) continue;  // the deep perks and keystones come only later
     bool offered = false;
     for (auto& c : h.perk_choices) for (auto& k : c) if (k == p.key) offered = true;
     if (!offered || h.perk(p.key) + 1 < p.max) pool.push_back(p.key);
