@@ -79,6 +79,10 @@ static bool dive_stalled = false;  // the last dive hit the step cap still playi
 // which way the bot takes at a fork: by its weapon name, or BOTROUTE=n to send every weapon the same way
 static int route_bias(const Game& g) { return std::getenv("BOTROUTE") ? std::atoi(std::getenv("BOTROUTE")) : int(g.heroes.begin()->second->cls->key.size()); }
 static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from the rack
+// BOTSKILL: how well the bot plays. 0 a beginner (drinks late, often forgets to dodge, judges gear by its numbers
+// alone, uses its style skills only now and then), 1 the ordinary bot, 2 a good player (drinks in time, steps out of
+// a crowd, picks perks for its element and style, has Brann temper its gear)
+static int bot_skill() { static int s = std::getenv("BOTSKILL") ? std::atoi(std::getenv("BOTSKILL")) : 1; return s; }
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
   if (h.el < 0) return {{"t", "coal"}, {"e", bot_force_elem >= 0 ? bot_force_elem : std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
@@ -90,10 +94,27 @@ static json choose(Game& g, Hero& h) {
     }
     if (h.el2 >= 0 && !h.slot_el[1]) g.free_action(h, {{"t", "slotel"}, {"k", 2}});
   }
-  if (!h.perk_choices.empty()) g.free_action(h, {{"t", "perk"}, {"k", h.perk_choices.front()[g.rnd.below(int(h.perk_choices.front().size()))]}});
+  if (!h.perk_choices.empty()) {
+    const auto& ch = h.perk_choices.front();
+    std::string pick = ch[g.rnd.below(int(ch.size()))];
+    if (bot_skill() >= 2) {  // a good player takes what fits: its element first, then its style
+      static const char* STYLE_WORDS[3][3] = {{"melee", "blow", "fury"}, {"shot", "arrow", "ranged"}, {"spell", "mana", "magic"}};
+      int best = -1;
+      for (auto& k : ch) {
+        const std::string& t = perk_def(k).text;
+        int sc = int(g.rnd.below(2));
+        if (h.el >= 0 && t.find(elem::NAME[h.el]) != std::string::npos) sc += 4;
+        for (auto* w : STYLE_WORDS[g.main_style(h)]) if (t.find(w) != std::string::npos) sc += 2;
+        if (sc > best) { best = sc; pick = k; }
+      }
+    }
+    g.free_action(h, {{"t", "perk"}, {"k", pick}});
+  }
   Stats st = g.stats(h);
-  if (h.hp < st.maxhp * .4 && h.heal > 0) return {{"t", "quaff"}, {"k", "heal"}};
-  auto score = [](const ItemP& i) { if (!i) return 0; int s = i->lo + i->hi + i->ar * 2; for (auto& [k, v] : i->stats) s += v / 3; return s; };
+  double drink_at = bot_skill() == 0 ? .25 : bot_skill() >= 2 ? .5 : .4;
+  if (h.hp < st.maxhp * drink_at && h.heal > 0 && (bot_skill() > 0 || g.rnd.below(3))) return {{"t", "quaff"}, {"k", "heal"}};
+  // a beginner judges a thing by its damage and armour alone
+  auto score = [](const ItemP& i) { if (!i) return 0; int s = i->lo + i->hi + i->ar * 2; if (bot_skill() > 0) for (auto& [k, v] : i->stats) s += v / 3; return s; };
   for (auto& it : h.pack) {
     if (!g.can_use(h, *it)) continue;
     if (it->slot == "weapon" && it->kind != bot_weapon[h.pid]) continue;  // each bot keeps to its weapon
@@ -121,6 +142,12 @@ static json choose(Game& g, Hero& h) {
       g.free_action(h, {{"t", "talk"}, {"k", "heal"}});
       for (int i = 0; i < 6; ++i) g.free_action(h, {{"t", "talk"}, {"k", "potion"}, {"p", "heal"}});
       h.talking.clear();
+      if (bot_skill() >= 2) {  // a good player has Brann temper the weapon and the body armour, as far as the gold goes
+        h.talking = "smith";
+        for (const char* sl : {"weapon", "body", "weapon", "body"})
+          if (auto it = h.equip.find(sl); it != h.equip.end()) g.free_action(h, {{"t", "talk"}, {"k", "temper"}, {"id", it->second->id}});
+        h.talking.clear();
+      }
     }
     if (f.exits.empty()) {  // old Ebb opens the way on: the dives spread over the routes
       const auto& next = data::ACTS[g.route.back()].next;
@@ -138,7 +165,7 @@ static json choose(Game& g, Hero& h) {
     for (auto& m : f.mons)
       if (m->blow.turns > 0 && m->blow.kind == BLOW_RED && cheb(m->x, m->y, h.x, h.y) <= 4)
         for (auto& c : m->blow.cells) if (c.x == h.x && c.y == h.y) return skill(n, m);
-  if (auto d = dodge(g, h); !d.is_null()) return d;
+  if (bot_skill() > 0 || g.rnd.below(2)) if (auto d = dodge(g, h); !d.is_null()) return d;  // a beginner often stands in it
   MonP seen;
   int visible = 0;
   for (auto& m : f.mons)
@@ -160,6 +187,23 @@ static json choose(Game& g, Hero& h) {
     int M = h.mana, F = h.fury;
     bool caster = g.main_style(h) != 0;
     if (caster && M < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
+    // a good player steps out of a crowd: to the open cell with the fewest foes beside it
+    if (bot_skill() >= 2 && near >= 3 && h.hp < st.maxhp * .8) {
+      auto beside = [&](int x, int y) { int n = 0; for (auto& m : f.mons) if (m->hp > 0 && cheb(x, y, m->x, m->y) == 1) ++n; return n; };
+      int bx = 0, by = 0, bn = near;
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          int nx = h.x + dx, ny = h.y + dy;
+          if ((!dx && !dy) || !f.walk(nx, ny) || g.mon_at(nx, ny) || g.hero_at(nx, ny) || f.burning(nx, ny)) continue;
+          if (int n = beside(nx, ny); n < bn - 1) { bn = n; bx = dx; by = dy; }
+        }
+      if (bx || by) return {{"t", "move"}, {"dx", bx}, {"dy", by}};
+    }
+    // a beginner forgets its style skills half the time
+    if (bot_skill() == 0 && g.rnd.below(2)) {
+      if (d == 1) return {{"t", "move"}, {"dx", seen->x - h.x}, {"dy", seen->y - h.y}};
+      if (auto a = toward(g, h, seen->x, seen->y); !still(a)) return a;
+    }
     // the style skills, wherever they sit
     int reeling = 0;  // a roar on foes that already reel only loses the turn (Bloodprice makes it free, so it never ends)
     for (auto& m : f.mons) if (cheb(h.x, h.y, m->x, m->y) <= 2 && m->stun > 0) ++reeling;
@@ -282,7 +326,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
     g.step(acts);
     if (std::getenv("BOTLOG")) for (auto& [id, h] : g.heroes) { for (auto& l : h->log) std::printf("%5d hp%3d mp%2d %s\n", g.turn, h->hp, h->mana, l.text.c_str()); h->log.clear(); }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, h] : g.heroes) for (auto& l : h->log) std::printf("  %s\n", l.text.c_str());
-    if (std::getenv("BOTMAP") && steps == 19999) { auto& f = *g.floor; auto& h = *g.heroes.begin()->second; for (int y = 0; y < H; ++y) { std::string r; for (int x = 0; x < W; ++x) { int t = f.tile(x, y); r += (x == h.x && y == h.y) ? '@' : (x == f.down.x && y == f.down.y) ? '>' : g.mon_at(x, y) ? 'M' : f.walk(x, y) ? '.' : '#'; } std::printf("%s\n", r.c_str()); } std::printf("exits %zu camp_at %d,%d\n", f.exits.size(), f.camp_at.x, f.camp_at.y); }
+    if (std::getenv("BOTMAP") && steps == 19999) { auto& f = *g.floor; auto& h = *g.heroes.begin()->second; for (int y = 0; y < H; ++y) { std::string r; for (int x = 0; x < W; ++x) { int t = f.tile(x, y); r += (x == h.x && y == h.y) ? '@' : (x == f.down.x && y == f.down.y) ? '>' : g.mon_at(x, y) ? 'M' : f.walk(x, y) ? '.' : '#'; } std::printf("%s\n", r.c_str()); } std::printf("exits %zu camp_at %d,%d\n", f.exits.size(), f.camp_at.x, f.camp_at.y); if (f.boss) std::printf("boss %s at %d,%d hp %d dormant %d hidden %d\n", f.boss->name.c_str(), f.boss->x, f.boss->y, f.boss->hp, f.boss->dormant, f.boss->hidden); for (auto& m : f.mons) std::printf("mon %s %d,%d hp %d d%d h%d\n", m->name.c_str(), m->x, m->y, m->hp, m->dormant, m->hidden); }
     if (!std::getenv("BOTDBG")) for (auto& [id, h] : g.heroes) { view::snapshot(g, *h, steps % 50 == 0); }
     ++steps;
   }
