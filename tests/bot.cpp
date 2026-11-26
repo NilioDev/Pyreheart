@@ -1,5 +1,6 @@
 // A plain bot dives with each starting weapon (and once as a party of three) to see that nothing breaks and how far it gets.
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
@@ -83,6 +84,8 @@ static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from
 // alone, uses its style skills only now and then), 1 the ordinary bot, 2 a good player (drinks in time, steps out of
 // a crowd, picks perks for its element and style, has Brann temper its gear)
 static int bot_skill() { static int s = std::getenv("BOTSKILL") ? std::atoi(std::getenv("BOTSKILL")) : 1; return s; }
+// an advanced habit, unless BOTNO=perk,temper turns it off (to see what each is worth)
+static bool adv(const char* habit) { const char* no = std::getenv("BOTNO"); return bot_skill() >= 2 && !(no && std::strstr(no, habit)); }
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
   if (h.el < 0) return {{"t", "coal"}, {"e", bot_force_elem >= 0 ? bot_force_elem : std::getenv("BOTELEM") ? std::atoi(std::getenv("BOTELEM")) : bot_elem++ % elem::N}};
@@ -97,7 +100,7 @@ static json choose(Game& g, Hero& h) {
   if (!h.perk_choices.empty()) {
     const auto& ch = h.perk_choices.front();
     std::string pick = ch[g.rnd.below(int(ch.size()))];
-    if (bot_skill() >= 2) {  // a good player takes what fits: its element first, then its style
+    if (adv("perk")) {  // a good player takes what fits: its element first, then its style
       static const char* STYLE_WORDS[3][3] = {{"melee", "blow", "fury"}, {"shot", "arrow", "ranged"}, {"spell", "mana", "magic"}};
       int best = -1;
       for (auto& k : ch) {
@@ -111,7 +114,7 @@ static json choose(Game& g, Hero& h) {
     g.free_action(h, {{"t", "perk"}, {"k", pick}});
   }
   Stats st = g.stats(h);
-  double drink_at = bot_skill() == 0 ? .25 : bot_skill() >= 2 ? .5 : .4;
+  double drink_at = bot_skill() == 0 ? .25 : .4;  // drinking sooner only empties the belt sooner (tried at half life: fewer wins)
   if (h.hp < st.maxhp * drink_at && h.heal > 0 && (bot_skill() > 0 || g.rnd.below(3))) return {{"t", "quaff"}, {"k", "heal"}};
   // a beginner judges a thing by its damage and armour alone
   auto score = [](const ItemP& i) { if (!i) return 0; int s = i->lo + i->hi + i->ar * 2; if (bot_skill() > 0) for (auto& [k, v] : i->stats) s += v / 3; return s; };
@@ -142,7 +145,29 @@ static json choose(Game& g, Hero& h) {
       g.free_action(h, {{"t", "talk"}, {"k", "heal"}});
       for (int i = 0; i < 6; ++i) g.free_action(h, {{"t", "talk"}, {"k", "potion"}, {"p", "heal"}});
       h.talking.clear();
-      if (bot_skill() >= 2) {  // a good player has Brann temper the weapon and the body armour, as far as the gold goes
+      if (adv("trade")) {  // a good player sells what it will never wear and buys what beats what it wears
+        auto worth = [](const ItemP& i) { if (!i) return 0; int s = i->lo + i->hi + i->ar * 2; for (auto& [k, v] : i->stats) s += v / 3; return s; };
+        auto worn = [&](const std::string& sl) { auto e = h.equip.find(sl); return e == h.equip.end() ? 0 : worth(e->second); };
+        h.shopping = true;
+        std::vector<int> junk;
+        for (auto& it : h.pack)
+          if (!g.can_use(h, *it) || (it->slot == "weapon" && it->kind != bot_weapon[h.pid]) || worth(it) <= worn(it->slot)) junk.push_back(it->id);
+        for (int id : junk) g.free_action(h, {{"t", "sell"}, {"id", id}});
+        for (bool bought = true; bought;) {
+          bought = false;
+          for (int i = 0; i < int(f.shop.size()) && !bought; ++i) {
+            auto& it = f.shop[i];
+            if (!g.can_use(h, *it) || (it->slot == "weapon" && it->kind != bot_weapon[h.pid]) || worth(it) <= worn(it->slot)) continue;
+            if (h.gold < g.price(h, *it)) continue;
+            size_t n = f.shop.size();
+            g.free_action(h, {{"t", "buy"}, {"i", i}});
+            bought = f.shop.size() < n;  // a full pack buys nothing
+            if (!bought) break;
+          }
+        }
+        h.shopping = false;
+      }
+      if (adv("temper")) {  // a good player has Brann temper the weapon and the body armour, as far as the gold goes
         h.talking = "smith";
         for (const char* sl : {"weapon", "body", "weapon", "body"})
           if (auto it = h.equip.find(sl); it != h.equip.end()) g.free_action(h, {{"t", "talk"}, {"k", "temper"}, {"id", it->second->id}});
@@ -187,18 +212,6 @@ static json choose(Game& g, Hero& h) {
     int M = h.mana, F = h.fury;
     bool caster = g.main_style(h) != 0;
     if (caster && M < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
-    // a good player steps out of a crowd: to the open cell with the fewest foes beside it
-    if (bot_skill() >= 2 && near >= 3 && h.hp < st.maxhp * .8) {
-      auto beside = [&](int x, int y) { int n = 0; for (auto& m : f.mons) if (m->hp > 0 && cheb(x, y, m->x, m->y) == 1) ++n; return n; };
-      int bx = 0, by = 0, bn = near;
-      for (int dy = -1; dy <= 1; ++dy)
-        for (int dx = -1; dx <= 1; ++dx) {
-          int nx = h.x + dx, ny = h.y + dy;
-          if ((!dx && !dy) || !f.walk(nx, ny) || g.mon_at(nx, ny) || g.hero_at(nx, ny) || f.burning(nx, ny)) continue;
-          if (int n = beside(nx, ny); n < bn - 1) { bn = n; bx = dx; by = dy; }
-        }
-      if (bx || by) return {{"t", "move"}, {"dx", bx}, {"dy", by}};
-    }
     // a beginner forgets its style skills half the time
     if (bot_skill() == 0 && g.rnd.below(2)) {
       if (d == 1) return {{"t", "move"}, {"dx", seen->x - h.x}, {"dy", seen->y - h.y}};
