@@ -1,6 +1,7 @@
 // Windows as objects (plan.md section 5): bronze for everything of your hero (the main menu, the Hero screen, the
 // options, the handbook), leather for the inventory, a wooden stall for the trader, stone for what is written in the
 // world. Keys are drawn as gold keycaps, element names in their colour.
+#include <map>
 #include <algorithm>
 #include <cmath>
 
@@ -542,7 +543,17 @@ void Client::draw_rack_window() {
   for (int i = x + 2; i < x + w - 2; ++i) put(i, r - 1, 0x2500, 0x5A4028, PAPER);
   const BaseDef* base = nullptr;
   for (auto& b : data::BASES) if (b.key == wd.start) base = &b;
-  text(x + 3, r, base ? base->name : wd.name, GOLD, PAPER);
+  std::string bname = base ? base->name : wd.name;
+  text(x + 3, r, bname, GOLD, PAPER);
+  // how forgiving it is for a new player (from the bot as a beginner, plan.md section 7): easy, moderate or hard
+  static const std::map<std::string, int> EASE = {{"lantern", 0}, {"sword", 0}, {"axe", 0}, {"mace", 0},
+                                                  {"dagger", 1}, {"wand", 1}, {"staff", 1},
+                                                  {"bow", 2}, {"crossbow", 2}, {"thrown", 2}, {"spear", 2}, {"chisel", 2}};
+  if (auto e = EASE.find(wd.key); e != EASE.end()) {
+    static const char* WORD[3] = {"Easy", "Moderate", "Hard"};
+    static const int COL[3] = {0x7FC060, 0xE0A040, 0xE05A40};
+    text(x + 3 + ulen(bname) + 2, r, WORD[e->second], COL[e->second], PAPER);
+  }
   std::string dmg = base ? "damage " + std::to_string(base->lo) + "-" + std::to_string(base->hi) : "";
   text(x + w - 3 - ulen(dmg), r, dmg, ASH, PAPER);
   r += 2;
