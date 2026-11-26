@@ -748,7 +748,22 @@ void Game::make_camp(Floor& f, P at) {
       if (open_ground(x, y) && roomy(x, y) && (x - at.x) * (x - at.x) + (y - at.y) * (y - at.y) < bd) { bd = (x - at.x) * (x - at.x) + (y - at.y) * (y - at.y); fire0 = {x, y}; }
   std::vector<char> before = fire0.x >= 0 ? reach(fire0) : std::vector<char>(W * H, 0);
   P fire = place(0, 0, CAMPFIRE);
-  if (fire.x < 0) return;
+  bool crowded = false;
+  if (fire.x < 0) {  // the boss's drops cover its cramped nest: the camp goes up on them, and they are set aside after
+    for (auto& fi : f.items) used[fi.y * W + fi.x] = 0;
+    fire = place(0, 0, CAMPFIRE);
+    crowded = true;
+  }
+  if (fire.x < 0) {  // nowhere roomy near: the fire goes on the nearest open ground, wherever that is
+    int best = -1, bd = 1 << 30;
+    for (int y = 1; y < H - 1; ++y)
+      for (int x = 1; x < W - 1; ++x)
+        if (open_ground(x, y) && roomy(x, y) && (x - at.x) * (x - at.x) + (y - at.y) * (y - at.y) < bd) { bd = (x - at.x) * (x - at.x) + (y - at.y) * (y - at.y); best = y * W + x; }
+    if (best < 0) return;
+    used[best] = 1;
+    f.set(best % W, best / W, CAMPFIRE);
+    fire = {best % W, best / W};
+  }
   at = fire;
   f.fire = fire;
   f.camp_at = fire;
@@ -779,6 +794,12 @@ void Game::make_camp(Floor& f, P at) {
     return false;
   };
   if (split()) for (auto [i, t] : stones) f.set(i % W, i / W, t);
+  if (crowded)
+    for (auto& fi : f.items)
+      if (!f.walk(fi.x, fi.y) || used[fi.y * W + fi.x] == 1) {
+        P c;
+        if (free_near(fi.x, fi.y, 6, c, [&](int a, int b) { return open_ground(a, b) && !f.burning(a, b); })) { fi.x = c.x; fi.y = c.y; }
+      }
   f.camp = true;
   f.shop.clear();
   auto kinds = party_kinds();
