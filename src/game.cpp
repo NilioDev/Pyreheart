@@ -1443,6 +1443,11 @@ bool Game::strike(Hero& h, Mon& m, double mult, bool ranged) {
   if (!ranged && h.cls->key == "mace" && m.rank != "boss" && rnd.below(100) < 20 + 4 * mastery(h, "mace") && !m.can("stone")) {
     m.stun = std::max(m.stun, 2);  // it reels a turn, and the next blow finds it still reeling
     num(m.x, m.y, "stunned", 0xE0D080);
+    // the shock runs on: the foes beside the stunned one take a quarter of the blow (plan.md section 7)
+    int shock = std::max(1, dmg / 4);
+    auto ms = floor->mons;
+    for (auto& o : ms)
+      if (o.get() != &m && o->hp > 0 && cheb(o->x, o->y, m.x, m.y) == 1) hurt(*o, shock, &h);
   }
   if (!ranged && h.leg("kingsbane") && !m.can("stone")) { m.stun = std::max(m.stun, 1); num(m.x, m.y, "stunned", 0xE0D080); }  // Kingsbane: every blow
   if (!ranged && h.leg("pyrehand")) lay_on_mon(h, m, 1, elem::EMBER);  // Pyrehand: the gauntlets set it alight
@@ -2401,13 +2406,23 @@ bool Game::skill_new(Hero& h, const std::string& key, int x, int y, const Stats&
     double mult = (m->def->undead ? 2.5 : 1.6) * (h.perk("zealot") ? 1.4 : 1.0);
     add_fx({{"k", "burst"}, {"x", m->x}, {"y", m->y}, {"r", 1}, {"col", 0xFFE68C}});
     int mx = m->x, my = m->y;
-    strike(h, *m, mult);
-    // the blow shakes the ground: the others pressing in on you may reel
-    for (auto& o : floor->mons)
-      if (o != m && o->hp > 0 && o->rank != "boss" && cheb(o->x, o->y, h.x, h.y) == 1 && !o->can("stone") && rnd.below(2)) {
-        o->stun = std::max(o->stun, 1);
-        num(o->x, o->y, "stunned", 0xE0D080);
+    bool landed = strike(h, *m, mult);
+    // the blow throws the foe a step back; a wall or another foe behind it takes the rest of the blow (plan.md section 7)
+    if (landed && m->hp > 0 && m->rank != "boss" && !m->can("stone")) {
+      int dx = (mx > h.x) - (mx < h.x), dy = (my > h.y) - (my < h.y), nx = mx + dx, ny = my + dy;
+      auto thud = [&] { return std::max(1, rnd_i(rnd.range(st.lo, st.hi) * .5)); };
+      if (floor->walk(nx, ny) && !mon_at(nx, ny) && !hero_at(nx, ny)) {
+        m->x = nx; m->y = ny;
+        add_fx({{"k", "burst"}, {"x", nx}, {"y", ny}, {"r", 0}, {"col", 0xE0D080}});
+      } else if (auto o = mon_at(nx, ny); o && o.get() != m.get()) {
+        h.say(cap(the(*m)) + " is thrown into " + the(*o) + ".", 0xE0D080);
+        hurt(*m, thud(), &h);
+        if (o->hp > 0) hurt(*o, thud(), &h);
+      } else if (!floor->walk(nx, ny)) {
+        h.say(cap(the(*m)) + " is thrown against the wall.", 0xE0D080);
+        hurt(*m, thud(), &h);
       }
+    }
     if (h.perk("zealot"))
       for (auto& o : floor->mons)
         if (o != m && o->hp > 0 && cheb(o->x, o->y, mx, my) <= 2 && h.sees(o->x, o->y)) {
