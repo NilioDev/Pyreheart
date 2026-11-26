@@ -84,7 +84,9 @@ static std::map<int, std::string> bot_weapon;  // the weapon each bot takes from
 // alone, uses its style skills only now and then), 1 the ordinary bot, 2 a good player (drinks in time, steps out of
 // a crowd, picks perks for its element and style, has Brann temper its gear)
 static int bot_skill() { static int s = std::getenv("BOTSKILL") ? std::atoi(std::getenv("BOTSKILL")) : 1; return s; }
-// an advanced habit, unless BOTNO=perk,temper turns it off (to see what each is worth)
+// an advanced habit, unless BOTNO=perk,trade,temper,kite,douse turns it off (to see what each
+// is worth; tried and dropped: drinking at half life, stepping out of a crowd, holding a narrow place, the weakest foe first,
+// sparing potions for the boss)
 static bool adv(const char* habit) { const char* no = std::getenv("BOTNO"); return bot_skill() >= 2 && !(no && std::strstr(no, habit)); }
 static json choose(Game& g, Hero& h) {
   if (!h.equip.count("weapon") && g.depth == 0) return {{"t", "rack"}, {"w", bot_weapon[h.pid]}};
@@ -114,7 +116,7 @@ static json choose(Game& g, Hero& h) {
     g.free_action(h, {{"t", "perk"}, {"k", pick}});
   }
   Stats st = g.stats(h);
-  double drink_at = bot_skill() == 0 ? .25 : .4;  // drinking sooner only empties the belt sooner (tried at half life: fewer wins)
+  double drink_at = bot_skill() == 0 ? .25 : .4;  // drinking at half life all the way only empties the belt sooner (fewer wins)
   if (h.hp < st.maxhp * drink_at && h.heal > 0 && (bot_skill() > 0 || g.rnd.below(3))) return {{"t", "quaff"}, {"k", "heal"}};
   // a beginner judges a thing by its damage and armour alone
   auto score = [](const ItemP& i) { if (!i) return 0; int s = i->lo + i->hi + i->ar * 2; if (bot_skill() > 0) for (auto& [k, v] : i->stats) s += v / 3; return s; };
@@ -191,6 +193,32 @@ static json choose(Game& g, Hero& h) {
       if (m->blow.turns > 0 && m->blow.kind == BLOW_RED && cheb(m->x, m->y, h.x, h.y) <= 4)
         for (auto& c : m->blow.cells) if (c.x == h.x && c.y == h.y) return skill(n, m);
   if (bot_skill() > 0 || g.rnd.below(2)) if (auto d = dodge(g, h); !d.is_null()) return d;  // a beginner often stands in it
+  // a good player puts out what burns on it: Ember in water, Ash in a doorway's draught, if one is a few steps off
+  if (adv("douse") && (h.stk.n[elem::EMBER] >= 2 || h.stk.n[elem::ASH] >= 3)) {
+    bool ember = h.stk.n[elem::EMBER] >= 2;
+    auto washes = [&](int x, int y) {
+      if (!ember) return f.tile(x, y) == data::OPEN;
+      for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) if (elem::watery(f.tile(x + dx, y + dy))) return true;
+      return false;
+    };
+    std::vector<int> dist(W * H, -1);
+    std::deque<int> q{h.y * W + h.x};
+    dist[q[0]] = 0;
+    int goal = -1;
+    while (!q.empty() && goal < 0) {
+      int i = q.front(); q.pop_front();
+      if (washes(i % W, i / W)) { goal = i; break; }
+      if (dist[i] >= 6) continue;
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          int nx = i % W + dx, ny = i / W + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || dist[ny * W + nx] >= 0 || !f.walk(nx, ny) || g.mon_at(nx, ny) || f.burning(nx, ny)) continue;
+          dist[ny * W + nx] = dist[i] + 1;
+          q.push_back(ny * W + nx);
+        }
+    }
+    if (goal >= 0 && goal != h.y * W + h.x) if (auto a = toward(g, h, goal % W, goal / W); !still(a)) return a;
+  }
   MonP seen;
   int visible = 0;
   for (auto& m : f.mons)
@@ -212,6 +240,20 @@ static json choose(Game& g, Hero& h) {
     int M = h.mana, F = h.fury;
     bool caster = g.main_style(h) != 0;
     if (caster && M < 5 && h.mana_pots > 0) return {{"t", "quaff"}, {"k", "mana"}};
+    auto open_round = [&](int x, int y) { int n = 0; for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) if ((dx || dy) && f.walk(x + dx, y + dy)) ++n; return n; };
+    // a good shooter steps back from a slow foe on it, to shoot again
+    if (adv("kite") && d == 1 && g.main_style(h) != 0 && near == 1 && seen->spd * (100 - g.rime_slow(*seen)) / 100 < 100) {
+      int bx = 0, by = 0;
+      for (int dy = -1; dy <= 1 && !(bx || by); ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          int nx = h.x + dx, ny = h.y + dy;
+          if ((!dx && !dy) || !f.walk(nx, ny) || g.mon_at(nx, ny) || g.hero_at(nx, ny) || f.burning(nx, ny)) continue;
+          bool clear = true;
+          for (auto& m : f.mons) if (m->hp > 0 && cheb(nx, ny, m->x, m->y) <= 1) clear = false;
+          if (clear && open_round(nx, ny) >= 2) { bx = dx; by = dy; break; }
+        }
+      if (bx || by) return {{"t", "move"}, {"dx", bx}, {"dy", by}};
+    }
     // a beginner forgets its style skills half the time
     if (bot_skill() == 0 && g.rnd.below(2)) {
       if (d == 1) return {{"t", "move"}, {"dx", seen->x - h.x}, {"dy", seen->y - h.y}};
