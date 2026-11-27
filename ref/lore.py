@@ -111,7 +111,7 @@ BOSS_WAKE = {
     'furnace': "The great furnace opens like an eye. The Furnace Lord steps out, dripping slag.",
     'sluicekeeper': "A floodgate wheel groans and turns by itself. The Sluice-Keeper drags himself up out of the black, "
                     "chained to it still.",
-    'ashmayor': "Ash shifts on a bronze throne-chair. The Ash-Mayor lifts his iron staff: 'Who walks in my city without leave?'",
+    'ashmayor': "Ash shifts on a bronze throne-chair. The Last Alderman lifts his iron staff: 'Who walks in my city without leave?'",
     'hoardwarden': "The mound of gold heaves and rises. Six arms come out of it, and one of them holds the vault key.",
     'ironcaptain': "Iron grinds on iron. The Iron-Captain steps out of the ranks, roaring through his melted visor.",
     'headgaoler': "Chains drag across the stone. The Head-Gaoler comes, a broken manacle swinging from his wrist.",
@@ -123,7 +123,7 @@ BOSS_DIES = {
     'webmother': "The Webmother curls up and is still. The webs go slack across the cave.",
     'furnace': "The Furnace Lord cools to black iron and cracks. The anvils of the dwarves fall silent again.",
     'sluicekeeper': "The Sluice-Keeper sinks back into the sludge, and the great wheel finally stops.",
-    'ashmayor': "The Ash-Mayor slumps in his chair and does not rise. Grey ash settles over the silent city.",
+    'ashmayor': "The Last Alderman slumps in his chair and does not rise. Grey ash settles over the silent city.",
     'hoardwarden': "The Hoard-Warden sinks into his gold. The heap cools, and is only gold again.",
     'ironcaptain': "The Iron-Captain falls to his knees, and the ranks behind him fall with him.",
     'headgaoler': "The Head-Gaoler crashes down in his own chains. Somewhere a cell door swings open.",

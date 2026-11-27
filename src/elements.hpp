@@ -34,6 +34,9 @@ constexpr Zone ZONE[10] = {
     {{ASH, RIME}, BLOOD, ROT},      // the Sanctum
 };
 constexpr int KING_ATK[2] = {RIME, ASH};
+// each zone boss's own element, chosen by theme, two bosses to each element (plan.md section 8); a second one, drawn
+// for each dive from the other four, joins it from two thirds of its life
+constexpr int BOSS_EL[10] = {ROT, ROT, EMBER, ASH, RIME, ASH, EMBER, BLOOD, BLOOD, RIME};
 
 // What a skill does with stacks, as its sign on the panel: \u25A0 lays them (it hits), \u263C sets them all off, \u00B7 neither.
 inline int skill_sign(const std::string& k) {

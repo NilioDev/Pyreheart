@@ -22,6 +22,11 @@ static std::string describe(const Mon& m) {
   if (m.def->poison > 0) add("its bite poisons");
   if (m.def->fire) add("it burns");
   if (m.def->cold) add("its touch numbs");
+  if (m.rank == "boss") {
+    std::string s = std::string("its blows lay ") + elem::NAME[m.el];
+    if (m.el2 >= 0) s += m.phase >= 1 ? std::string(" and ") + elem::NAME[m.el2] : std::string("; from two thirds of its life ") + elem::NAME[m.el2] + " too";
+    add(s);
+  }
   // what its trick is, in a line
   static const std::vector<std::pair<std::string, std::string>> TRICKS = {
       {"burst:gas", "it bursts into a cloud of gas as it dies"}, {"burst:acid", "it bursts into acid as it dies"},
@@ -106,6 +111,9 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   out["god"] = h.god;
   out["frost"] = g.frost;
   out["route"] = g.route;
+  json bel = json::array();  // each zone boss's element and this dive's second one, for the route chart
+  for (int z = 0; z < data::ZONES; ++z) bel.push_back({elem::BOSS_EL[z], g.boss_el2(z)});
+  out["bossel"] = bel;
   if (!f.exits.empty()) {
     json ex = json::array();
     for (auto [i, z] : f.exits) ex.push_back({i % W, i / W, z});
@@ -260,7 +268,7 @@ json snapshot(Game& g, Hero& h, bool with_map) {
   for (auto& m : f.mons)
     if (m->blow.turns > 0 && h.sees(m->x, m->y) && (m->discharger || m->rank != "normal"))
       for (int e = 0; e < elem::N; ++e)
-        if (h.stk.n[e] > 0 && (e == m->el || m->rank == "boss")) warn.push_back(e);
+        if (h.stk.n[e] > 0 && g.sets_off(*m, e)) warn.push_back(e);
   json res = json::array();
   for (int e = 0; e < elem::N; ++e) res.push_back(g.hero_res(h, e));
   out["me"] = {{"pid", h.pid}, {"st", stacks(h.stk)}, {"el", h.el}, {"el2", h.el2}, {"smother", h.smother}, {"warn", warn}, {"eres", res}, {"name", h.name}, {"cls", h.cls->key}, {"clsname", h.cls->name}, {"x", h.x}, {"y", h.y},
