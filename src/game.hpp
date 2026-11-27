@@ -206,6 +206,7 @@ struct Floor {
   int depth = 1, act = 0, id = 0, version = 0;
   int w = 76, h = 42;  // the part of the map in use
   bool rest = false, deep = false;
+  std::vector<std::vector<P>> pools;  // the pools of water laid in a burning boss's room, to douse Ember in (plan.md section 8)
   bool camp = false;  // the helpers' camp in a boss room, after its boss fell: the waystation of the zone
   bool resting() const { return rest || camp; }  // the fire, the coals and the rekindling work here
   std::vector<int> t = std::vector<int>(W * H, data::WALL);

@@ -522,6 +522,36 @@ std::unique_ptr<Floor> Game::make_floor_from(int d) {
   if (boss_floor) {
     fl.boss = spawn(zone.boss, fl.down.x, fl.down.y);
     budget -= 4;
+    // where Ember falls in a boss fight (its own or this dive's second element, or the Barracks' pikemen), a few pools
+    // of water lie a few steps aside from the boss: step into one to douse your Ember (plan.md section 8)
+    if (fl.boss && (fl.boss->el == elem::EMBER || fl.boss->el2 == elem::EMBER || act == BARRACKS)) {
+      std::vector<P> spots;
+      for (int y = 1; y < H - 1; ++y)
+        for (int x = 1; x < W - 1; ++x) {
+          int dd = cheb(x, y, fl.down.x, fl.down.y), t = fl.tile(x, y);
+          if (dd >= 4 && dd <= 8 && (t == FLOOR || t == CRUST)) {
+            int open = 0;  // in the open of the room, not in a passage
+            for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) open += fl.walk(x + dx, y + dy);
+            if (open == 9) spots.push_back({x, y});
+          }
+        }
+      Rng pr(seed ^ (uint64_t(d + 1) * 0xD6E8FEB86659FD93ull));  // its own dice: the rest of the map stays as it was
+      pr.shuffle(spots);
+      for (auto c : spots) {
+        if (fl.pools.size() >= 3) break;
+        bool apart = true;
+        for (auto& p : fl.pools) if (cheb(p[0].x, p[0].y, c.x, c.y) < 5) apart = false;
+        if (!apart) continue;
+        std::vector<P> pool{c};
+        for (auto d : {P{1, 0}, P{-1, 0}, P{0, 1}, P{0, -1}})
+          if (pool.size() < 3 && pr.below(2) == 0) {
+            int t = fl.tile(c.x + d.x, c.y + d.y);
+            if (t == FLOOR || t == CRUST) pool.push_back({c.x + d.x, c.y + d.y});
+          }
+        for (auto p : pool) fl.set(p.x, p.y, SHALLOW);
+        fl.pools.push_back(pool);
+      }
+    }
   }
   for (int pack = 0; pack < int(room + .5); ++pack) {
   if (lvl >= 2 && rnd.real() < (omen(omen::MUSTER) ? .85 : .65) && !far.empty()) {
@@ -1736,6 +1766,13 @@ void Game::land(Mon& m) {
       if (m.rank == "boss" && m.el2 >= 0 && m.phase >= 1 && o->stk.n[m.el2] > o->stk.n[m.el]) e = m.el2;
       discharge_hero(m, *o, e);
     }
+  if (b.name == "pyre" && !floor->pools.empty()) {  // the heat boils one of the room's pools away
+    auto pool = floor->pools.back();
+    floor->pools.pop_back();
+    for (auto c : pool) if (floor->tile(c.x, c.y) == SHALLOW) floor->set(c.x, c.y, FLOOR);
+    add_fx({{"k", "burst"}, {"x", pool[0].x}, {"y", pool[0].y}, {"r", 1}, {"col", 0xC8C8D2}});
+    say_near(pool[0].x, pool[0].y, "The heat boils a pool of water away in a hiss of steam.", 0xC8C8D2);
+  }
   if (b.heavy) {
     m.spent = 2;
     say_near(m.x, m.y, cap(the(m)) + " is spent, and stands open.", 0xE0D080);
