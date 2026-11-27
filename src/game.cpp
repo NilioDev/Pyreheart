@@ -1686,7 +1686,7 @@ bool Game::wind_up(Mon& m, Hero& h, const std::string& name) {
   if (m.discharger || m.rank != "normal")
     for (auto* o : active())
       for (int e = 0; e < elem::N; ++e)
-        if (o->stk.n[e] > 0 && (e == m.el || m.rank == "boss") && o->sees(m.x, m.y)) {
+        if (o->stk.n[e] > 0 && sets_off(m, e) && o->sees(m.x, m.y)) {
           o->say("! " + cap(the(m)) + " glows " + elem::NAME[e] + ": step away before your stacks go off.", elem::COL[e]);
           break;
         }
@@ -1732,10 +1732,8 @@ void Game::land(Mon& m) {
     for (auto* o : hit) {
       if (o->dead) continue;
       int e = m.el;
-      if (m.rank == "boss") {  // a great foe sets off whichever of its zone's elements you carry most of
-        const int* atk = m.def->key == "ashenking" ? elem::KING_ATK : elem::ZONE[std::clamp(floor->act, 0, 9)].atk;
-        e = o->stk.n[atk[1]] > o->stk.n[atk[0]] ? atk[1] : atk[0];
-      }
+      // a zone boss past two thirds of its life sets off whichever of its two elements you carry most of
+      if (m.rank == "boss" && m.el2 >= 0 && m.phase >= 1 && o->stk.n[m.el2] > o->stk.n[m.el]) e = m.el2;
       discharge_hero(m, *o, e);
     }
   if (b.heavy) {
@@ -1763,6 +1761,12 @@ void Game::boss_phase(Mon& m) {
     return;
   }
   say_near(m.x, m.y, cap(the(m)) + (ph == 1 ? " staggers, and fights harder." : " is badly hurt. Now it holds nothing back."), 0xFFB060);
+  if (ph == 1 && m.el2 >= 0) {  // its second element wakes (plan.md section 8)
+    static const char* WAKES[elem::N] = {"begin to glow like coals", "turn white with frost", "trail black soot",
+                                         "drip with rot", "run red"};
+    say_near(m.x, m.y, cap(the(m)) + "'s blows " + WAKES[m.el2] + ": now they lay " + elem::NAME[m.el2] + " too.", elem::COL[m.el2]);
+    add_fx({{"k", "burst"}, {"x", m.x}, {"y", m.y}, {"r", 1}, {"col", elem::COL[m.el2]}});
+  }
   Hero* h = nearest_hero(m, false);
   if (h) boss_move(m, *h, cheb(h->x, h->y, m.x, m.y), "summon");
 }
@@ -2964,6 +2968,8 @@ void Game::mon_hit(Mon& m, Hero& h, bool ranged) {
   // a quick builder lays its element with every blow, a slow discharger now and then
   int lays = 1 + (omen(omen::TWIN) && (m.rank == "champion" || m.rank == "unique") ? 1 : 0) + (omen(omen::EMBERTIDE) ? 1 : 0);
   if (!h.dead && (!m.discharger || rnd.below(2) == 0)) lay_on_hero(m, h, lays);
+  // a zone boss past two thirds of its life lays its second element with every other blow (plan.md section 8)
+  if (!h.dead && m.rank == "boss" && m.el2 >= 0 && m.phase >= 1 && ++m.lays % 2 == 0) lay_on_hero(m, h, 1, m.el2);
   if (m.has("Vampiric")) m.hp = std::min(m.maxhp, m.hp + dmg / 2 * (100 - heal_cut(m.stk, m.rank == "boss")) / 100);
   if (!ranged && st.thorns > 0 && m.hp > 0) hurt(m, st.thorns, &h);
 }

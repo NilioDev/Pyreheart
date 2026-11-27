@@ -347,6 +347,50 @@ static json choose(Game& g, Hero& h) {
   return a;
 }
 
+// BOTHARM=1: what hurt each hero in its last 25 turns before it fell, read from its log, summed over all dives at the end.
+static std::map<int, std::deque<std::map<std::string, int>>> harm_win;
+static std::map<std::string, long> harm_total;
+static std::map<int, bool> harm_dead;
+static int harm_deaths = 0, harm_boss_deaths = 0, harm_empty_belt = 0;
+static void harm_step(Game& g) {
+  for (auto& [id, h] : g.heroes) {
+    auto& win = harm_win[id];
+    win.emplace_back();
+    if (win.size() > 25) win.pop_front();
+    bool blast = false;
+    for (auto& l : h->log) {
+      const std::string& t = l.text;
+      if (t.rfind("☼ It strikes.", 0) == 0) { blast = true; continue; }
+      auto p = t.find(" hurts you (");
+      if (p == std::string::npos) continue;
+      int n = std::atoi(t.c_str() + p + 12);
+      std::string who = t.substr(0, p), k = blast ? "element blast" : who == "Ember" ? "Ember burn" : who == "Poison" ? "poison" :
+                                                   who == "Bleeding" ? "bleeding" : who == "Fire" ? "fire ground" : "blows";
+      blast = false;
+      win.back()[k] += n;
+    }
+    h->log.clear();
+    if (h->dead && !harm_dead[id]) {
+      harm_dead[id] = true;
+      ++harm_deaths;
+      if (g.floor->boss && g.floor->boss->hp > 0) ++harm_boss_deaths;
+      if (h->heal == 0) ++harm_empty_belt;
+      std::map<std::string, int> sum;
+      for (auto& turn : win) for (auto& [k, n] : turn) { sum[k] += n; harm_total[k] += n; }
+      std::string line;
+      for (auto& [k, n] : sum) line += k + " " + std::to_string(n) + ", ";
+      std::printf("   fell at depth %d%s to %s: %s\n", g.depth, g.floor->boss && g.floor->boss->hp > 0 ? " (boss)" : "", h->killer.c_str(), line.c_str());
+    }
+  }
+}
+static void harm_report() {
+  if (!std::getenv("BOTHARM") || !harm_deaths) return;
+  long all = 0;
+  for (auto& [k, n] : harm_total) all += n;
+  std::printf("\nHARM in the last 25 turns of %d deaths (%d with a boss alive, %d with an empty belt):\n", harm_deaths, harm_boss_deaths, harm_empty_belt);
+  for (auto& [k, n] : harm_total) std::printf("HARM %-14s %3ld%%\n", k.c_str(), all ? 100 * n / all : 0);
+}
+
 // Returns the first hero as kept for the next Frost level when the dive is won, else null.
 static json run(const std::vector<std::string>& classes, uint64_t seed, int frost = -1, const json& kept = json()) {
   // BOTFROST=n plays on that Frost level; BOTTALENTS=all gives every bot the whole Pyre tree (or "kindled:3,glint:1")
@@ -366,6 +410,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
       }
   }
   for (size_t i = 0; i < classes.size(); ++i) { bot_weapon[int(i) + 1] = classes[i]; g.join(int(i) + 1, "Bot" + std::to_string(i), classes[i], talents, i == 0 ? kept : json()); }
+  harm_win.clear(); harm_dead.clear();
   int steps = 0, last_depth = -1;
   std::string pace;  // the first hero's level as each new depth is reached (BOTPACE=1 prints it)
   while (g.state == "play" && steps < 20000) {
@@ -379,6 +424,7 @@ static json run(const std::vector<std::string>& classes, uint64_t seed, int fros
     }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, a] : acts) { auto& h = *g.heroes[id]; int tx = h.x + a.value("dx", 0), ty = h.y + a.value("dy", 0); std::printf("%d,%d hp%d mana%d %s tile %d mon %d\n", h.x, h.y, h.hp, h.mana, a.dump().c_str(), g.floor->tile(tx, ty), g.mon_at(tx, ty) ? 1 : 0); }
     g.step(acts);
+    if (std::getenv("BOTHARM") && !std::getenv("BOTLOG")) harm_step(g);
     if (std::getenv("BOTLOG")) for (auto& [id, h] : g.heroes) { for (auto& l : h->log) std::printf("%5d hp%3d mp%2d %s\n", g.turn, h->hp, h->mana, l.text.c_str()); h->log.clear(); }
     if (std::getenv("BOTDBG") && steps > 19990) for (auto& [id, h] : g.heroes) for (auto& l : h->log) std::printf("  %s\n", l.text.c_str());
     if (std::getenv("BOTMAP") && steps == 19999) { auto& f = *g.floor; auto& h = *g.heroes.begin()->second; for (int y = 0; y < H; ++y) { std::string r; for (int x = 0; x < W; ++x) { int t = f.tile(x, y); r += (x == h.x && y == h.y) ? '@' : (x == f.down.x && y == f.down.y) ? '>' : g.mon_at(x, y) ? 'M' : f.walk(x, y) ? '.' : '#'; } std::printf("%s\n", r.c_str()); } std::printf("exits %zu camp_at %d,%d\n", f.exits.size(), f.camp_at.x, f.camp_at.y); if (f.boss) std::printf("boss %s at %d,%d hp %d dormant %d hidden %d\n", f.boss->name.c_str(), f.boss->x, f.boss->y, f.boss->hp, f.boss->dormant, f.boss->hidden); for (auto& m : f.mons) std::printf("mon %s %d,%d hp %d d%d h%d\n", m->name.c_str(), m->x, m->y, m->hp, m->dormant, m->hidden); }
@@ -500,7 +546,8 @@ int main() {
   for (auto& w : WEAPONS)
     if (!only || w.key == only)
       for (uint64_t s = 1; s <= uint64_t(seeds); ++s) run({w.key}, s);
-  if (!only) run({"sword", "lantern", "dagger"}, 9);
+  if (!only && !std::getenv("BOTHARM")) run({"sword", "lantern", "dagger"}, 9);
+  harm_report();
   // BOTCOOP=n: n co-op dives of three, to see embers carried and friends rekindled
   if (const char* c = std::getenv("BOTCOOP"))
     for (int i = 0; i < std::atoi(c); ++i) run({"sword", "lantern", "dagger"}, 20 + uint64_t(i));

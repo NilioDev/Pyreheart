@@ -375,7 +375,7 @@ M = {
                      ai='melee', traits=('sleeper', 'stone')),
     'beggar': dict(name='cinder-tongue beggar', ch='j', col=(240, 150, 80), hp=22, dmg=(5, 9), acc=70, ar=1, spd=100, xp=18,
                    ai='ranged', rng=3, shot=('*', (255, 160, 60)), fire=True, traits=('rooted', 'cone')),
-    'ashmayor': dict(undead=True, name='the Ash-Mayor', ch='M', col=(220, 170, 90), hp=440, dmg=(9, 17), acc=84, ar=9, spd=90,
+    'ashmayor': dict(undead=True, name='the Last Alderman', ch='M', col=(220, 170, 90), hp=440, dmg=(9, 17), acc=84, ar=9, spd=90,
                      xp=480, ai='melee', boss=True, moves=('ashbreath', 'summon:citizen', 'slam'), traits=('rooted',)),
     'mimic': dict(name='coin-flesh mimic', ch='m', col=(230, 200, 90), hp=40, dmg=(6, 12), acc=75, ar=4, spd=100, xp=26, ai='melee',
                   traits=('disguise', 'hold')),

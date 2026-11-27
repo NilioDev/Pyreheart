@@ -1312,7 +1312,14 @@ int Client::route_chart(int x0, int y0, int w, int bg, const std::vector<int>& c
       int col = been ? GOLD : is_open || can ? 0xF0F0F0 : 0x5A5A5A;
       int cx = x0 + w * (2 * i + 1) / (2 * n);
       if (is_open) name = "> " + name + " <";
-      text(cx - int(name.size()) / 2, y0 + int(j) * 2, name, col, bg);
+      // the boss's two elements after the name, as the stacks show them: its own, then this dive's second one
+      int bx = cx - (int(name.size()) + 3) / 2;
+      text(bx, y0 + int(j) * 2, name, col, bg);
+      if (snap_.contains("bossel") && z < int(snap_["bossel"].size()))
+        for (int k = 0; k < 2; ++k) {
+          int e = snap_["bossel"][z][k].get<int>();
+          if (e >= 0 && e < elem::N) put(bx + int(name.size()) + 1 + k, y0 + int(j) * 2, 0x25A0, elem::COL[e], bg);
+        }
     }
   }
   return int(rows.size()) * 2 - 1;

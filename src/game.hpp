@@ -181,6 +181,8 @@ struct Mon {
   Stacks stk;              // the elements on it
   std::map<int, std::array<int, 5>> work;  // harm done to it by each hero: melee, ranged, magic, with the weapon, with the second coal
   int el = 0;              // the element its blows lay
+  int el2 = -1;            // a zone boss's second element, from two thirds of its life (plan.md section 8)
+  int lays = 0;            // the blows it has landed, so the second element is laid with every other one
   bool discharger = false; // a slow, heavy foe: its telegraphed blow sets off the stacks of its element
   bool can(const std::string& t) const { return def->has(t); }
   std::string trick(const std::string& t) const;  // the part after the colon of a trait like "lob:acid", or 
@@ -409,13 +411,15 @@ class Game {
   int scale_el() const { return 1 + lvl / 4; }
  public:
   int mon_res(const Mon& m, int e) const;
+  int boss_el2(int zone) const;               // this dive's second element for the zone's boss
+  bool sets_off(const Mon& m, int e) const;   // whether this foe's heavy blow sets off stacks of e on a hero
   int hero_res(const Hero& h, int e) const;
   int heal_cut(const Stacks& s, bool capped) const;
   int rime_slow(const Mon& m) const;
  private:
   void assign_element(Mon& m);
   void lay_on_mon(Hero& h, Mon& m, int n, int e = -1);  // e: an element of its own (a legendary), else the hero's
-  void lay_on_hero(Mon& m, Hero& h, int n);
+  void lay_on_hero(Mon& m, Hero& h, int n, int e = -1);
   void discharge_mon(Hero& h, Mon& m, int e);
   void discharge_hero(Mon& m, Hero& h, int e);
   void stacks_tick();

@@ -56,6 +56,9 @@ void Game::assign_element(Mon& m) {
   if (m.def->poison > 0 || m.has("Venomous")) m.el = ROT;
   if (m.has("Vampiric")) m.el = BLOOD;
   if (m.has("Ashen")) m.el = ASH;
+  if (m.rank == "boss")  // a zone boss: its own element by theme, and this dive's second one (plan.md section 8)
+    for (int z = 0; z < data::ZONES; ++z)
+      if (data::ACTS[z].boss == m.def->key) { m.el = BOSS_EL[z]; m.el2 = boss_el2(z); break; }
   m.discharger = m.rank != "boss" && (m.def->has("heavy") || m.def->has("sweep") || m.def->has("knock") || m.def->spd <= 80);
 }
 
@@ -80,9 +83,26 @@ void Game::lay_on_mon(Hero& h, Mon& m, int n, int e) {
       if (o.get() != &m && o->hp > 0 && cheb(o->x, o->y, m.x, m.y) <= 1) { o->stk.n[ASH] = std::min(MAX, o->stk.n[ASH] + 1); o->stk.idle[ASH] = 0; o->stk.by[ASH] = h.pid; }
 }
 
-void Game::lay_on_hero(Mon& m, Hero& h, int n) {
+// The second element of each zone boss is drawn from the dive's seed, so the route chart can show it before the fight.
+int Game::boss_el2(int zone) const {
+  uint64_t x = seed ^ (uint64_t(zone + 1) * 0x9E3779B97F4A7C15ull);
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+  x ^= x >> 31;
+  int k = int(x % (N - 1));  // one of the four others
+  int own = BOSS_EL[std::clamp(zone, 0, 9)];
+  return k >= own ? k + 1 : k;
+}
+// A common foe sets off its own element; a zone boss its own, and from two thirds of its life its second one too.
+bool Game::sets_off(const Mon& m, int e) const {
+  if (e == m.el) return true;
+  return m.rank == "boss" && m.el2 >= 0 && m.phase >= 1 && e == m.el2;
+}
+
+void Game::lay_on_hero(Mon& m, Hero& h, int n, int e) {
   if (h.dead || h.god) return;
-  int e = m.el, res = hero_res(h, e), laid = 0;
+  if (e < 0) e = m.el;
+  int res = hero_res(h, e), laid = 0;
   if (res >= 100) return;
   for (int i = 0; i < n; ++i) if (res <= 0 || rnd.below(100) >= res) ++laid;
   if (!laid) return;
@@ -245,6 +265,9 @@ void Game::stacks_tick() {
     if (h->dead) continue;
     if (h->perk("emberheart") && h->stk.n[EMBER] < 1) { h->stk.n[EMBER] = 1; h->stk.idle[EMBER] = 0; }  // Ember Heart: it always burns
     int burn = h->stk.n[EMBER] * per, bleed = h->stk.n[BLOOD] * std::max(1, per / 2);
+    // resistance cuts the harm of the stacks too, not only the chance they land (plan.md section 8)
+    if (burn > 0) burn = std::max(1, rnd_i(burn * (1 - std::clamp(hero_res(*h, EMBER), 0, 100) / 100.0)));
+    if (bleed > 0) bleed = std::max(1, rnd_i(bleed * (1 - std::clamp(hero_res(*h, BLOOD), 0, 100) / 100.0)));
     if (h->perk("coldblood")) burn *= 2;
     if (h->perk("thickblood")) bleed /= 2;
     if (burn > 0) hero_hurt(*h, nullptr, burn, "ember");

@@ -1009,6 +1009,14 @@ void Client::draw_talk() {
     for (auto& wy : ways) can.push_back(wy.value("z", 0));
     text(x + 3, r++, "THE WAY DOWN", GOLD, PAPER);
     r += route_chart(x + 3, r + 1, w - 6, PAPER, t.value("open", false) ? std::vector<int>{} : can) + 2;
+    {  // what the marks after each zone mean (plan.md section 8)
+      std::string key = "the great foe's own element, and from 2/3 of its life a second";
+      int kx = x + (w - int(key.size()) - 3) / 2;
+      put(kx, r, 0x25A0, 0x9A8A7A, PAPER);
+      put(kx + 1, r, 0x25A0, 0x6A5A4A, PAPER);
+      text(kx + 3, r, key, DIM, PAPER);
+      r += 2;
+    }
     for (int k = x + 2; k < x + w - 2; ++k) put(k, r, 0x2500, 0x5A4028, PAPER);
     r += 2;
     bool open = t.value("open", false);

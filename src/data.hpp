@@ -279,7 +279,7 @@ inline const std::vector<MonDef> MONSTERS = {
     {"lanternwraith", "lantern wraith", 0x77, 0xFFBE5A, 30, 5, 10, 75, 2, 110, 22, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, true, false, {}, true, {"dim"}},
     {"sentinel", "stone-carved sentinel", 0x47, 0xA5A096, 75, 8, 15, 65, 10, 70, 32, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false, {"sleeper", "stone"}},
     {"beggar", "cinder-tongue beggar", 0x6A, 0xF09650, 22, 5, 9, 70, 1, 100, 18, "ranged", 3, 0x2A, 0xFFA03C, false, false, 0, true, false, {}, false, {"rooted", "cone"}},
-    {"ashmayor", "the Ash-Mayor", 0x4D, 0xDCAA5A, 440, 9, 17, 84, 9, 90, 480, "melee", 1, 0x2A, 0xFFFFFF, true, false, 0, false, false, {"ashbreath", "summon:citizen", "slam"}, true, {"rooted"}},
+    {"ashmayor", "the Last Alderman", 0x4D, 0xDCAA5A, 440, 9, 17, 84, 9, 90, 480, "melee", 1, 0x2A, 0xFFFFFF, true, false, 0, false, false, {"ashbreath", "summon:citizen", "slam"}, true, {"rooted"}},
     {"mimic", "coin-flesh mimic", 0x6D, 0xE6C85A, 40, 6, 12, 75, 4, 100, 26, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, false, false, {}, false, {"disguise", "hold"}},
     {"shade", "ash-scroll shade", 0x77, 0xD2B496, 28, 6, 11, 78, 1, 120, 22, "melee", 1, 0x2A, 0xFFFFFF, false, false, 0, true, false, {}, true, {"ghost"}},
     {"gilded", "gilded skeleton", 0x73, 0xF0CD5A, 40, 6, 11, 72, 9, 100, 26, "melee", 1, 0x2A, 0xFFFFFF, false, true, 0, false, false, {}, true, {"rich"}},
